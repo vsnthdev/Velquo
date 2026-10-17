@@ -1,0 +1,23 @@
+{
+  "name": "velquo",
+  "description": "A fast, native Apple Silicon client for KDE Connect — seamlessly bridging Android and Linux devices with your Mac.",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/plugin-dialog": "^2.2.1",
+    "@tauri-apps/plugin-opener": "^2.2.6"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

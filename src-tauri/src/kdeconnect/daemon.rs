@@ -1,0 +1,1940 @@
+use crate::kdeconnect::cert::{
+    compute_verification_key, extract_cert_common_name, sha256_fingerprint, HostIdentity,
+};
+use crate::kdeconnect::packet::{
+    current_millis, current_secs, NetworkPacket, PACKET_TYPE_IDENTITY, PACKET_TYPE_PAIR,
+    PACKET_TYPE_PING, PACKET_TYPE_SHARE_REQUEST, PACKET_TYPE_SHARE_REQUEST_UPDATE,
+    PROTOCOL_VERSION,
+};
+use crate::kdeconnect::tls::{build_tls_acceptor, build_tls_connector};
+use anyhow::{anyhow, Context, Result};
+use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+use rustls::pki_types::ServerName;
+use serde::{Deserialize, Serialize};
+use socket2::{Domain, Protocol, SockRef, Socket, TcpKeepalive, Type};
+use std::collections::HashMap;
+use std::fs;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tauri::{AppHandle, Emitter};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::sync::{mpsc, oneshot};
+use tokio_rustls::{TlsAcceptor, TlsConnector};
+use uuid::Uuid;
+
+pub const UDP_PORT: u16 = 1716;
+pub const MIN_TCP_PORT: u16 = 1716;
+pub const MAX_TCP_PORT: u16 = 1764;
+pub const MIN_PAYLOAD_PORT: u16 = 1739;
+pub const MAX_PAYLOAD_PORT: u16 = 1764;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PairState {
+    NotPaired,
+    Requested,
+    RequestedByPeer,
+    Paired,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostInfo {
+    pub device_id: String,
+    pub device_name: String,
+    pub device_type: String,
+    pub protocol_version: i32,
+    pub tcp_port: u16,
+    pub udp_port: u16,
+    pub cert_fingerprint: String,
+    pub downloads_dir: String,
+    pub log_file_path: String,
+    pub local_ips: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceView {
+    pub device_id: String,
+    pub device_name: String,
+    pub device_type: String,
+    pub protocol_version: i32,
+    pub address: String,
+    pub tcp_port: u16,
+    pub reachable: bool,
+    pub pair_state: PairState,
+    pub verification_key: Option<String>,
+    pub cert_fingerprint: Option<String>,
+    pub incoming_capabilities: Vec<String>,
+    pub outgoing_capabilities: Vec<String>,
+    pub last_seen_secs: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferItem {
+    pub id: String,
+    pub device_id: String,
+    pub device_name: String,
+    pub direction: String, // "Incoming" | "Outgoing"
+    pub kind: String,      // "File" | "Text" | "Url"
+    pub filename: String,
+    pub total_bytes: u64,
+    pub transferred_bytes: u64,
+    pub status: String, // "InProgress" | "Completed" | "Failed"
+    pub saved_path: Option<String>,
+    pub text_content: Option<String>,
+    pub url_content: Option<String>,
+    pub error: Option<String>,
+    pub timestamp_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrustedDeviceRecord {
+    pub device_id: String,
+    pub device_name: String,
+    pub device_type: String,
+    pub protocol_version: i32,
+    pub cert_der: Vec<u8>,
+}
+
+pub struct DeviceEntry {
+    pub view: DeviceView,
+    pub peer_cert_der: Option<Vec<u8>>,
+    pub sender: Option<mpsc::UnboundedSender<Vec<u8>>>,
+    pub abort_tx: Option<oneshot::Sender<()>>,
+    pub connection_generation: u64,
+}
+
+pub struct KdeConnectDaemon {
+    pub host: HostIdentity,
+    pub config_dir: PathBuf,
+    pub downloads_dir: PathBuf,
+    pub log_file_path: PathBuf,
+    pub tcp_port: Mutex<u16>,
+    pub tls_acceptor: TlsAcceptor,
+    pub tls_connector: TlsConnector,
+    pub devices: Mutex<HashMap<String, DeviceEntry>>,
+    pub trusted_devices: Mutex<HashMap<String, TrustedDeviceRecord>>,
+    pub transfers: Mutex<Vec<TransferItem>>,
+    pub last_discovery_attempt_ms: Mutex<HashMap<String, i64>>,
+    pub udp_socket: Mutex<Option<Arc<UdpSocket>>>,
+    pub app_handle: Mutex<Option<AppHandle>>,
+}
+
+impl KdeConnectDaemon {
+    pub fn new(config_dir: PathBuf, downloads_dir: PathBuf, log_file_path: PathBuf) -> Result<Arc<Self>> {
+        let _ = fs::create_dir_all(&config_dir);
+        let _ = fs::create_dir_all(&downloads_dir);
+
+        let host = HostIdentity::load_or_create(&config_dir)?;
+        let tls_acceptor = build_tls_acceptor(&host)?;
+        let tls_connector = build_tls_connector(&host)?;
+
+        let trusted_map = Self::load_trusted_devices(&config_dir);
+        let mut initial_devices = HashMap::new();
+        for (id, rec) in &trusted_map {
+            let fp = sha256_fingerprint(&rec.cert_der);
+            initial_devices.insert(
+                id.clone(),
+                DeviceEntry {
+                    view: DeviceView {
+                        device_id: rec.device_id.clone(),
+                        device_name: rec.device_name.clone(),
+                        device_type: rec.device_type.clone(),
+                        protocol_version: rec.protocol_version,
+                        address: "Offline".to_string(),
+                        tcp_port: 1716,
+                        reachable: false,
+                        pair_state: PairState::Paired,
+                        verification_key: None,
+                        cert_fingerprint: Some(fp),
+                        incoming_capabilities: Vec::new(),
+                        outgoing_capabilities: Vec::new(),
+                        last_seen_secs: 0,
+                    },
+                    peer_cert_der: Some(rec.cert_der.clone()),
+                    sender: None,
+                    abort_tx: None,
+                    connection_generation: 0,
+                },
+            );
+        }
+
+        Ok(Arc::new(Self {
+            host,
+            config_dir,
+            downloads_dir,
+            log_file_path,
+            tcp_port: Mutex::new(MIN_TCP_PORT),
+            tls_acceptor,
+            tls_connector,
+            devices: Mutex::new(initial_devices),
+            trusted_devices: Mutex::new(trusted_map),
+            transfers: Mutex::new(Vec::new()),
+            last_discovery_attempt_ms: Mutex::new(HashMap::new()),
+            udp_socket: Mutex::new(None),
+            app_handle: Mutex::new(None),
+        }))
+    }
+
+    fn trusted_devices_file(config_dir: &Path) -> PathBuf {
+        config_dir.join("trusted_devices.json")
+    }
+
+    fn load_trusted_devices(config_dir: &Path) -> HashMap<String, TrustedDeviceRecord> {
+        let path = Self::trusted_devices_file(config_dir);
+        if let Ok(data) = fs::read_to_string(&path) {
+            if let Ok(map) = serde_json::from_str::<HashMap<String, TrustedDeviceRecord>>(&data) {
+                log::info!("[config] Loaded {} trusted device(s) from {:?}", map.len(), path);
+                return map;
+            }
+        }
+        HashMap::new()
+    }
+
+    fn save_trusted_devices(&self) {
+        let path = Self::trusted_devices_file(&self.config_dir);
+        if let Ok(guard) = self.trusted_devices.lock() {
+            if let Ok(json) = serde_json::to_string_pretty(&*guard) {
+                if let Err(e) = fs::write(&path, json) {
+                    log::error!("[config] Failed to save trusted devices: {}", e);
+                } else {
+                    log::info!("[config] Saved {} trusted device(s) to {:?}", guard.len(), path);
+                }
+            }
+        }
+    }
+
+    pub fn set_app_handle(&self, handle: AppHandle) {
+        if let Ok(mut guard) = self.app_handle.lock() {
+            *guard = Some(handle);
+        }
+    }
+
+    pub fn notify_ui(&self) {
+        if let Ok(guard) = self.app_handle.lock() {
+            if let Some(app) = guard.as_ref() {
+                let _ = app.emit("velquo://state-updated", ());
+            }
+        }
+    }
+
+    pub fn get_local_ipv4s() -> Vec<(Ipv4Addr, Ipv4Addr)> {
+        let mut list = Vec::new();
+        if let Ok(interfaces) = if_addrs::get_if_addrs() {
+            for iface in interfaces {
+                if iface.is_loopback() {
+                    continue;
+                }
+                if let if_addrs::IfAddr::V4(v4) = iface.addr {
+                    let ip = v4.ip;
+                    let netmask = v4.netmask;
+                    let broadcast = v4
+                        .broadcast
+                        .unwrap_or_else(|| Ipv4Addr::from(u32::from(ip) | !u32::from(netmask)));
+                    list.push((ip, broadcast));
+                }
+            }
+        }
+        list
+    }
+
+    pub fn get_host_info(&self) -> HostInfo {
+        let tcp_port = *self.tcp_port.lock().unwrap();
+        let local_ips = Self::get_local_ipv4s()
+            .into_iter()
+            .map(|(ip, _)| ip.to_string())
+            .collect();
+        HostInfo {
+            device_id: self.host.device_id.clone(),
+            device_name: self.host.device_name.clone(),
+            device_type: self.host.device_type.clone(),
+            protocol_version: PROTOCOL_VERSION,
+            tcp_port,
+            udp_port: UDP_PORT,
+            cert_fingerprint: self.host.cert_fingerprint.clone(),
+            downloads_dir: self.downloads_dir.to_string_lossy().to_string(),
+            log_file_path: self.log_file_path.to_string_lossy().to_string(),
+            local_ips,
+        }
+    }
+
+    pub fn get_devices_list(&self) -> Vec<DeviceView> {
+        let guard = self.devices.lock().unwrap();
+        let mut list: Vec<DeviceView> = guard.values().map(|e| e.view.clone()).collect();
+        list.sort_by(|a, b| {
+            b.reachable
+                .cmp(&a.reachable)
+                .then_with(|| a.device_name.cmp(&b.device_name))
+        });
+        list
+    }
+
+    pub fn get_transfers_list(&self) -> Vec<TransferItem> {
+        let guard = self.transfers.lock().unwrap();
+        let mut list = guard.clone();
+        list.sort_by(|a, b| b.timestamp_ms.cmp(&a.timestamp_ms));
+        list
+    }
+
+    /// Starts TCP server, UDP discovery listener + periodic broadcaster, and mDNS service
+    pub fn start(self: &Arc<Self>) {
+        let daemon = Arc::clone(self);
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = daemon.run_network_services().await {
+                log::error!("[daemon] Fatal error starting network services: {:?}", e);
+            }
+        });
+    }
+
+    async fn run_network_services(self: Arc<Self>) -> Result<()> {
+        // 1. Bind TCP Listener in range 1716..=1764
+        let mut bound_listener = None;
+        let mut chosen_port = MIN_TCP_PORT;
+        for port in MIN_TCP_PORT..=MAX_TCP_PORT {
+            match TcpListener::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)).await {
+                Ok(listener) => {
+                    chosen_port = port;
+                    bound_listener = Some(listener);
+                    log::info!("[tcp-server] Listening for incoming KDE Connect TCP connections on 0.0.0.0:{}", port);
+                    break;
+                }
+                Err(e) => {
+                    log::warn!("[tcp-server] Port {} unavailable ({}), trying next...", port, e);
+                }
+            }
+        }
+
+        let tcp_listener = bound_listener.ok_or_else(|| {
+            anyhow!(
+                "Could not bind any TCP port in range {}..={}",
+                MIN_TCP_PORT,
+                MAX_TCP_PORT
+            )
+        })?;
+        *self.tcp_port.lock().unwrap() = chosen_port;
+        self.notify_ui();
+
+        // 2. Bind UDP Discovery Socket on 0.0.0.0:1716 using socket2 with SO_REUSEADDR + SO_REUSEPORT + SO_BROADCAST
+        let udp_sock = Self::bind_udp_discovery_socket()?;
+        let udp_arc = Arc::new(udp_sock);
+        *self.udp_socket.lock().unwrap() = Some(Arc::clone(&udp_arc));
+        log::info!(
+            "[udp] Bound UDP socket on 0.0.0.0:{} (broadcast=true, reuse_addr=true, reuse_port=true)",
+            UDP_PORT
+        );
+
+        // 3. Spawn TCP accept loop
+        let daemon_tcp = Arc::clone(&self);
+        tokio::spawn(async move {
+            loop {
+                match tcp_listener.accept().await {
+                    Ok((stream, peer_addr)) => {
+                        log::info!("[tcp-in] Accepted new TCP connection from {}", peer_addr);
+                        let d = Arc::clone(&daemon_tcp);
+                        tokio::spawn(async move {
+                            if let Err(e) = d.handle_inbound_tcp(stream, peer_addr).await {
+                                log::warn!("[tcp-in] Connection from {} closed/failed: {:?}", peer_addr, e);
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("[tcp-in] TCP accept error: {}", e);
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                    }
+                }
+            }
+        });
+
+        // 4. Spawn UDP receive loop
+        let daemon_udp_rx = Arc::clone(&self);
+        let udp_rx = Arc::clone(&udp_arc);
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 16384];
+            loop {
+                match udp_rx.recv_from(&mut buf).await {
+                    Ok((len, sender_addr)) => {
+                        let data = &buf[..len];
+                        daemon_udp_rx.handle_udp_datagram(data, sender_addr);
+                    }
+                    Err(e) => {
+                        log::warn!("[udp] recv_from error: {}", e);
+                        tokio::time::sleep(Duration::from_millis(300)).await;
+                    }
+                }
+            }
+        });
+
+        // 5. Start mDNS (_kdeconnect._udp.local.) announcer and browser
+        let daemon_mdns = Arc::clone(&self);
+        tokio::task::spawn_blocking(move || {
+            daemon_mdns.run_mdns_service(chosen_port);
+        });
+
+        // 6. Initial UDP discovery broadcast + smart network/offline monitor
+        // Avoids broadcasting every 12s when devices are already connected (which causes phones to tear down and reconnect)
+        self.broadcast_udp_discovery().await;
+        let daemon_bcast = Arc::clone(&self);
+        tokio::spawn(async move {
+            // One follow-up broadcast 5s after startup once ARP/mDNS settles
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            if daemon_bcast.should_auto_broadcast() {
+                daemon_bcast.broadcast_udp_discovery().await;
+            }
+
+            let mut last_ips: Vec<Ipv4Addr> = Self::get_local_ipv4s()
+                .into_iter()
+                .map(|(ip, _)| ip)
+                .collect();
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            interval.tick().await; // consume immediate tick
+
+            loop {
+                interval.tick().await;
+                let current_ips: Vec<Ipv4Addr> = Self::get_local_ipv4s()
+                    .into_iter()
+                    .map(|(ip, _)| ip)
+                    .collect();
+
+                if current_ips != last_ips {
+                    log::info!(
+                        "[network] Local IPv4 addresses changed ({:?} -> {:?}), broadcasting discovery",
+                        last_ips,
+                        current_ips
+                    );
+                    last_ips = current_ips;
+                    daemon_bcast.notify_ui();
+                    daemon_bcast.broadcast_udp_discovery().await;
+                } else if daemon_bcast.should_auto_broadcast() {
+                    log::debug!(
+                        "[udp] Auto-broadcasting discovery (waiting for offline/unconnected devices)"
+                    );
+                    daemon_bcast.broadcast_udp_discovery().await;
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Returns true if we have no connected devices or at least one trusted device is currently offline.
+    /// If all known/trusted devices are already online, returns false to prevent unnecessary connection churn.
+    fn should_auto_broadcast(&self) -> bool {
+        let devices = self.devices.lock().unwrap();
+        let online_count = devices.values().filter(|d| d.view.reachable).count();
+        if online_count == 0 {
+            return true;
+        }
+        let any_trusted_offline = devices
+            .values()
+            .any(|d| d.view.pair_state == PairState::Paired && !d.view.reachable);
+        any_trusted_offline
+    }
+
+    /// Configures TCP_NODELAY and TCP Keepalive (30s idle, 10s interval, 3 retries)
+    /// matching kdeconnect-kde's LanLinkProvider::configureSocket
+    fn configure_tcp_socket(stream: &TcpStream) {
+        let _ = stream.set_nodelay(true);
+        let sock_ref = SockRef::from(stream);
+        let keepalive = TcpKeepalive::new()
+            .with_time(Duration::from_secs(30))
+            .with_interval(Duration::from_secs(10))
+            .with_retries(3);
+        if let Err(e) = sock_ref.set_tcp_keepalive(&keepalive) {
+            log::debug!("[tcp] Failed to set TCP keepalive on socket: {}", e);
+        }
+    }
+
+    fn bind_udp_discovery_socket() -> Result<UdpSocket> {
+        let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
+            .context("Failed to create IPv4 UDP socket")?;
+        let _ = sock.set_reuse_address(true);
+        let _ = sock.set_reuse_port(true);
+        let _ = sock.set_broadcast(true);
+        sock.set_nonblocking(true)?;
+
+        let addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, UDP_PORT);
+        sock.bind(&addr.into())
+            .with_context(|| format!("Failed to bind UDP port {}", UDP_PORT))?;
+
+        let std_sock: std::net::UdpSocket = sock.into();
+        let tokio_sock = UdpSocket::from_std(std_sock)?;
+        Ok(tokio_sock)
+    }
+
+    fn run_mdns_service(self: Arc<Self>, tcp_port: u16) {
+        log::info!("[mdns] Starting mDNS daemon for _kdeconnect._udp.local.");
+        let mdns = match ServiceDaemon::new() {
+            Ok(d) => d,
+            Err(e) => {
+                log::warn!("[mdns] Could not initialize mDNS daemon: {}", e);
+                return;
+            }
+        };
+
+        let service_type = "_kdeconnect._udp.local.";
+        let instance_name = self.host.device_id.clone();
+        let host_name = format!("{}.local.", self.host.device_id);
+        let local_ips: Vec<IpAddr> = Self::get_local_ipv4s()
+            .into_iter()
+            .map(|(ip, _)| IpAddr::V4(ip))
+            .collect();
+
+        let properties = [
+            ("id", self.host.device_id.as_str()),
+            ("name", self.host.device_name.as_str()),
+            ("type", self.host.device_type.as_str()),
+            ("protocol", "8"),
+        ];
+
+        match ServiceInfo::new(
+            service_type,
+            &instance_name,
+            &host_name,
+            &local_ips[..],
+            tcp_port,
+            &properties[..],
+        ) {
+            Ok(service_info) => {
+                if let Err(e) = mdns.register(service_info) {
+                    log::warn!("[mdns] Failed to register mDNS service: {}", e);
+                } else {
+                    log::info!(
+                        "[mdns] Registered mDNS service {} on port {} with IPs {:?}",
+                        instance_name,
+                        tcp_port,
+                        local_ips
+                    );
+                }
+            }
+            Err(e) => {
+                log::warn!("[mdns] Failed to build ServiceInfo: {}", e);
+            }
+        }
+
+        match mdns.browse(service_type) {
+            Ok(receiver) => {
+                log::info!("[mdns] Browsing for _kdeconnect._udp.local. services...");
+                while let Ok(event) = receiver.recv() {
+                    if let ServiceEvent::ServiceResolved(info) = event {
+                        let txt_id = info
+                            .get_property_val_str("id")
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| {
+                                info.get_fullname()
+                                    .split('.')
+                                    .next()
+                                    .unwrap_or("")
+                                    .to_string()
+                            });
+
+                        if txt_id.is_empty() || txt_id == self.host.device_id {
+                            continue;
+                        }
+
+                        let proto = info
+                            .get_property_val_str("protocol")
+                            .and_then(|p| p.parse::<i32>().ok())
+                            .unwrap_or(PROTOCOL_VERSION);
+                        let port = info.get_port();
+
+                        for ip in info.get_addresses_v4() {
+                            let ip_val = *ip;
+                            log::info!(
+                                "[mdns] Discovered peer via mDNS: id='{}' ip={} port={} proto={}",
+                                txt_id,
+                                ip_val,
+                                port,
+                                proto
+                            );
+                            let d = Arc::clone(&self);
+                            let id_clone = txt_id.clone();
+                            tauri::async_runtime::spawn(async move {
+                                d.on_device_discovered(IpAddr::V4(ip_val), port, id_clone, proto, None)
+                                    .await;
+                            });
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("[mdns] Failed to browse mDNS: {}", e);
+            }
+        }
+    }
+
+    pub async fn broadcast_udp_discovery(&self) {
+        let tcp_port = *self.tcp_port.lock().unwrap();
+        let packet = NetworkPacket::udp_discovery(&self.host, tcp_port);
+        let bytes = match packet.serialize_line() {
+            Ok(b) => b,
+            Err(e) => {
+                log::error!("[udp] Failed to serialize UDP discovery packet: {}", e);
+                return;
+            }
+        };
+
+        let interfaces = Self::get_local_ipv4s();
+        log::debug!(
+            "[udp] Broadcasting UDP discovery packet ({} bytes) across {} interface(s)",
+            bytes.len(),
+            interfaces.len()
+        );
+
+        // Broadcast from each local interface IP to both subnet broadcast and 255.255.255.255
+        for (source_ip, subnet_bcast) in &interfaces {
+            if let Ok(sock) = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)) {
+                let _ = sock.set_broadcast(true);
+                let bind_addr = SocketAddrV4::new(*source_ip, 0);
+                if sock.bind(&bind_addr.into()).is_ok() {
+                    let std_sock: std::net::UdpSocket = sock.into();
+                    let dest_subnet = SocketAddrV4::new(*subnet_bcast, UDP_PORT);
+                    let dest_global = SocketAddrV4::new(Ipv4Addr::BROADCAST, UDP_PORT);
+                    let _ = std_sock.send_to(&bytes, dest_subnet);
+                    let _ = std_sock.send_to(&bytes, dest_global);
+                    log::debug!(
+                        "[udp] Sent discovery broadcast from {} -> {} and 255.255.255.255:{}",
+                        source_ip,
+                        dest_subnet,
+                        UDP_PORT
+                    );
+                }
+            }
+        }
+
+        // Also send on main bound UDP socket as fallback
+        let maybe_sock = self.udp_socket.lock().unwrap().clone();
+        if let Some(sock) = maybe_sock {
+            let _ = sock
+                .send_to(&bytes, SocketAddrV4::new(Ipv4Addr::BROADCAST, UDP_PORT))
+                .await;
+        }
+    }
+
+    pub async fn probe_ip(&self, ip_str: &str) -> Result<()> {
+        let ip: IpAddr = ip_str
+            .parse()
+            .with_context(|| format!("Invalid IP address: {}", ip_str))?;
+        let tcp_port = *self.tcp_port.lock().unwrap();
+        let packet = NetworkPacket::udp_discovery(&self.host, tcp_port);
+        let bytes = packet.serialize_line()?;
+
+        let dest = SocketAddr::new(ip, UDP_PORT);
+        log::info!("[udp] Sending directed UDP discovery probe to {}", dest);
+        let maybe_sock = self.udp_socket.lock().unwrap().clone();
+        if let Some(sock) = maybe_sock {
+            sock.send_to(&bytes, dest).await?;
+        }
+        Ok(())
+    }
+
+    fn handle_udp_datagram(self: &Arc<Self>, data: &[u8], sender_addr: SocketAddr) {
+        let ip = match sender_addr.ip() {
+            IpAddr::V4(v4) => IpAddr::V4(v4),
+            IpAddr::V6(v6) => {
+                if let Some(mapped) = v6.to_ipv4_mapped() {
+                    IpAddr::V4(mapped)
+                } else {
+                    IpAddr::V6(v6)
+                }
+            }
+        };
+
+        // Ignore our own local IPs
+        let local_ips = Self::get_local_ipv4s();
+        if let IpAddr::V4(v4) = ip {
+            if v4.is_loopback() || local_ips.iter().any(|(local, _)| *local == v4) {
+                return;
+            }
+        }
+
+        let packet = match NetworkPacket::parse_line(data) {
+            Ok(p) => p,
+            Err(e) => {
+                log::debug!(
+                    "[udp] Ignoring non-JSON or malformed UDP datagram from {}: {}",
+                    sender_addr,
+                    e
+                );
+                return;
+            }
+        };
+
+        if packet.packet_type != PACKET_TYPE_IDENTITY {
+            return;
+        }
+
+        let Some(device_id) = packet.get_str("deviceId").map(|s| s.to_string()) else {
+            return;
+        };
+
+        if device_id == self.host.device_id {
+            return;
+        }
+
+        let protocol_version = packet
+            .get_i64("protocolVersion")
+            .unwrap_or(PROTOCOL_VERSION as i64) as i32;
+        let tcp_port = packet
+            .get_i64("tcpPort")
+            .and_then(|p| u16::try_from(p).ok())
+            .unwrap_or(MIN_TCP_PORT);
+        let device_name = packet
+            .get_str("deviceName")
+            .unwrap_or("Unknown")
+            .to_string();
+
+        log::info!(
+            "[udp] Received UDP identity broadcast from '{}' (id={}, ip={}, tcpPort={}, proto=v{})",
+            device_name,
+            device_id,
+            ip,
+            tcp_port,
+            protocol_version
+        );
+
+        let daemon = Arc::clone(self);
+        tokio::spawn(async move {
+            daemon
+                .on_device_discovered(ip, tcp_port, device_id, protocol_version, Some(packet))
+                .await;
+        });
+    }
+
+    pub async fn on_device_discovered(
+        self: &Arc<Self>,
+        ip: IpAddr,
+        tcp_port: u16,
+        device_id: String,
+        protocol_version: i32,
+        udp_packet: Option<NetworkPacket>,
+    ) {
+        if !(MIN_TCP_PORT..=MAX_TCP_PORT).contains(&tcp_port) {
+            log::warn!(
+                "[discovery] Ignoring device {} with out-of-range TCP port {}",
+                device_id,
+                tcp_port
+            );
+            return;
+        }
+
+        // Check if this device already has an active, healthy TLS connection at this IP
+        // (Matches Soduto's ConnectionProviderDelegate.isNewConnectionNeeded)
+        {
+            let mut devices = self.devices.lock().unwrap();
+            if let Some(entry) = devices.get_mut(&device_id) {
+                if entry.view.reachable
+                    && entry.sender.is_some()
+                    && entry.view.address == ip.to_string()
+                {
+                    entry.view.last_seen_secs = current_secs();
+                    log::debug!(
+                        "[discovery] Device '{}' ({}) is already connected and online at {}, skipping redundant outbound connection",
+                        entry.view.device_name,
+                        device_id,
+                        ip
+                    );
+                    return;
+                }
+            }
+        }
+
+        // Rate-limit connection attempts to same device within 1500ms
+        let now = current_millis();
+        {
+            let mut attempts = self.last_discovery_attempt_ms.lock().unwrap();
+            if let Some(last) = attempts.get(&device_id) {
+                if now - *last < 1500 {
+                    log::debug!(
+                        "[discovery] Skipping duplicate discovery of {} ({}ms since last attempt)",
+                        device_id,
+                        now - *last
+                    );
+                    return;
+                }
+            }
+            attempts.insert(device_id.clone(), now);
+        }
+
+        let target_addr = SocketAddr::new(ip, tcp_port);
+        log::info!(
+            "[tcp-out] Connecting to discovered device {} at {} (proto=v{})...",
+            device_id,
+            target_addr,
+            protocol_version
+        );
+
+        match tokio::time::timeout(Duration::from_secs(5), TcpStream::connect(target_addr)).await {
+            Ok(Ok(tcp_stream)) => {
+                if let Err(e) = self
+                    .handle_outbound_tcp(
+                        tcp_stream,
+                        target_addr,
+                        device_id.clone(),
+                        protocol_version,
+                        udp_packet,
+                    )
+                    .await
+                {
+                    log::warn!(
+                        "[tcp-out] Outbound session with {} ({}) ended: {:?}",
+                        device_id,
+                        target_addr,
+                        e
+                    );
+                }
+            }
+            Ok(Err(e)) => {
+                log::warn!(
+                    "[tcp-out] TCP connect to {} failed ({}), sending reverse UDP discovery packet",
+                    target_addr,
+                    e
+                );
+                let _ = self.probe_ip(&ip.to_string()).await;
+            }
+            Err(_) => {
+                log::warn!(
+                    "[tcp-out] TCP connect to {} timed out, sending reverse UDP discovery packet",
+                    target_addr
+                );
+                let _ = self.probe_ip(&ip.to_string()).await;
+            }
+        }
+    }
+
+    /// Outbound TCP Connection Flow (`LanLinkProvider::tcpSocketConnected` + `LanLinkProvider::encrypted`):
+    /// 1. Send plaintext connection/identity packet
+    /// 2. Act as TLS SERVER (`TlsAcceptor`)
+    /// 3. Send our encrypted full identity packet and read peer's encrypted identity packet (if v8)
+    async fn handle_outbound_tcp(
+        self: &Arc<Self>,
+        mut tcp_stream: TcpStream,
+        peer_addr: SocketAddr,
+        expected_device_id: String,
+        protocol_version: i32,
+        udp_identity_fallback: Option<NetworkPacket>,
+    ) -> Result<()> {
+        Self::configure_tcp_socket(&tcp_stream);
+
+        let conn_packet = if protocol_version >= 8 {
+            NetworkPacket::tcp_connection_packet(&self.host, &expected_device_id, protocol_version)
+        } else {
+            NetworkPacket::full_identity(&self.host)
+        };
+        let conn_bytes = conn_packet.serialize_line()?;
+        tcp_stream.write_all(&conn_bytes).await?;
+        tcp_stream.flush().await?;
+        log::debug!(
+            "[tcp-out] Sent plaintext connection packet to {} ({} bytes), starting TLS Server handshake...",
+            peer_addr,
+            conn_bytes.len()
+        );
+
+        let mut tls_stream = tokio::time::timeout(
+            Duration::from_secs(6),
+            self.tls_acceptor.accept(tcp_stream),
+        )
+        .await
+        .context("TLS Server handshake timed out")?
+        .context("TLS Server handshake failed")?;
+
+        let peer_cert_der = tls_stream
+            .get_ref()
+            .1
+            .peer_certificates()
+            .and_then(|certs| certs.first())
+            .map(|c| c.as_ref().to_vec())
+            .ok_or_else(|| anyhow!("Peer did not present a client X.509 certificate during TLS handshake"))?;
+
+        log::info!(
+            "[tls] Outbound TCP -> TLS Server handshake succeeded with {} (cert SHA256={})",
+            peer_addr,
+            sha256_fingerprint(&peer_cert_der)
+        );
+
+        // In Protocol v8, both sides exchange their full identity packet over the encrypted TLS stream
+        let my_identity_bytes = NetworkPacket::full_identity(&self.host).serialize_line()?;
+        tls_stream.write_all(&my_identity_bytes).await?;
+        tls_stream.flush().await?;
+        log::debug!(
+            "[tls] Sent encrypted full identity packet to {}",
+            peer_addr
+        );
+
+        let mut buf_reader = BufReader::new(tls_stream);
+        let mut first_line = String::new();
+
+        let final_identity = if protocol_version >= 8 {
+            let n = tokio::time::timeout(
+                Duration::from_secs(3),
+                buf_reader.read_line(&mut first_line),
+            )
+            .await
+            .context("Timed out waiting for peer encrypted identity packet (v8)")??;
+            if n == 0 {
+                return Err(anyhow!("Peer closed TLS stream before sending encrypted identity"));
+            }
+            let pkt = NetworkPacket::parse_line(first_line.as_bytes())?;
+            log::info!(
+                "[tls] Received encrypted v8 identity packet from '{}'",
+                pkt.get_str("deviceName").unwrap_or("Unknown")
+            );
+            pkt
+        } else {
+            udp_identity_fallback.ok_or_else(|| anyhow!("Missing v7 identity packet"))?
+        };
+
+        self.run_authenticated_link(buf_reader, peer_addr, final_identity, peer_cert_der)
+            .await
+    }
+
+    /// Inbound TCP Connection Flow (`LanLinkProvider::newTcpConnection` + `tcpPacketReceived` + `encrypted`):
+    /// 1. Read peer's plaintext connection/identity packet from TCP socket
+    /// 2. Act as TLS CLIENT (`TlsConnector`)
+    /// 3. Send our encrypted full identity packet and read peer's encrypted identity packet (if v8)
+    async fn handle_inbound_tcp(
+        self: &Arc<Self>,
+        tcp_stream: TcpStream,
+        peer_addr: SocketAddr,
+    ) -> Result<()> {
+        Self::configure_tcp_socket(&tcp_stream);
+        let mut plain_reader = BufReader::new(tcp_stream);
+        let mut line = String::new();
+
+        let n = tokio::time::timeout(Duration::from_secs(3), plain_reader.read_line(&mut line))
+            .await
+            .context("Timed out waiting for plaintext connection packet on inbound TCP")??;
+        if n == 0 {
+            return Err(anyhow!("Inbound TCP closed before sending connection packet"));
+        }
+
+        let initial_packet = NetworkPacket::parse_line(line.as_bytes())?;
+        if initial_packet.packet_type != PACKET_TYPE_IDENTITY {
+            return Err(anyhow!(
+                "Expected kdeconnect.identity packet on inbound TCP, got {}",
+                initial_packet.packet_type
+            ));
+        }
+
+        let peer_device_id = initial_packet
+            .get_str("deviceId")
+            .ok_or_else(|| anyhow!("Inbound connection packet missing deviceId"))?
+            .to_string();
+        let peer_proto = initial_packet
+            .get_i64("protocolVersion")
+            .unwrap_or(PROTOCOL_VERSION as i64) as i32;
+
+        log::info!(
+            "[tcp-in] Received plaintext connection packet from {} (deviceId={}, proto=v{}), starting TLS Client handshake...",
+            peer_addr,
+            peer_device_id,
+            peer_proto
+        );
+
+        let raw_tcp = plain_reader.into_inner();
+        let server_name = ServerName::try_from("kdeconnect.local")
+            .unwrap_or_else(|_| ServerName::IpAddress(peer_addr.ip().into()));
+
+        let mut tls_stream = tokio::time::timeout(
+            Duration::from_secs(6),
+            self.tls_connector.connect(server_name, raw_tcp),
+        )
+        .await
+        .context("TLS Client handshake timed out")?
+        .context("TLS Client handshake failed")?;
+
+        let peer_cert_der = tls_stream
+            .get_ref()
+            .1
+            .peer_certificates()
+            .and_then(|certs| certs.first())
+            .map(|c| c.as_ref().to_vec())
+            .ok_or_else(|| anyhow!("Peer did not present a server X.509 certificate during TLS handshake"))?;
+
+        log::info!(
+            "[tls] Inbound TCP -> TLS Client handshake succeeded with {} (cert SHA256={})",
+            peer_addr,
+            sha256_fingerprint(&peer_cert_der)
+        );
+
+        if peer_proto >= 8 {
+            let my_identity_bytes = NetworkPacket::full_identity(&self.host).serialize_line()?;
+            tls_stream.write_all(&my_identity_bytes).await?;
+            tls_stream.flush().await?;
+            log::debug!(
+                "[tls] Sent encrypted full identity packet to {} (inbound TCP)",
+                peer_addr
+            );
+
+            let mut buf_reader = BufReader::new(tls_stream);
+            let mut sec_line = String::new();
+            let n = tokio::time::timeout(
+                Duration::from_secs(3),
+                buf_reader.read_line(&mut sec_line),
+            )
+            .await
+            .context("Timed out waiting for peer encrypted v8 identity on inbound TCP")??;
+            if n == 0 {
+                return Err(anyhow!(
+                    "Peer closed inbound TLS stream before sending encrypted identity"
+                ));
+            }
+            let sec_pkt = NetworkPacket::parse_line(sec_line.as_bytes())?;
+            log::info!(
+                "[tls] Received encrypted v8 identity packet from '{}' (id={})",
+                sec_pkt.get_str("deviceName").unwrap_or("Unknown"),
+                sec_pkt.get_str("deviceId").unwrap_or("?")
+            );
+            self.run_authenticated_link(buf_reader, peer_addr, sec_pkt, peer_cert_der)
+                .await
+        } else {
+            let buf_reader = BufReader::new(tls_stream);
+            self.run_authenticated_link(buf_reader, peer_addr, initial_packet, peer_cert_der)
+                .await
+        }
+    }
+
+    async fn run_authenticated_link<S>(
+        self: &Arc<Self>,
+        buf_reader: BufReader<S>,
+        peer_addr: SocketAddr,
+        identity_packet: NetworkPacket,
+        peer_cert_der: Vec<u8>,
+    ) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let device_id = identity_packet
+            .get_str("deviceId")
+            .ok_or_else(|| anyhow!("Identity packet missing deviceId"))?
+            .to_string();
+        let device_name = identity_packet
+            .get_str("deviceName")
+            .unwrap_or("KDE Connect Device")
+            .to_string();
+        let device_type = identity_packet
+            .get_str("deviceType")
+            .unwrap_or("phone")
+            .to_string();
+        let protocol_version = identity_packet
+            .get_i64("protocolVersion")
+            .unwrap_or(PROTOCOL_VERSION as i64) as i32;
+        let incoming_caps = identity_packet.get_string_list("incomingCapabilities");
+        let outgoing_caps = identity_packet.get_string_list("outgoingCapabilities");
+
+        if let Some(cert_cn) = extract_cert_common_name(&peer_cert_der) {
+            if cert_cn != device_id {
+                log::warn!(
+                    "[tls] Certificate CN '{}' differs from identity packet deviceId '{}'",
+                    cert_cn,
+                    device_id
+                );
+            }
+        }
+
+        // Verify pinned certificate if this device is already trusted/paired
+        let is_trusted = {
+            let trusted = self.trusted_devices.lock().unwrap();
+            if let Some(rec) = trusted.get(&device_id) {
+                if rec.cert_der != peer_cert_der {
+                    log::error!(
+                        "[tls] SECURITY ALERT: Device {} ('{}') presented a different certificate than pinned! Aborting connection.",
+                        device_id,
+                        device_name
+                    );
+                    return Err(anyhow!("Certificate mismatch for paired device {}", device_id));
+                }
+                true
+            } else {
+                false
+            }
+        };
+
+        let cert_fp = sha256_fingerprint(&peer_cert_der);
+        let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (abort_tx, mut abort_rx) = oneshot::channel::<()>();
+
+        let generation = {
+            let mut devices = self.devices.lock().unwrap();
+            let mut prev_abort: Option<oneshot::Sender<()>> = None;
+            let next_gen = if let Some(existing) = devices.get_mut(&device_id) {
+                prev_abort = existing.abort_tx.take();
+                existing.connection_generation + 1
+            } else {
+                1
+            };
+
+            if let Some(old_abort) = prev_abort {
+                let _ = old_abort.send(());
+            }
+
+            let pair_state = if is_trusted {
+                PairState::Paired
+            } else {
+                devices
+                    .get(&device_id)
+                    .map(|d| d.view.pair_state)
+                    .unwrap_or(PairState::NotPaired)
+            };
+
+            let verification_key =
+                compute_verification_key(&self.host.cert_der, &peer_cert_der, current_secs());
+
+            devices.insert(
+                device_id.clone(),
+                DeviceEntry {
+                    view: DeviceView {
+                        device_id: device_id.clone(),
+                        device_name: device_name.clone(),
+                        device_type,
+                        protocol_version,
+                        address: peer_addr.ip().to_string(),
+                        tcp_port: peer_addr.port(),
+                        reachable: true,
+                        pair_state,
+                        verification_key,
+                        cert_fingerprint: Some(cert_fp),
+                        incoming_capabilities: incoming_caps.clone(),
+                        outgoing_capabilities: outgoing_caps.clone(),
+                        last_seen_secs: current_secs(),
+                    },
+                    peer_cert_der: Some(peer_cert_der.clone()),
+                    sender: Some(tx),
+                    abort_tx: Some(abort_tx),
+                    connection_generation: next_gen,
+                },
+            );
+            next_gen
+        };
+
+        log::info!(
+            "[device] Device '{}' ({}) is now ONLINE at {} (paired={}, caps_in={:?})",
+            device_name,
+            device_id,
+            peer_addr.ip(),
+            is_trusted,
+            incoming_caps
+        );
+        self.notify_ui();
+
+        let (read_half, mut write_half) = tokio::io::split(buf_reader);
+        let mut line_reader = BufReader::new(read_half);
+        let mut line = String::new();
+
+        loop {
+            tokio::select! {
+                _ = &mut abort_rx => {
+                    log::debug!(
+                        "[device] Connection gen {} for '{}' ({}) superseded by newer session, closing old link",
+                        generation,
+                        device_name,
+                        device_id
+                    );
+                    break;
+                }
+                maybe_out = rx.recv() => {
+                    match maybe_out {
+                        Some(bytes) => {
+                            if let Err(e) = write_half.write_all(&bytes).await {
+                                log::warn!("[device] Write error to '{}': {}", device_name, e);
+                                break;
+                            }
+                            let _ = write_half.flush().await;
+                        }
+                        None => break,
+                    }
+                }
+                read_res = line_reader.read_line(&mut line) => {
+                    match read_res {
+                        Ok(0) => {
+                            log::info!("[device] Device '{}' ({}) closed the TLS connection", device_name, device_id);
+                            break;
+                        }
+                        Ok(_) => {
+                            let raw_line = line.clone();
+                            line.clear();
+                            if let Ok(mut devices) = self.devices.lock() {
+                                if let Some(entry) = devices.get_mut(&device_id) {
+                                    entry.view.last_seen_secs = current_secs();
+                                }
+                            }
+                            match NetworkPacket::parse_line(raw_line.as_bytes()) {
+                                Ok(pkt) => {
+                                    self.handle_incoming_packet(&device_id, &device_name, peer_addr.ip(), &peer_cert_der, pkt).await;
+                                }
+                                Err(e) => {
+                                    log::warn!("[device] Failed to parse packet from '{}': {} | raw={}", device_name, e, raw_line.trim());
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("[device] Read error from '{}' ({}): {}", device_name, device_id, e);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Mark offline if this was the latest active connection generation
+        {
+            let mut devices = self.devices.lock().unwrap();
+            if let Some(entry) = devices.get_mut(&device_id) {
+                if entry.connection_generation == generation {
+                    entry.view.reachable = false;
+                    entry.sender = None;
+                    entry.abort_tx = None;
+                    log::info!(
+                        "[device] Device '{}' ({}) marked OFFLINE",
+                        device_name,
+                        device_id
+                    );
+                }
+            }
+        }
+        self.notify_ui();
+
+        Ok(())
+    }
+
+    async fn handle_incoming_packet(
+        self: &Arc<Self>,
+        device_id: &str,
+        device_name: &str,
+        peer_ip: IpAddr,
+        peer_cert_der: &[u8],
+        packet: NetworkPacket,
+    ) {
+        log::info!(
+            "[packet-in] From '{}' ({}): type='{}' body={} payloadSize={:?} transferInfo={:?}",
+            device_name,
+            device_id,
+            packet.packet_type,
+            serde_json::to_string(&packet.body).unwrap_or_default(),
+            packet.payload_size,
+            packet.payload_transfer_info
+        );
+
+        match packet.packet_type.as_str() {
+            PACKET_TYPE_PAIR => {
+                self.handle_pair_packet(device_id, device_name, peer_cert_der, &packet);
+            }
+            PACKET_TYPE_PING => {
+                let msg = packet.get_str("message").unwrap_or("Ping!");
+                log::info!("[ping] Received Ping from '{}': \"{}\"", device_name, msg);
+            }
+            PACKET_TYPE_SHARE_REQUEST => {
+                self.handle_share_request(device_id, device_name, peer_ip, packet)
+                    .await;
+            }
+            PACKET_TYPE_SHARE_REQUEST_UPDATE => {
+                log::info!(
+                    "[share-in] Share update packet from '{}': {:?}",
+                    device_name,
+                    packet.body
+                );
+            }
+            other => {
+                log::debug!(
+                    "[packet-in] Ignoring unhandled packet type '{}' from '{}'",
+                    other,
+                    device_name
+                );
+            }
+        }
+    }
+
+    fn handle_pair_packet(
+        &self,
+        device_id: &str,
+        device_name: &str,
+        peer_cert_der: &[u8],
+        packet: &NetworkPacket,
+    ) {
+        let wants_pair = packet.get_bool("pair").unwrap_or(false);
+        let timestamp = packet.get_i64("timestamp").unwrap_or_else(current_secs);
+
+        let mut devices = self.devices.lock().unwrap();
+        let Some(entry) = devices.get_mut(device_id) else {
+            return;
+        };
+
+        if wants_pair {
+            match entry.view.pair_state {
+                PairState::Requested => {
+                    // We requested pairing and peer accepted!
+                    log::info!(
+                        "[pair] Device '{}' ({}) ACCEPTED our pairing request!",
+                        device_name,
+                        device_id
+                    );
+                    entry.view.pair_state = PairState::Paired;
+                    entry.view.verification_key = None;
+                    let rec = TrustedDeviceRecord {
+                        device_id: device_id.to_string(),
+                        device_name: device_name.to_string(),
+                        device_type: entry.view.device_type.clone(),
+                        protocol_version: entry.view.protocol_version,
+                        cert_der: peer_cert_der.to_vec(),
+                    };
+                    drop(devices);
+                    self.trusted_devices
+                        .lock()
+                        .unwrap()
+                        .insert(device_id.to_string(), rec);
+                    self.save_trusted_devices();
+                }
+                PairState::NotPaired | PairState::Paired => {
+                    let vkey =
+                        compute_verification_key(&self.host.cert_der, peer_cert_der, timestamp);
+                    log::info!(
+                        "[pair] Incoming pairing request from '{}' ({})! Verification Key: {:?}",
+                        device_name,
+                        device_id,
+                        vkey
+                    );
+                    entry.view.pair_state = PairState::RequestedByPeer;
+                    entry.view.verification_key = vkey;
+                    drop(devices);
+                }
+                PairState::RequestedByPeer => {
+                    log::debug!(
+                        "[pair] Duplicate pairing request from '{}', still waiting for user confirmation",
+                        device_name
+                    );
+                    drop(devices);
+                }
+            }
+        } else {
+            log::info!(
+                "[pair] Device '{}' ({}) sent UNPAIR / REJECT packet",
+                device_name,
+                device_id
+            );
+            entry.view.pair_state = PairState::NotPaired;
+            entry.view.verification_key = None;
+            drop(devices);
+            self.trusted_devices.lock().unwrap().remove(device_id);
+            self.save_trusted_devices();
+        }
+
+        self.notify_ui();
+    }
+
+    pub fn send_packet_to_device(&self, device_id: &str, packet: &NetworkPacket) -> Result<()> {
+        let bytes = packet.serialize_line()?;
+        let devices = self.devices.lock().unwrap();
+        let entry = devices
+            .get(device_id)
+            .ok_or_else(|| anyhow!("Device {} not found", device_id))?;
+        let sender = entry
+            .sender
+            .as_ref()
+            .ok_or_else(|| anyhow!("Device '{}' is currently offline", entry.view.device_name))?;
+        sender
+            .send(bytes)
+            .map_err(|_| anyhow!("Failed to send packet to device channel"))?;
+        log::info!(
+            "[packet-out] Sent '{}' to '{}' ({})",
+            packet.packet_type,
+            entry.view.device_name,
+            device_id
+        );
+        Ok(())
+    }
+
+    pub fn request_pairing(&self, device_id: &str) -> Result<()> {
+        let ts = current_secs();
+        let pkt = NetworkPacket::pair_request(ts);
+        self.send_packet_to_device(device_id, &pkt)?;
+
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry.view.pair_state = PairState::Requested;
+                if let Some(peer_cert) = &entry.peer_cert_der {
+                    entry.view.verification_key =
+                        compute_verification_key(&self.host.cert_der, peer_cert, ts);
+                }
+                log::info!(
+                    "[pair] Sent pairing request to '{}' (ts={}, verification_key={:?})",
+                    entry.view.device_name,
+                    ts,
+                    entry.view.verification_key
+                );
+            }
+        }
+        self.notify_ui();
+        Ok(())
+    }
+
+    pub fn accept_pairing(&self, device_id: &str) -> Result<()> {
+        let pkt = NetworkPacket::pair_accept();
+        self.send_packet_to_device(device_id, &pkt)?;
+
+        let mut trusted_record = None;
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry.view.pair_state = PairState::Paired;
+                entry.view.verification_key = None;
+                if let Some(cert_der) = &entry.peer_cert_der {
+                    trusted_record = Some(TrustedDeviceRecord {
+                        device_id: entry.view.device_id.clone(),
+                        device_name: entry.view.device_name.clone(),
+                        device_type: entry.view.device_type.clone(),
+                        protocol_version: entry.view.protocol_version,
+                        cert_der: cert_der.clone(),
+                    });
+                }
+                log::info!(
+                    "[pair] Accepted pairing with '{}' ({})",
+                    entry.view.device_name,
+                    device_id
+                );
+            }
+        }
+
+        if let Some(rec) = trusted_record {
+            self.trusted_devices
+                .lock()
+                .unwrap()
+                .insert(device_id.to_string(), rec);
+            self.save_trusted_devices();
+        }
+
+        self.notify_ui();
+        Ok(())
+    }
+
+    pub fn unpair_or_reject(&self, device_id: &str) -> Result<()> {
+        let pkt = NetworkPacket::unpair();
+        let _ = self.send_packet_to_device(device_id, &pkt);
+
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry.view.pair_state = PairState::NotPaired;
+                entry.view.verification_key = None;
+                log::info!(
+                    "[pair] Unpaired / rejected pairing with '{}' ({})",
+                    entry.view.device_name,
+                    device_id
+                );
+            }
+        }
+        self.trusted_devices.lock().unwrap().remove(device_id);
+        self.save_trusted_devices();
+        self.notify_ui();
+        Ok(())
+    }
+
+    /// Handles incoming `kdeconnect.share.request` (File payload, Text, or URL)
+    async fn handle_share_request(
+        self: &Arc<Self>,
+        device_id: &str,
+        device_name: &str,
+        peer_ip: IpAddr,
+        packet: NetworkPacket,
+    ) {
+        // Case 1: File transfer via auxiliary TLS payload socket
+        if let Some(port) = packet.payload_port() {
+            let raw_filename = packet
+                .get_str("filename")
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("kdeconnect-{}.bin", current_millis()));
+            let clean_name = Path::new(&raw_filename)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("shared_file")
+                .to_string();
+            let total_bytes = packet.payload_size.unwrap_or(0).max(0) as u64;
+
+            let transfer_id = Uuid::new_v4().to_string();
+            let dest_path = self.unique_download_path(&clean_name);
+
+            log::info!(
+                "[share-in] Starting file download '{}' ({} bytes) from '{}' at {}:{} -> {:?}",
+                clean_name,
+                total_bytes,
+                device_name,
+                peer_ip,
+                port,
+                dest_path
+            );
+
+            self.upsert_transfer(TransferItem {
+                id: transfer_id.clone(),
+                device_id: device_id.to_string(),
+                device_name: device_name.to_string(),
+                direction: "Incoming".to_string(),
+                kind: "File".to_string(),
+                filename: clean_name.clone(),
+                total_bytes,
+                transferred_bytes: 0,
+                status: "InProgress".to_string(),
+                saved_path: None,
+                text_content: None,
+                url_content: None,
+                error: None,
+                timestamp_ms: current_millis(),
+            });
+
+            let daemon = Arc::clone(self);
+            let dev_id = device_id.to_string();
+            let dev_name = device_name.to_string();
+            tokio::spawn(async move {
+                match daemon
+                    .download_payload_file(
+                        &transfer_id,
+                        &dev_id,
+                        &dev_name,
+                        peer_ip,
+                        port,
+                        total_bytes,
+                        &dest_path,
+                    )
+                    .await
+                {
+                    Ok(saved) => {
+                        log::info!(
+                            "[share-in] Completed file download '{}' -> {:?}",
+                            clean_name,
+                            saved
+                        );
+                        daemon.finish_transfer(
+                            &transfer_id,
+                            "Completed",
+                            Some(saved.to_string_lossy().to_string()),
+                            None,
+                        );
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "[share-in] File download '{}' failed: {:?}",
+                            clean_name,
+                            e
+                        );
+                        daemon.finish_transfer(
+                            &transfer_id,
+                            "Failed",
+                            None,
+                            Some(e.to_string()),
+                        );
+                    }
+                }
+            });
+            return;
+        }
+
+        // Case 2: Shared Text
+        if let Some(text) = packet.get_str("text") {
+            let filename = format!("shared-text-{}.txt", current_millis());
+            let save_path = self.unique_download_path(&filename);
+            let _ = fs::write(&save_path, text.as_bytes());
+            log::info!(
+                "[share-in] Received shared text from '{}' ({} chars), saved to {:?}",
+                device_name,
+                text.len(),
+                save_path
+            );
+
+            // Check if the last non-empty line is a valid http/https URL (matches kdeconnect-kde SharePlugin::receivePacket)
+            let extracted_url = text
+                .lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty())
+                .last()
+                .filter(|cand| cand.starts_with("http://") || cand.starts_with("https://"))
+                .map(|s| s.to_string());
+
+            self.upsert_transfer(TransferItem {
+                id: Uuid::new_v4().to_string(),
+                device_id: device_id.to_string(),
+                device_name: device_name.to_string(),
+                direction: "Incoming".to_string(),
+                kind: "Text".to_string(),
+                filename: format!("Text: {}", text.chars().take(36).collect::<String>()),
+                total_bytes: text.len() as u64,
+                transferred_bytes: text.len() as u64,
+                status: "Completed".to_string(),
+                saved_path: Some(save_path.to_string_lossy().to_string()),
+                text_content: Some(text.to_string()),
+                url_content: extracted_url,
+                error: None,
+                timestamp_ms: current_millis(),
+            });
+            return;
+        }
+
+        // Case 3: Shared URL -> Automatically open in default macOS browser (matches kdeconnect-kde & Soduto)
+        if let Some(url) = packet.get_str("url") {
+            let trimmed_url = url.trim();
+            log::info!(
+                "[share-in] Received shared URL from '{}': {}",
+                device_name,
+                trimmed_url
+            );
+
+            let is_safe_scheme = trimmed_url.starts_with("http://")
+                || trimmed_url.starts_with("https://")
+                || trimmed_url.starts_with("mailto:");
+
+            let mut open_err: Option<String> = None;
+            if is_safe_scheme {
+                match open::that(trimmed_url) {
+                    Ok(()) => {
+                        log::info!(
+                            "[share-in] Auto-opened shared URL in default browser: {}",
+                            trimmed_url
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "[share-in] Failed to auto-open shared URL '{}': {}",
+                            trimmed_url,
+                            e
+                        );
+                        open_err = Some(format!("Failed to auto-open: {}", e));
+                    }
+                }
+            } else {
+                log::warn!(
+                    "[share-in] Blocked auto-opening URL with non-http(s)/mailto scheme: {}",
+                    trimmed_url
+                );
+            }
+
+            self.upsert_transfer(TransferItem {
+                id: Uuid::new_v4().to_string(),
+                device_id: device_id.to_string(),
+                device_name: device_name.to_string(),
+                direction: "Incoming".to_string(),
+                kind: "Url".to_string(),
+                filename: trimmed_url.to_string(),
+                total_bytes: 0,
+                transferred_bytes: 0,
+                status: "Completed".to_string(),
+                saved_path: None,
+                text_content: None,
+                url_content: Some(trimmed_url.to_string()),
+                error: open_err,
+                timestamp_ms: current_millis(),
+            });
+        }
+    }
+
+    async fn download_payload_file(
+        &self,
+        transfer_id: &str,
+        _device_id: &str,
+        _device_name: &str,
+        peer_ip: IpAddr,
+        port: u16,
+        expected_bytes: u64,
+        dest_path: &Path,
+    ) -> Result<PathBuf> {
+        let target = SocketAddr::new(peer_ip, port);
+        log::debug!("[share-in] Connecting to payload socket at {}...", target);
+        let tcp = tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(target))
+            .await
+            .context("Payload TCP connection timed out")?
+            .context("Payload TCP connection failed")?;
+
+        let server_name = ServerName::try_from("kdeconnect.local")
+            .unwrap_or_else(|_| ServerName::IpAddress(peer_ip.into()));
+
+        let mut tls_stream = tokio::time::timeout(
+            Duration::from_secs(10),
+            self.tls_connector.connect(server_name, tcp),
+        )
+        .await
+        .context("Payload TLS handshake timed out")?
+        .context("Payload TLS handshake failed")?;
+
+        log::info!(
+            "[share-in] Payload TLS client connected to {}, streaming to {:?}",
+            target,
+            dest_path
+        );
+
+        let mut file = tokio::fs::File::create(dest_path)
+            .await
+            .context("Failed to create destination file")?;
+
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut received: u64 = 0;
+        let mut last_notify_ms = 0i64;
+
+        loop {
+            let n = tls_stream.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            file.write_all(&buf[..n]).await?;
+            received += n as u64;
+
+            let now = current_millis();
+            if now - last_notify_ms >= 120 || (expected_bytes > 0 && received >= expected_bytes) {
+                last_notify_ms = now;
+                self.update_transfer_progress(transfer_id, received);
+            }
+
+            if expected_bytes > 0 && received >= expected_bytes {
+                break;
+            }
+        }
+
+        file.flush().await?;
+        self.update_transfer_progress(transfer_id, received);
+        Ok(dest_path.to_path_buf())
+    }
+
+    /// Sends a local file to a paired KDE Connect device (`CompositeUploadJob` + `UploadJob`)
+    pub async fn send_file_to_device(
+        self: &Arc<Self>,
+        device_id: &str,
+        file_path: &Path,
+    ) -> Result<String> {
+        let metadata = tokio::fs::metadata(file_path)
+            .await
+            .with_context(|| format!("Cannot read file metadata for {:?}", file_path))?;
+        if !metadata.is_file() {
+            return Err(anyhow!("{:?} is not a regular file", file_path));
+        }
+
+        let file_size = metadata.len();
+        let filename = file_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("shared_file")
+            .to_string();
+
+        let device_name = {
+            let devices = self.devices.lock().unwrap();
+            let entry = devices
+                .get(device_id)
+                .ok_or_else(|| anyhow!("Device {} not found", device_id))?;
+            if entry.view.pair_state != PairState::Paired {
+                return Err(anyhow!("Device '{}' is not paired", entry.view.device_name));
+            }
+            entry.view.device_name.clone()
+        };
+
+        // Bind a temporary TCP listener on 1739..=1764 for the payload transfer
+        let mut payload_listener = None;
+        let mut payload_port = MIN_PAYLOAD_PORT;
+        for port in MIN_PAYLOAD_PORT..=MAX_PAYLOAD_PORT {
+            if let Ok(listener) =
+                TcpListener::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)).await
+            {
+                payload_port = port;
+                payload_listener = Some(listener);
+                break;
+            }
+        }
+        let listener = payload_listener.ok_or_else(|| {
+            anyhow!(
+                "No available payload port in range {}..={}",
+                MIN_PAYLOAD_PORT,
+                MAX_PAYLOAD_PORT
+            )
+        })?;
+
+        log::info!(
+            "[share-out] Bound payload TCP server on port {} for uploading '{}' ({} bytes) to '{}'",
+            payload_port,
+            filename,
+            file_size,
+            device_name
+        );
+
+        let now_ms = current_millis();
+        let share_packet = NetworkPacket::share_file_header(
+            &filename,
+            file_size,
+            now_ms,
+            now_ms,
+            payload_port,
+        );
+
+        let transfer_id = Uuid::new_v4().to_string();
+        self.upsert_transfer(TransferItem {
+            id: transfer_id.clone(),
+            device_id: device_id.to_string(),
+            device_name: device_name.clone(),
+            direction: "Outgoing".to_string(),
+            kind: "File".to_string(),
+            filename: filename.clone(),
+            total_bytes: file_size,
+            transferred_bytes: 0,
+            status: "InProgress".to_string(),
+            saved_path: Some(file_path.to_string_lossy().to_string()),
+            text_content: None,
+            url_content: None,
+            error: None,
+            timestamp_ms: now_ms,
+        });
+
+        // Send the share request header over the control TLS channel
+        self.send_packet_to_device(device_id, &share_packet)?;
+
+        let daemon = Arc::clone(self);
+        let path_buf = file_path.to_path_buf();
+        let tid = transfer_id.clone();
+        let fname = filename.clone();
+        tokio::spawn(async move {
+            match daemon
+                .serve_outgoing_payload(&tid, listener, &path_buf, file_size)
+                .await
+            {
+                Ok(()) => {
+                    log::info!(
+                        "[share-out] Successfully uploaded '{}' ({} bytes) to '{}'",
+                        fname,
+                        file_size,
+                        device_name
+                    );
+                    daemon.finish_transfer(
+                        &tid,
+                        "Completed",
+                        Some(path_buf.to_string_lossy().to_string()),
+                        None,
+                    );
+                }
+                Err(e) => {
+                    log::error!(
+                        "[share-out] Upload of '{}' to '{}' failed: {:?}",
+                        fname,
+                        device_name,
+                        e
+                    );
+                    daemon.finish_transfer(&tid, "Failed", None, Some(e.to_string()));
+                }
+            }
+        });
+
+        Ok(transfer_id)
+    }
+
+    async fn serve_outgoing_payload(
+        &self,
+        transfer_id: &str,
+        listener: TcpListener,
+        file_path: &Path,
+        file_size: u64,
+    ) -> Result<()> {
+        let (tcp_stream, peer_addr) =
+            tokio::time::timeout(Duration::from_secs(30), listener.accept())
+                .await
+                .context("Timed out waiting for peer to connect to payload port")??;
+
+        log::info!(
+            "[share-out] Peer {} connected to payload socket, starting TLS Server handshake...",
+            peer_addr
+        );
+
+        let mut tls_stream = tokio::time::timeout(
+            Duration::from_secs(10),
+            self.tls_acceptor.accept(tcp_stream),
+        )
+        .await
+        .context("Payload TLS Server handshake timed out")?
+        .context("Payload TLS Server handshake failed")?;
+
+        log::info!(
+            "[share-out] Payload TLS Server handshake succeeded with {}, streaming {} bytes...",
+            peer_addr,
+            file_size
+        );
+
+        let mut file = tokio::fs::File::open(file_path).await?;
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut sent: u64 = 0;
+        let mut last_notify_ms = 0i64;
+
+        loop {
+            let n = file.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            tls_stream.write_all(&buf[..n]).await?;
+            sent += n as u64;
+
+            let now = current_millis();
+            if now - last_notify_ms >= 120 || sent >= file_size {
+                last_notify_ms = now;
+                self.update_transfer_progress(transfer_id, sent);
+            }
+        }
+
+        tls_stream.flush().await?;
+        let _ = tls_stream.shutdown().await;
+        self.update_transfer_progress(transfer_id, sent);
+        Ok(())
+    }
+
+    fn unique_download_path(&self, filename: &str) -> PathBuf {
+        let candidate = self.downloads_dir.join(filename);
+        if !candidate.exists() {
+            return candidate;
+        }
+        let stem = Path::new(filename)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file");
+        let ext = Path::new(filename)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| format!(".{}", e))
+            .unwrap_or_default();
+
+        for i in 1..10000 {
+            let next = self.downloads_dir.join(format!("{} ({}){}", stem, i, ext));
+            if !next.exists() {
+                return next;
+            }
+        }
+        self.downloads_dir
+            .join(format!("{}-{}", current_millis(), filename))
+    }
+
+    fn upsert_transfer(&self, item: TransferItem) {
+        let mut guard = self.transfers.lock().unwrap();
+        if let Some(existing) = guard.iter_mut().find(|t| t.id == item.id) {
+            *existing = item;
+        } else {
+            guard.insert(0, item);
+        }
+        drop(guard);
+        self.notify_ui();
+    }
+
+    fn update_transfer_progress(&self, transfer_id: &str, bytes: u64) {
+        let mut guard = self.transfers.lock().unwrap();
+        if let Some(existing) = guard.iter_mut().find(|t| t.id == transfer_id) {
+            existing.transferred_bytes = bytes;
+        }
+        drop(guard);
+        self.notify_ui();
+    }
+
+    fn finish_transfer(
+        &self,
+        transfer_id: &str,
+        status: &str,
+        saved_path: Option<String>,
+        error: Option<String>,
+    ) {
+        let mut guard = self.transfers.lock().unwrap();
+        if let Some(existing) = guard.iter_mut().find(|t| t.id == transfer_id) {
+            existing.status = status.to_string();
+            if let Some(p) = saved_path {
+                existing.saved_path = Some(p);
+            }
+            existing.error = error;
+        }
+        drop(guard);
+        self.notify_ui();
+    }
+}

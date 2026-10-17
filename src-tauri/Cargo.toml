@@ -1,0 +1,39 @@
+[package]
+name = "velquo"
+version = "0.1.0"
+description = "A fast, native Apple Silicon client for KDE Connect — seamlessly bridging Android and Linux devices with your Mac."
+authors = ["vsnthdev"]
+edition = "2021"
+
+[lib]
+name = "velquo_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+rustls-pki-types = "1"
+rustls-pemfile = "2"
+rcgen = "0.13"
+x509-parser = "0.16"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+socket2 = { version = "0.5", features = ["all"] }
+if-addrs = "0.13"
+mdns-sd = "0.13"
+chrono = "0.4"
+dirs = "6"
+log = "0.4"
+anyhow = "1"
+hostname = "0.4"
+open = "5"
