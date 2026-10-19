@@ -18,9 +18,10 @@ use socket2::{Domain, Protocol, SockRef, Socket, TcpKeepalive, Type};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::os::fd::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
@@ -460,22 +461,26 @@ impl KdeConnectDaemon {
                 .map(|(ip, _)| ip)
                 .collect();
             let mut last_host_battery: Option<(i32, bool)> = Self::read_macos_battery_status();
-            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
             interval.tick().await; // consume immediate tick
+            let mut tick_count: u64 = 0;
 
             loop {
                 interval.tick().await;
+                tick_count = tick_count.wrapping_add(1);
 
-                // Check if MacBook battery % or charging state changed and push to paired devices
-                if let Some(current_bat) = Self::read_macos_battery_status() {
-                    if last_host_battery != Some(current_bat) {
-                        log::info!(
-                            "[battery-out] Mac battery changed ({:?} -> {:?}), broadcasting to paired devices",
-                            last_host_battery,
-                            current_bat
-                        );
-                        last_host_battery = Some(current_bat);
-                        daemon_bcast.broadcast_host_battery(current_bat.0, current_bat.1);
+                // Every 30s (6 ticks), check if MacBook battery % or charging state changed
+                if tick_count % 6 == 0 {
+                    if let Some(current_bat) = Self::read_macos_battery_status() {
+                        if last_host_battery != Some(current_bat) {
+                            log::info!(
+                                "[battery-out] Mac battery changed ({:?} -> {:?}), broadcasting to paired devices",
+                                last_host_battery,
+                                current_bat
+                            );
+                            last_host_battery = Some(current_bat);
+                            daemon_bcast.broadcast_host_battery(current_bat.0, current_bat.1);
+                        }
                     }
                 }
 
@@ -519,17 +524,71 @@ impl KdeConnectDaemon {
         any_trusted_offline
     }
 
-    /// Configures TCP_NODELAY and TCP Keepalive (30s idle, 10s interval, 3 retries)
-    /// matching kdeconnect-kde's LanLinkProvider::configureSocket
+    /// Configures TCP_NODELAY, aggressive TCP Keepalive (2s idle, 1s interval, 2 retries),
+    /// and macOS `TCP_RXT_CONNDROPTIME` (3s) so half-open Wi-Fi drops are detected rapidly.
     fn configure_tcp_socket(stream: &TcpStream) {
         let _ = stream.set_nodelay(true);
         let sock_ref = SockRef::from(stream);
         let keepalive = TcpKeepalive::new()
-            .with_time(Duration::from_secs(30))
-            .with_interval(Duration::from_secs(10))
-            .with_retries(3);
+            .with_time(Duration::from_secs(2))
+            .with_interval(Duration::from_secs(1))
+            .with_retries(2);
         if let Err(e) = sock_ref.set_tcp_keepalive(&keepalive) {
             log::debug!("[tcp] Failed to set TCP keepalive on socket: {}", e);
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            const TCP_RXT_CONNDROPTIME: libc::c_int = 0x80;
+            const TCP_RXT_FINDROP: libc::c_int = 0x100;
+            let fd = stream.as_raw_fd();
+            let drop_secs: libc::c_int = 3;
+            let fin_drop: libc::c_int = 1;
+            unsafe {
+                let _ = libc::setsockopt(
+                    fd,
+                    libc::IPPROTO_TCP,
+                    TCP_RXT_CONNDROPTIME,
+                    &drop_secs as *const _ as *const libc::c_void,
+                    std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+                );
+                let _ = libc::setsockopt(
+                    fd,
+                    libc::IPPROTO_TCP,
+                    TCP_RXT_FINDROP,
+                    &fin_drop as *const _ as *const libc::c_void,
+                    std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+                );
+            }
+        }
+    }
+
+    /// Returns the number of unacknowledged bytes sitting in the macOS kernel TCP send buffer (`SO_NWRITE`).
+    /// When the remote peer is online, written bytes are ACKed in milliseconds (`0`).
+    /// When the peer turns off Wi-Fi without sending FIN/RST, written bytes stay `> 0`.
+    fn get_socket_unacked_bytes(raw_fd: RawFd) -> usize {
+        #[cfg(target_os = "macos")]
+        {
+            let mut nwrite: libc::c_int = 0;
+            let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
+            let res = unsafe {
+                libc::getsockopt(
+                    raw_fd,
+                    libc::SOL_SOCKET,
+                    libc::SO_NWRITE,
+                    &mut nwrite as *mut _ as *mut libc::c_void,
+                    &mut len,
+                )
+            };
+            if res == 0 && nwrite > 0 {
+                return nwrite as usize;
+            }
+            0
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = raw_fd;
+            0
         }
     }
 
@@ -604,44 +663,77 @@ impl KdeConnectDaemon {
             Ok(receiver) => {
                 log::info!("[mdns] Browsing for _kdeconnect._udp.local. services...");
                 while let Ok(event) = receiver.recv() {
-                    if let ServiceEvent::ServiceResolved(info) = event {
-                        let txt_id = info
-                            .get_property_val_str("id")
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| {
-                                info.get_fullname()
-                                    .split('.')
-                                    .next()
-                                    .unwrap_or("")
-                                    .to_string()
-                            });
+                    match event {
+                        ServiceEvent::ServiceResolved(info) => {
+                            let txt_id = info
+                                .get_property_val_str("id")
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| {
+                                    info.get_fullname()
+                                        .split('.')
+                                        .next()
+                                        .unwrap_or("")
+                                        .to_string()
+                                });
 
-                        if txt_id.is_empty() || txt_id == self.host.device_id {
-                            continue;
-                        }
+                            if txt_id.is_empty() || txt_id == self.host.device_id {
+                                continue;
+                            }
 
-                        let proto = info
-                            .get_property_val_str("protocol")
-                            .and_then(|p| p.parse::<i32>().ok())
-                            .unwrap_or(PROTOCOL_VERSION);
-                        let port = info.get_port();
+                            let proto = info
+                                .get_property_val_str("protocol")
+                                .and_then(|p| p.parse::<i32>().ok())
+                                .unwrap_or(PROTOCOL_VERSION);
+                            let port = info.get_port();
 
-                        for ip in info.get_addresses_v4() {
-                            let ip_val = *ip;
-                            log::info!(
-                                "[mdns] Discovered peer via mDNS: id='{}' ip={} port={} proto={}",
-                                txt_id,
-                                ip_val,
-                                port,
-                                proto
-                            );
-                            let d = Arc::clone(&self);
-                            let id_clone = txt_id.clone();
-                            tauri::async_runtime::spawn(async move {
-                                d.on_device_discovered(IpAddr::V4(ip_val), port, id_clone, proto, None)
+                            for ip in info.get_addresses_v4() {
+                                let ip_val = *ip;
+                                log::info!(
+                                    "[mdns] Discovered peer via mDNS: id='{}' ip={} port={} proto={}",
+                                    txt_id,
+                                    ip_val,
+                                    port,
+                                    proto
+                                );
+                                let d = Arc::clone(&self);
+                                let id_clone = txt_id.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    d.on_device_discovered(
+                                        IpAddr::V4(ip_val),
+                                        port,
+                                        id_clone,
+                                        proto,
+                                        None,
+                                    )
                                     .await;
-                            });
+                                });
+                            }
                         }
+                        ServiceEvent::ServiceRemoved(_ty, fullname) => {
+                            let removed_id = fullname.split('.').next().unwrap_or("").to_string();
+                            if !removed_id.is_empty() && removed_id != self.host.device_id {
+                                let mut aborted = false;
+                                if let Ok(mut devices) = self.devices.lock() {
+                                    if let Some(entry) = devices.get_mut(&removed_id) {
+                                        if entry.view.reachable {
+                                            log::info!(
+                                                "[mdns] Peer '{}' ({}) unregistered mDNS service, closing active session",
+                                                entry.view.device_name,
+                                                removed_id
+                                            );
+                                            if let Some(abort_tx) = entry.abort_tx.take() {
+                                                let _ = abort_tx.send(());
+                                                aborted = true;
+                                            }
+                                        }
+                                    }
+                                }
+                                if aborted {
+                                    self.notify_ui();
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -903,6 +995,7 @@ impl KdeConnectDaemon {
         udp_identity_fallback: Option<NetworkPacket>,
     ) -> Result<()> {
         Self::configure_tcp_socket(&tcp_stream);
+        let raw_fd = tcp_stream.as_raw_fd();
 
         let conn_packet = if protocol_version >= 8 {
             NetworkPacket::tcp_connection_packet(&self.host, &expected_device_id, protocol_version)
@@ -972,7 +1065,7 @@ impl KdeConnectDaemon {
             udp_identity_fallback.ok_or_else(|| anyhow!("Missing v7 identity packet"))?
         };
 
-        self.run_authenticated_link(buf_reader, peer_addr, final_identity, peer_cert_der)
+        self.run_authenticated_link(buf_reader, raw_fd, peer_addr, final_identity, peer_cert_der)
             .await
     }
 
@@ -986,6 +1079,7 @@ impl KdeConnectDaemon {
         peer_addr: SocketAddr,
     ) -> Result<()> {
         Self::configure_tcp_socket(&tcp_stream);
+        let raw_fd = tcp_stream.as_raw_fd();
         let mut plain_reader = BufReader::new(tcp_stream);
         let mut line = String::new();
 
@@ -1073,11 +1167,11 @@ impl KdeConnectDaemon {
                 sec_pkt.get_str("deviceName").unwrap_or("Unknown"),
                 sec_pkt.get_str("deviceId").unwrap_or("?")
             );
-            self.run_authenticated_link(buf_reader, peer_addr, sec_pkt, peer_cert_der)
+            self.run_authenticated_link(buf_reader, raw_fd, peer_addr, sec_pkt, peer_cert_der)
                 .await
         } else {
             let buf_reader = BufReader::new(tls_stream);
-            self.run_authenticated_link(buf_reader, peer_addr, initial_packet, peer_cert_der)
+            self.run_authenticated_link(buf_reader, raw_fd, peer_addr, initial_packet, peer_cert_der)
                 .await
         }
     }
@@ -1085,6 +1179,7 @@ impl KdeConnectDaemon {
     async fn run_authenticated_link<S>(
         self: &Arc<Self>,
         buf_reader: BufReader<S>,
+        raw_fd: RawFd,
         peer_addr: SocketAddr,
         identity_packet: NetworkPacket,
         peer_cert_der: Vec<u8>,
@@ -1268,6 +1363,9 @@ impl KdeConnectDaemon {
         let (read_half, mut write_half) = tokio::io::split(buf_reader);
         let mut line_reader = BufReader::new(read_half);
         let mut line = String::new();
+        let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(2));
+        heartbeat_interval.tick().await; // consume initial immediate tick
+        let mut unacked_since: Option<Instant> = None;
 
         loop {
             tokio::select! {
@@ -1280,6 +1378,38 @@ impl KdeConnectDaemon {
                     );
                     break;
                 }
+                _ = heartbeat_interval.tick() => {
+                    let unacked = Self::get_socket_unacked_bytes(raw_fd);
+                    if unacked > 0 {
+                        if let Some(since) = unacked_since {
+                            if since.elapsed() >= Duration::from_millis(1800) {
+                                log::warn!(
+                                    "[heartbeat] Device '{}' ({}) has {} unacknowledged TCP bytes after {:?} — peer is offline, closing link",
+                                    device_name,
+                                    device_id,
+                                    unacked,
+                                    since.elapsed()
+                                );
+                                break;
+                            }
+                        } else {
+                            unacked_since = Some(Instant::now());
+                        }
+                    } else {
+                        unacked_since = None;
+                        if let Ok(hb_bytes) = NetworkPacket::keepalive().serialize_line() {
+                            if let Err(e) = write_half.write_all(&hb_bytes).await {
+                                log::warn!("[heartbeat] Write error to '{}': {}", device_name, e);
+                                break;
+                            }
+                            if let Err(e) = write_half.flush().await {
+                                log::warn!("[heartbeat] Flush error to '{}': {}", device_name, e);
+                                break;
+                            }
+                            unacked_since = Some(Instant::now());
+                        }
+                    }
+                }
                 maybe_out = rx.recv() => {
                     match maybe_out {
                         Some(bytes) => {
@@ -1288,6 +1418,9 @@ impl KdeConnectDaemon {
                                 break;
                             }
                             let _ = write_half.flush().await;
+                            if unacked_since.is_none() {
+                                unacked_since = Some(Instant::now());
+                            }
                         }
                         None => break,
                     }
@@ -1299,6 +1432,7 @@ impl KdeConnectDaemon {
                             break;
                         }
                         Ok(_) => {
+                            unacked_since = None;
                             let raw_line = line.clone();
                             line.clear();
                             if let Ok(mut devices) = self.devices.lock() {
@@ -1325,13 +1459,20 @@ impl KdeConnectDaemon {
         }
 
         // Mark offline if this was the latest active connection generation
+        let mut became_offline = false;
         {
             let mut devices = self.devices.lock().unwrap();
             if let Some(entry) = devices.get_mut(&device_id) {
                 if entry.connection_generation == generation {
                     entry.view.reachable = false;
+                    entry.view.now_playing = None;
+                    entry.mpris_players.clear();
+                    entry.mpris_player_order.clear();
+                    entry.active_mpris_player = None;
+                    entry.album_art_in_flight.clear();
                     entry.sender = None;
                     entry.abort_tx = None;
+                    became_offline = true;
                     log::info!(
                         "[device] Device '{}' ({}) marked OFFLINE",
                         device_name,
@@ -1341,6 +1482,14 @@ impl KdeConnectDaemon {
             }
         }
         self.notify_ui();
+
+        if became_offline {
+            // Send a discovery broadcast so the device can reconnect immediately as soon as its Wi-Fi returns
+            let daemon = Arc::clone(self);
+            tokio::spawn(async move {
+                daemon.broadcast_udp_discovery().await;
+            });
+        }
 
         Ok(())
     }
@@ -1353,6 +1502,10 @@ impl KdeConnectDaemon {
         peer_cert_der: &[u8],
         packet: NetworkPacket,
     ) {
+        if packet.packet_type == "velquo.keepalive" || packet.packet_type == "soduto.keepalive" {
+            return;
+        }
+
         log::info!(
             "[packet-in] From '{}' ({}): type='{}' body={} payloadSize={:?} transferInfo={:?}",
             device_name,

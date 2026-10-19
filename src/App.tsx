@@ -495,9 +495,10 @@ export default function App() {
   }, [nativeArtData, trackTitle, trackArtist, trackAlbum]);
 
   const artworkSrc = nativeArtData || fallbackArtworkUrl;
-  const hasArtworkBackdrop = Boolean(
-    selectedDevice?.nowPlaying?.title && artworkSrc
+  const hasActiveMedia = Boolean(
+    selectedDevice?.reachable && selectedDevice?.nowPlaying?.title
   );
+  const hasArtworkBackdrop = Boolean(hasActiveMedia && artworkSrc);
 
   const handleDragMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     if (e.buttons === 1) {
@@ -735,7 +736,7 @@ export default function App() {
 
         {/* Subtle bottom gray blur glow in Dark Theme ONLY when no music is playing */}
         <AnimatePresence>
-          {!selectedDevice?.nowPlaying?.title && (
+          {!hasActiveMedia && (
             <motion.div
               key="idle-bottom-blur-blob"
               initial={{ opacity: 0 }}
@@ -902,20 +903,58 @@ export default function App() {
 
               {/* Conditionally Rendered Now Playing Music Section */}
               <AnimatePresence initial={false}>
-                {selectedDevice.nowPlaying &&
+                {selectedDevice.reachable &&
+                  selectedDevice.nowPlaying &&
                   selectedDevice.nowPlaying.title && (
                     <motion.div
                       key="now-playing-card"
-                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                      transition={{
-                        type: "spring",
-                        stiffness: 460,
-                        damping: 32,
+                      initial={{
+                        opacity: 0,
+                        height: 0,
+                        marginTop: 0,
+                        y: -6,
+                        scale: 0.98,
                       }}
-                      className="relative mt-6 flex flex-col gap-3 overflow-hidden rounded-2xl border border-black/10 bg-white/60 p-4 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04]"
+                      animate={{
+                        opacity: 1,
+                        height: "auto",
+                        marginTop: 24,
+                        y: 0,
+                        scale: 1,
+                      }}
+                      exit={{
+                        opacity: 0,
+                        height: 0,
+                        marginTop: 0,
+                        y: -6,
+                        scale: 0.98,
+                      }}
+                      transition={{
+                        height: {
+                          type: "spring",
+                          stiffness: 380,
+                          damping: 34,
+                        },
+                        marginTop: {
+                          type: "spring",
+                          stiffness: 380,
+                          damping: 34,
+                        },
+                        opacity: { duration: 0.2, ease: "easeOut" },
+                        y: {
+                          type: "spring",
+                          stiffness: 420,
+                          damping: 32,
+                        },
+                        scale: {
+                          type: "spring",
+                          stiffness: 420,
+                          damping: 32,
+                        },
+                      }}
+                      className="overflow-hidden"
                     >
+                      <div className="relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-black/10 bg-white/60 p-4 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04]">
                       <div className="relative z-10 flex items-center justify-between gap-4">
                         <div className="flex min-w-0 items-center gap-3.5">
                           {/* Crisp Album Artwork Thumbnail (or MusicNotes fallback) */}
@@ -1040,6 +1079,7 @@ export default function App() {
                           </span>
                         </div>
                       )}
+                      </div>
                     </motion.div>
                   )}
               </AnimatePresence>
@@ -1047,7 +1087,6 @@ export default function App() {
               {/* Sleek File Drop Zone */}
               <motion.div
                 ref={dropZoneRef}
-                layout
                 onClick={
                   selectedDevice.reachable ? handlePickFilesToSend : undefined
                 }

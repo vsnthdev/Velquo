@@ -250,6 +250,10 @@ impl NetworkPacket {
         Self::new(PACKET_TYPE_CONNECTIVITY_REPORT_REQUEST, Map::new())
     }
 
+    pub fn keepalive() -> Self {
+        Self::new("velquo.keepalive", Map::new())
+    }
+
     pub fn mpris_request_player_list() -> Self {
         let mut body = Map::new();
         body.insert("requestPlayerList".into(), json!(true));
