@@ -9,6 +9,12 @@ pub const PROTOCOL_VERSION: i32 = 8;
 pub const PACKET_TYPE_IDENTITY: &str = "kdeconnect.identity";
 pub const PACKET_TYPE_PAIR: &str = "kdeconnect.pair";
 pub const PACKET_TYPE_PING: &str = "kdeconnect.ping";
+pub const PACKET_TYPE_BATTERY: &str = "kdeconnect.battery";
+pub const PACKET_TYPE_BATTERY_REQUEST: &str = "kdeconnect.battery.request";
+pub const PACKET_TYPE_CONNECTIVITY_REPORT: &str = "kdeconnect.connectivity_report";
+pub const PACKET_TYPE_CONNECTIVITY_REPORT_REQUEST: &str = "kdeconnect.connectivity_report.request";
+pub const PACKET_TYPE_MPRIS: &str = "kdeconnect.mpris";
+pub const PACKET_TYPE_MPRIS_REQUEST: &str = "kdeconnect.mpris.request";
 pub const PACKET_TYPE_SHARE_REQUEST: &str = "kdeconnect.share.request";
 pub const PACKET_TYPE_SHARE_REQUEST_UPDATE: &str = "kdeconnect.share.request.update";
 
@@ -49,6 +55,10 @@ pub fn supported_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_SHARE_REQUEST.to_string(),
         PACKET_TYPE_SHARE_REQUEST_UPDATE.to_string(),
         PACKET_TYPE_PING.to_string(),
+        PACKET_TYPE_BATTERY.to_string(),
+        PACKET_TYPE_BATTERY_REQUEST.to_string(),
+        PACKET_TYPE_CONNECTIVITY_REPORT.to_string(),
+        PACKET_TYPE_MPRIS.to_string(),
     ]
 }
 
@@ -57,6 +67,11 @@ pub fn supported_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_SHARE_REQUEST.to_string(),
         PACKET_TYPE_SHARE_REQUEST_UPDATE.to_string(),
         PACKET_TYPE_PING.to_string(),
+        PACKET_TYPE_BATTERY.to_string(),
+        PACKET_TYPE_BATTERY_REQUEST.to_string(),
+        PACKET_TYPE_CONNECTIVITY_REPORT.to_string(),
+        PACKET_TYPE_CONNECTIVITY_REPORT_REQUEST.to_string(),
+        PACKET_TYPE_MPRIS_REQUEST.to_string(),
     ]
 }
 
@@ -210,6 +225,57 @@ impl NetworkPacket {
             body.insert("message".into(), json!(msg));
         }
         Self::new(PACKET_TYPE_PING, body)
+    }
+
+    pub fn battery_request() -> Self {
+        let mut body = Map::new();
+        body.insert("request".into(), json!(true));
+        Self::new(PACKET_TYPE_BATTERY_REQUEST, body)
+    }
+
+    pub fn battery_legacy_request() -> Self {
+        let mut body = Map::new();
+        body.insert("request".into(), json!(true));
+        Self::new(PACKET_TYPE_BATTERY, body)
+    }
+
+    pub fn connectivity_report_request() -> Self {
+        Self::new(PACKET_TYPE_CONNECTIVITY_REPORT_REQUEST, Map::new())
+    }
+
+    pub fn mpris_request_player_list() -> Self {
+        let mut body = Map::new();
+        body.insert("requestPlayerList".into(), json!(true));
+        Self::new(PACKET_TYPE_MPRIS_REQUEST, body)
+    }
+
+    pub fn mpris_request_player_status(player: &str) -> Self {
+        let mut body = Map::new();
+        body.insert("player".into(), json!(player));
+        body.insert("requestNowPlaying".into(), json!(true));
+        body.insert("requestVolume".into(), json!(true));
+        Self::new(PACKET_TYPE_MPRIS_REQUEST, body)
+    }
+
+    pub fn mpris_action(player: &str, action: &str) -> Self {
+        let mut body = Map::new();
+        body.insert("player".into(), json!(player));
+        body.insert("action".into(), json!(action));
+        Self::new(PACKET_TYPE_MPRIS_REQUEST, body)
+    }
+
+    pub fn mpris_set_position(player: &str, position_ms: i64) -> Self {
+        let mut body = Map::new();
+        body.insert("player".into(), json!(player));
+        body.insert("SetPosition".into(), json!(position_ms));
+        Self::new(PACKET_TYPE_MPRIS_REQUEST, body)
+    }
+
+    pub fn mpris_request_album_art(player: &str, album_art_url: &str) -> Self {
+        let mut body = Map::new();
+        body.insert("player".into(), json!(player));
+        body.insert("albumArtUrl".into(), json!(album_art_url));
+        Self::new(PACKET_TYPE_MPRIS_REQUEST, body)
     }
 
     pub fn share_file_header(

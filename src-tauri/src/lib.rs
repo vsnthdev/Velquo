@@ -106,6 +106,42 @@ fn send_ping(
 }
 
 #[tauri::command]
+fn send_media_action(
+    device_id: String,
+    player: String,
+    action: String,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Sending MPRIS action '{}' to player '{}' on device_id={}",
+        action,
+        player,
+        device_id
+    );
+    daemon
+        .send_mpris_action(&device_id, &player, &action)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn seek_media(
+    device_id: String,
+    player: String,
+    position_ms: i64,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Seeking player '{}' on device_id={} to {}ms",
+        player,
+        device_id,
+        position_ms
+    );
+    daemon
+        .send_mpris_seek(&device_id, &player, position_ms)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn send_file(
     device_id: String,
     file_path: String,
@@ -197,6 +233,8 @@ pub fn run() {
             reject_pairing,
             unpair_device,
             send_ping,
+            send_media_action,
+            seek_media,
             send_file,
             clear_logs,
             quit_app,
@@ -213,6 +251,11 @@ pub fn run() {
             daemon_for_setup.start();
 
             if let Some(window) = app.get_webview_window("main") {
+                #[cfg(target_os = "macos")]
+                {
+                    use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+                    let _ = apply_vibrancy(&window, NSVisualEffectMaterial::Sidebar, None, None);
+                }
                 let _ = window.set_resizable(false);
                 let _ = window.set_maximizable(false);
                 let _ = window.set_minimizable(true);

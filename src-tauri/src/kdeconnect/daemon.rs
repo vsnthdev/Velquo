@@ -2,17 +2,20 @@ use crate::kdeconnect::cert::{
     compute_verification_key, extract_cert_common_name, sha256_fingerprint, HostIdentity,
 };
 use crate::kdeconnect::packet::{
-    current_millis, current_secs, NetworkPacket, PACKET_TYPE_IDENTITY, PACKET_TYPE_PAIR,
+    current_millis, current_secs, NetworkPacket, PACKET_TYPE_BATTERY,
+    PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_IDENTITY, PACKET_TYPE_MPRIS, PACKET_TYPE_PAIR,
     PACKET_TYPE_PING, PACKET_TYPE_SHARE_REQUEST, PACKET_TYPE_SHARE_REQUEST_UPDATE,
     PROTOCOL_VERSION,
 };
 use crate::kdeconnect::tls::{build_tls_acceptor, build_tls_connector};
 use anyhow::{anyhow, Context, Result};
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use rustls::pki_types::ServerName;
 use serde::{Deserialize, Serialize};
 use socket2::{Domain, Protocol, SockRef, Socket, TcpKeepalive, Type};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::{Path, PathBuf};
@@ -56,6 +59,34 @@ pub struct HostInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct NowPlayingInfo {
+    pub player: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub is_playing: bool,
+    pub position_ms: i64,
+    pub position_updated_at_ms: i64,
+    pub length_ms: i64,
+    pub can_play: bool,
+    pub can_pause: bool,
+    pub can_go_next: bool,
+    pub can_go_previous: bool,
+    pub can_seek: bool,
+    pub album_art_url: Option<String>,
+    pub album_art_data: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SimSignalInfo {
+    pub slot_id: String,
+    pub network_type: String,
+    pub signal_strength: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceView {
     pub device_id: String,
     pub device_name: String,
@@ -70,6 +101,13 @@ pub struct DeviceView {
     pub incoming_capabilities: Vec<String>,
     pub outgoing_capabilities: Vec<String>,
     pub last_seen_secs: i64,
+    pub battery_charge: Option<i32>,
+    pub battery_charging: Option<bool>,
+    pub cellular_network_type: Option<String>,
+    pub cellular_signal_strength: Option<i32>,
+    pub sim_signals: Vec<SimSignalInfo>,
+    pub storage_free_gb: Option<f64>,
+    pub now_playing: Option<NowPlayingInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +144,11 @@ pub struct DeviceEntry {
     pub sender: Option<mpsc::UnboundedSender<Vec<u8>>>,
     pub abort_tx: Option<oneshot::Sender<()>>,
     pub connection_generation: u64,
+    pub mpris_players: HashMap<String, NowPlayingInfo>,
+    pub mpris_player_order: Vec<String>,
+    pub active_mpris_player: Option<String>,
+    pub album_art_cache: HashMap<String, String>,
+    pub album_art_in_flight: HashSet<String>,
 }
 
 pub struct KdeConnectDaemon {
@@ -154,11 +197,23 @@ impl KdeConnectDaemon {
                         incoming_capabilities: Vec::new(),
                         outgoing_capabilities: Vec::new(),
                         last_seen_secs: 0,
+                        battery_charge: None,
+                        battery_charging: None,
+                        cellular_network_type: None,
+                        cellular_signal_strength: None,
+                        sim_signals: Vec::new(),
+                        storage_free_gb: None,
+                        now_playing: None,
                     },
                     peer_cert_der: Some(rec.cert_der.clone()),
                     sender: None,
                     abort_tx: None,
                     connection_generation: 0,
+                    mpris_players: HashMap::new(),
+                    mpris_player_order: Vec::new(),
+                    active_mpris_player: None,
+                    album_art_cache: HashMap::new(),
+                    album_art_in_flight: HashSet::new(),
                 },
             );
         }
@@ -1083,6 +1138,49 @@ impl KdeConnectDaemon {
             let verification_key =
                 compute_verification_key(&self.host.cert_der, &peer_cert_der, current_secs());
 
+            let (
+                prev_bat_charge,
+                prev_bat_charging,
+                prev_net_type,
+                prev_sig_str,
+                prev_sim_signals,
+                prev_storage,
+                prev_now_playing,
+                prev_mpris_players,
+                prev_mpris_order,
+                prev_active_mpris,
+                prev_art_cache,
+            ) = devices
+                .get(&device_id)
+                .map(|d| {
+                    (
+                        d.view.battery_charge,
+                        d.view.battery_charging,
+                        d.view.cellular_network_type.clone(),
+                        d.view.cellular_signal_strength,
+                        d.view.sim_signals.clone(),
+                        d.view.storage_free_gb,
+                        d.view.now_playing.clone(),
+                        d.mpris_players.clone(),
+                        d.mpris_player_order.clone(),
+                        d.active_mpris_player.clone(),
+                        d.album_art_cache.clone(),
+                    )
+                })
+                .unwrap_or((
+                    None,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    None,
+                    None,
+                    HashMap::new(),
+                    Vec::new(),
+                    None,
+                    HashMap::new(),
+                ));
+
             devices.insert(
                 device_id.clone(),
                 DeviceEntry {
@@ -1100,11 +1198,23 @@ impl KdeConnectDaemon {
                         incoming_capabilities: incoming_caps.clone(),
                         outgoing_capabilities: outgoing_caps.clone(),
                         last_seen_secs: current_secs(),
+                        battery_charge: prev_bat_charge,
+                        battery_charging: prev_bat_charging,
+                        cellular_network_type: prev_net_type,
+                        cellular_signal_strength: prev_sig_str,
+                        sim_signals: prev_sim_signals,
+                        storage_free_gb: prev_storage,
+                        now_playing: prev_now_playing,
                     },
                     peer_cert_der: Some(peer_cert_der.clone()),
                     sender: Some(tx),
                     abort_tx: Some(abort_tx),
                     connection_generation: next_gen,
+                    mpris_players: prev_mpris_players,
+                    mpris_player_order: prev_mpris_order,
+                    active_mpris_player: prev_active_mpris,
+                    album_art_cache: prev_art_cache,
+                    album_art_in_flight: HashSet::new(),
                 },
             );
             next_gen
@@ -1118,6 +1228,11 @@ impl KdeConnectDaemon {
             is_trusted,
             incoming_caps
         );
+
+        // Request initial battery and connectivity status if paired
+        if is_trusted {
+            self.request_device_telemetry(&device_id);
+        }
         self.notify_ui();
 
         let (read_half, mut write_half) = tokio::io::split(buf_reader);
@@ -1226,6 +1341,82 @@ impl KdeConnectDaemon {
                 let msg = packet.get_str("message").unwrap_or("Ping!");
                 log::info!("[ping] Received Ping from '{}': \"{}\"", device_name, msg);
             }
+            PACKET_TYPE_BATTERY => {
+                let charge = packet.get_i64("currentCharge").map(|c| c as i32);
+                let is_charging = packet.get_bool("isCharging");
+                log::info!(
+                    "[battery] Device '{}' ({}) battery: {:?}% (charging={:?})",
+                    device_name,
+                    device_id,
+                    charge,
+                    is_charging
+                );
+                if let Ok(mut devices) = self.devices.lock() {
+                    if let Some(entry) = devices.get_mut(device_id) {
+                        if let Some(c) = charge {
+                            if (0..=100).contains(&c) {
+                                entry.view.battery_charge = Some(c);
+                            }
+                        }
+                        if let Some(ch) = is_charging {
+                            entry.view.battery_charging = Some(ch);
+                        }
+                    }
+                }
+                self.notify_ui();
+            }
+            PACKET_TYPE_CONNECTIVITY_REPORT => {
+                if let Some(subs) = packet.body.get("signalStrengths").and_then(|v| v.as_object()) {
+                    let mut sim_list: Vec<SimSignalInfo> = subs
+                        .iter()
+                        .filter_map(|(slot_key, sub_val)| {
+                            let net_type = sub_val
+                                .get("networkType")
+                                .and_then(|v| v.as_str())?
+                                .to_string();
+                            let sig_strength = sub_val
+                                .get("signalStrength")
+                                .and_then(|v| v.as_i64())?
+                                as i32;
+                            Some(SimSignalInfo {
+                                slot_id: slot_key.clone(),
+                                network_type: net_type,
+                                signal_strength: sig_strength,
+                            })
+                        })
+                        .collect();
+
+                    sim_list.sort_by(|a, b| {
+                        a.slot_id
+                            .parse::<i64>()
+                            .unwrap_or(i64::MAX)
+                            .cmp(&b.slot_id.parse::<i64>().unwrap_or(i64::MAX))
+                            .then_with(|| a.slot_id.cmp(&b.slot_id))
+                    });
+
+                    if !sim_list.is_empty() {
+                        log::info!(
+                            "[connectivity] Device '{}' ({}) SIM signals: {:?}",
+                            device_name,
+                            device_id,
+                            sim_list
+                        );
+                        if let Ok(mut devices) = self.devices.lock() {
+                            if let Some(entry) = devices.get_mut(device_id) {
+                                entry.view.cellular_network_type =
+                                    Some(sim_list[0].network_type.clone());
+                                entry.view.cellular_signal_strength =
+                                    Some(sim_list[0].signal_strength);
+                                entry.view.sim_signals = sim_list;
+                            }
+                        }
+                        self.notify_ui();
+                    }
+                }
+            }
+            PACKET_TYPE_MPRIS => {
+                self.handle_mpris_packet(device_id, device_name, peer_ip, &packet);
+            }
             PACKET_TYPE_SHARE_REQUEST => {
                 self.handle_share_request(device_id, device_name, peer_ip, packet)
                     .await;
@@ -1286,6 +1477,7 @@ impl KdeConnectDaemon {
                         .unwrap()
                         .insert(device_id.to_string(), rec);
                     self.save_trusted_devices();
+                    self.request_device_telemetry(device_id);
                 }
                 PairState::NotPaired | PairState::Paired => {
                     let vkey =
@@ -1402,10 +1594,472 @@ impl KdeConnectDaemon {
                 .unwrap()
                 .insert(device_id.to_string(), rec);
             self.save_trusted_devices();
+            self.request_device_telemetry(device_id);
         }
 
         self.notify_ui();
         Ok(())
+    }
+
+    pub fn request_device_telemetry(&self, device_id: &str) {
+        let _ = self.send_packet_to_device(device_id, &NetworkPacket::battery_request());
+        let _ = self.send_packet_to_device(device_id, &NetworkPacket::battery_legacy_request());
+        let _ =
+            self.send_packet_to_device(device_id, &NetworkPacket::connectivity_report_request());
+        let _ = self.send_packet_to_device(device_id, &NetworkPacket::mpris_request_player_list());
+    }
+
+    pub fn send_mpris_action(&self, device_id: &str, player: &str, action: &str) -> Result<()> {
+        // Pin this player as the active sticky player when the user interacts with it
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry.active_mpris_player = Some(player.to_string());
+            }
+        }
+        let pkt = NetworkPacket::mpris_action(player, action);
+        self.send_packet_to_device(device_id, &pkt)?;
+        // Also request refreshed status shortly after action
+        let _ = self.send_packet_to_device(
+            device_id,
+            &NetworkPacket::mpris_request_player_status(player),
+        );
+        Ok(())
+    }
+
+    pub fn send_mpris_seek(&self, device_id: &str, player: &str, position_ms: i64) -> Result<()> {
+        let clamped_pos = position_ms.max(0);
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry.active_mpris_player = Some(player.to_string());
+                if let Some(p_info) = entry.mpris_players.get_mut(player) {
+                    p_info.position_ms = clamped_pos;
+                    p_info.position_updated_at_ms = current_millis();
+                }
+                Self::recompute_active_mpris(entry);
+            }
+        }
+        self.notify_ui();
+
+        let pkt = NetworkPacket::mpris_set_position(player, clamped_pos);
+        self.send_packet_to_device(device_id, &pkt)?;
+        Ok(())
+    }
+
+    fn recompute_active_mpris(entry: &mut DeviceEntry) {
+        // 1. If the currently pinned active player is actively playing (is_playing == true), keep it
+        if let Some(active_name) = &entry.active_mpris_player {
+            if let Some(info) = entry.mpris_players.get(active_name) {
+                if info.is_playing && !info.title.is_empty() {
+                    entry.view.now_playing = Some(info.clone());
+                    return;
+                }
+            }
+        }
+
+        // 2. If any player in Android's playerList order (or mpris_players) is actively playing, switch to it
+        for name in &entry.mpris_player_order {
+            if let Some(info) = entry.mpris_players.get(name) {
+                if info.is_playing && !info.title.is_empty() {
+                    entry.active_mpris_player = Some(name.clone());
+                    entry.view.now_playing = Some(info.clone());
+                    return;
+                }
+            }
+        }
+        for (name, info) in &entry.mpris_players {
+            if info.is_playing && !info.title.is_empty() {
+                entry.active_mpris_player = Some(name.clone());
+                entry.view.now_playing = Some(info.clone());
+                return;
+            }
+        }
+
+        // 3. No player is currently playing (all paused):
+        //    If we already have a sticky active player that still exists in playerList and has a title, keep it
+        //    so pausing from Velquo or the phone keeps the card visible!
+        if let Some(active_name) = &entry.active_mpris_player {
+            let still_in_list = entry.mpris_player_order.is_empty()
+                || entry.mpris_player_order.contains(active_name);
+            if still_in_list {
+                if let Some(info) = entry.mpris_players.get(active_name) {
+                    if !info.title.is_empty() {
+                        entry.view.now_playing = Some(info.clone());
+                        return;
+                    }
+                }
+            }
+        }
+
+        // 4. Otherwise, pick the first player in Android's playerList order (most recently active session)
+        //    that has a non-empty title.
+        for name in &entry.mpris_player_order {
+            if let Some(info) = entry.mpris_players.get(name) {
+                if !info.title.is_empty() {
+                    // Only pin active_mpris_player if the primary player (index 0) has already reported
+                    let first_has_reported = entry
+                        .mpris_player_order
+                        .first()
+                        .map(|first| entry.mpris_players.contains_key(first))
+                        .unwrap_or(true);
+                    if first_has_reported {
+                        entry.active_mpris_player = Some(name.clone());
+                    }
+                    entry.view.now_playing = Some(info.clone());
+                    return;
+                }
+            }
+        }
+
+        // 5. No active media players with a track
+        entry.active_mpris_player = None;
+        entry.view.now_playing = None;
+    }
+
+    fn handle_mpris_packet(
+        self: &Arc<Self>,
+        device_id: &str,
+        device_name: &str,
+        peer_ip: IpAddr,
+        packet: &NetworkPacket,
+    ) {
+        // 0. Handle incoming album art binary payload transfer (transferringAlbumArt: true)
+        if packet.get_bool("transferringAlbumArt").unwrap_or(false) {
+            let Some(port) = packet.payload_port() else {
+                log::warn!("[mpris] transferringAlbumArt=true but no payload port present");
+                return;
+            };
+            let Some(album_art_url) = packet.get_str("albumArtUrl").map(|s| s.to_string()) else {
+                log::warn!("[mpris] transferringAlbumArt=true but no albumArtUrl present");
+                return;
+            };
+            let player = packet
+                .get_str("player")
+                .unwrap_or("")
+                .to_string();
+            let payload_size = packet.payload_size.unwrap_or(0).max(0) as usize;
+            if payload_size > 8 * 1024 * 1024 {
+                log::warn!("[mpris] Album art payload too large ({} bytes), ignoring", payload_size);
+                return;
+            }
+
+            let daemon = Arc::clone(self);
+            let dev_id = device_id.to_string();
+            let dev_name = device_name.to_string();
+            tokio::spawn(async move {
+                match daemon
+                    .download_album_art_payload(peer_ip, port, payload_size)
+                    .await
+                {
+                    Ok(data_url) => {
+                        log::info!(
+                            "[mpris] Downloaded album art from '{}' for player '{}' ({} chars data URL)",
+                            dev_name,
+                            player,
+                            data_url.len()
+                        );
+                        if let Ok(mut devices) = daemon.devices.lock() {
+                            if let Some(entry) = devices.get_mut(&dev_id) {
+                                entry.album_art_in_flight.remove(&album_art_url);
+                                entry
+                                    .album_art_cache
+                                    .insert(album_art_url.clone(), data_url.clone());
+
+                                // Attach to any matching player entry
+                                for p_info in entry.mpris_players.values_mut() {
+                                    if p_info.album_art_url.as_deref() == Some(album_art_url.as_str()) {
+                                        p_info.album_art_data = Some(data_url.clone());
+                                    }
+                                }
+                                Self::recompute_active_mpris(entry);
+                            }
+                        }
+                        daemon.notify_ui();
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "[mpris] Failed to download album art payload from '{}': {:?}",
+                            dev_name,
+                            e
+                        );
+                        if let Ok(mut devices) = daemon.devices.lock() {
+                            if let Some(entry) = devices.get_mut(&dev_id) {
+                                entry.album_art_in_flight.remove(&album_art_url);
+                            }
+                        }
+                    }
+                }
+            });
+            return;
+        }
+
+        // 1. Handle playerList updates (sent on connect and whenever a media app is opened/closed on Android)
+        if packet.body.contains_key("playerList") {
+            let players = packet.get_string_list("playerList");
+            log::info!(
+                "[mpris] Device '{}' ({}) playerList: {:?}",
+                device_name,
+                device_id,
+                players
+            );
+
+            let newly_added_players: Vec<String> = {
+                let mut devices = self.devices.lock().unwrap();
+                let Some(entry) = devices.get_mut(device_id) else {
+                    return;
+                };
+
+                let new_ones: Vec<String> = players
+                    .iter()
+                    .filter(|p| !entry.mpris_players.contains_key(*p))
+                    .cloned()
+                    .collect();
+
+                // Prune any player that was closed on the phone (no longer in playerList)
+                entry.mpris_players.retain(|k, _| players.contains(k));
+                entry.mpris_player_order = players.clone();
+
+                if let Some(active) = &entry.active_mpris_player {
+                    if !players.contains(active) {
+                        log::info!(
+                            "[mpris] Active player '{}' was closed on '{}', removing from Now Playing",
+                            active,
+                            device_name
+                        );
+                        entry.active_mpris_player = None;
+                    }
+                }
+
+                Self::recompute_active_mpris(entry);
+                new_ones
+            };
+
+            self.notify_ui();
+
+            // Query status only for players we don't have metadata for yet (prevents infinite request loops)
+            for player in &newly_added_players {
+                let _ = self.send_packet_to_device(
+                    device_id,
+                    &NetworkPacket::mpris_request_player_status(player),
+                );
+            }
+        }
+
+        // 2. Handle per-player metadata/playback state updates
+        if let Some(player) = packet.get_str("player") {
+            let mut art_to_request: Option<(String, String)> = None;
+
+            {
+                let mut devices = self.devices.lock().unwrap();
+                let Some(entry) = devices.get_mut(device_id) else {
+                    return;
+                };
+
+                let prev_player = entry.mpris_players.get(player).cloned();
+
+                let title = if packet.body.contains_key("title") || packet.body.contains_key("nowPlaying") {
+                    packet
+                        .get_str("title")
+                        .or_else(|| packet.get_str("nowPlaying"))
+                        .unwrap_or("")
+                        .trim()
+                        .to_string()
+                } else {
+                    prev_player
+                        .as_ref()
+                        .map(|p| p.title.clone())
+                        .unwrap_or_default()
+                };
+
+                let artist = if packet.body.contains_key("artist") {
+                    packet.get_str("artist").unwrap_or("").trim().to_string()
+                } else {
+                    prev_player
+                        .as_ref()
+                        .map(|p| p.artist.clone())
+                        .unwrap_or_default()
+                };
+
+                let album = if packet.body.contains_key("album") {
+                    packet.get_str("album").unwrap_or("").trim().to_string()
+                } else {
+                    prev_player
+                        .as_ref()
+                        .map(|p| p.album.clone())
+                        .unwrap_or_default()
+                };
+
+                let album_art_url = if packet.body.contains_key("albumArtUrl") {
+                    let raw = packet.get_str("albumArtUrl").unwrap_or("").trim();
+                    if raw.is_empty() {
+                        None
+                    } else {
+                        Some(raw.to_string())
+                    }
+                } else {
+                    prev_player.as_ref().and_then(|p| p.album_art_url.clone())
+                };
+
+                let album_art_data = if let Some(ref url) = album_art_url {
+                    if let Some(cached) = entry.album_art_cache.get(url) {
+                        Some(cached.clone())
+                    } else {
+                        if !entry.album_art_in_flight.contains(url) {
+                            entry.album_art_in_flight.insert(url.clone());
+                            art_to_request = Some((player.to_string(), url.clone()));
+                        }
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let is_playing = packet
+                    .get_bool("isPlaying")
+                    .unwrap_or_else(|| prev_player.as_ref().map(|p| p.is_playing).unwrap_or(false));
+
+                let (position_ms, position_updated_at_ms) = if let Some(pos) = packet.get_i64("pos") {
+                    (pos, current_millis())
+                } else if let Some(prev) = &prev_player {
+                    (prev.position_ms, prev.position_updated_at_ms)
+                } else {
+                    (0, current_millis())
+                };
+
+                let length_ms = packet
+                    .get_i64("length")
+                    .unwrap_or_else(|| prev_player.as_ref().map(|p| p.length_ms).unwrap_or(0));
+
+                let can_play = packet
+                    .get_bool("canPlay")
+                    .unwrap_or_else(|| prev_player.as_ref().map(|p| p.can_play).unwrap_or(true));
+                let can_pause = packet
+                    .get_bool("canPause")
+                    .unwrap_or_else(|| prev_player.as_ref().map(|p| p.can_pause).unwrap_or(true));
+                let can_go_next = packet
+                    .get_bool("canGoNext")
+                    .unwrap_or_else(|| prev_player.as_ref().map(|p| p.can_go_next).unwrap_or(true));
+                let can_go_previous = packet
+                    .get_bool("canGoPrevious")
+                    .unwrap_or_else(|| prev_player.as_ref().map(|p| p.can_go_previous).unwrap_or(true));
+                let can_seek = packet
+                    .get_bool("canSeek")
+                    .unwrap_or_else(|| prev_player.as_ref().map(|p| p.can_seek).unwrap_or(true));
+
+                if title.is_empty() && !is_playing {
+                    log::info!(
+                        "[mpris] Player '{}' on '{}' has no active track, removing from active players",
+                        player,
+                        device_name
+                    );
+                    entry.mpris_players.remove(player);
+                    if entry.active_mpris_player.as_deref() == Some(player) {
+                        entry.active_mpris_player = None;
+                    }
+                } else {
+                    log::info!(
+                        "[mpris] Player update on '{}' ({}): '{}' by '{}' (isPlaying={}, hasArt={})",
+                        device_name,
+                        player,
+                        title,
+                        artist,
+                        is_playing,
+                        album_art_data.is_some()
+                    );
+                    entry.mpris_players.insert(
+                        player.to_string(),
+                        NowPlayingInfo {
+                            player: player.to_string(),
+                            title,
+                            artist,
+                            album,
+                            is_playing,
+                            position_ms,
+                            position_updated_at_ms,
+                            length_ms,
+                            can_play,
+                            can_pause,
+                            can_go_next,
+                            can_go_previous,
+                            can_seek,
+                            album_art_url,
+                            album_art_data,
+                        },
+                    );
+                }
+
+                Self::recompute_active_mpris(entry);
+            }
+
+            if let Some((req_player, req_url)) = art_to_request {
+                log::info!(
+                    "[mpris] Requesting album art from '{}' for player '{}': {}",
+                    device_name,
+                    req_player,
+                    req_url
+                );
+                let _ = self.send_packet_to_device(
+                    device_id,
+                    &NetworkPacket::mpris_request_album_art(&req_player, &req_url),
+                );
+            }
+
+            self.notify_ui();
+        }
+    }
+
+    async fn download_album_art_payload(
+        &self,
+        peer_ip: IpAddr,
+        port: u16,
+        expected_bytes: usize,
+    ) -> Result<String> {
+        let target = SocketAddr::new(peer_ip, port);
+        let tcp = tokio::time::timeout(Duration::from_secs(8), TcpStream::connect(target))
+            .await
+            .context("Album art TCP connection timed out")?
+            .context("Album art TCP connection failed")?;
+
+        let server_name = ServerName::try_from("kdeconnect.local")
+            .unwrap_or_else(|_| ServerName::IpAddress(peer_ip.into()));
+
+        let mut tls_stream = tokio::time::timeout(
+            Duration::from_secs(8),
+            self.tls_connector.connect(server_name, tcp),
+        )
+        .await
+        .context("Album art TLS handshake timed out")?
+        .context("Album art TLS handshake failed")?;
+
+        let mut bytes = Vec::with_capacity(expected_bytes.min(5 * 1024 * 1024));
+        let mut buf = [0u8; 16 * 1024];
+        loop {
+            let n = tls_stream.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&buf[..n]);
+            if expected_bytes > 0 && bytes.len() >= expected_bytes {
+                break;
+            }
+            if bytes.len() > 8 * 1024 * 1024 {
+                return Err(anyhow!("Album art exceeded max size limit"));
+            }
+        }
+
+        if bytes.is_empty() {
+            return Err(anyhow!("Received empty album art payload"));
+        }
+
+        let mime = if bytes.starts_with(b"\x89PNG") {
+            "image/png"
+        } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+            "image/webp"
+        } else {
+            "image/jpeg"
+        };
+
+        let encoded = BASE64_STANDARD.encode(&bytes);
+        Ok(format!("data:{};base64,{}", mime, encoded))
     }
 
     pub fn unpair_or_reject(&self, device_id: &str) -> Result<()> {

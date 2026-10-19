@@ -10,12 +10,14 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
         "title": "Velquo",
-        "width": 480,
-        "height": 680,
+        "url": "http://localhost:1420",
+        "width": 860,
+        "height": 560,
         "center": true,
         "resizable": false,
         "maximizable": false,
@@ -24,7 +26,7 @@
         "decorations": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "transparent": false,
+        "transparent": true,
         "alwaysOnTop": false,
         "visible": true
       }

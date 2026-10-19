@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+}
+
+*,
+*::before,
+*::after {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}

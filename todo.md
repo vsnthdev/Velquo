@@ -1,0 +1,22 @@
+# Velquo — Remaining KDE Connect Features
+
+- [ ] **Clipboard Sync** — Auto-sync copied text between Mac and phone (`kdeconnect.clipboard`)
+- [ ] **Notifications Sync** — View, dismiss, and inline-reply to phone notifications on Mac (`kdeconnect.notification`)
+- [ ] **OTP / 2FA Auto-Copy** — Extract and copy verification codes from incoming notifications
+- [ ] **Find My Phone / Mac** — Ring the remote phone at full volume or ring this Mac (`kdeconnect.findmyphone.request`)
+- [ ] **Telephony & Call Alerts** — Show incoming/missed call banners with Mute Call button (`kdeconnect.telephony`)
+- [ ] **Auto-Pause Media on Calls** — Pause Mac media playback automatically during phone calls
+- [ ] **SMS & MMS Messaging** — View threads, send/reply to SMS, and download MMS attachments (`kdeconnect.sms.*`)
+- [ ] **Contacts Sync** — Sync phone vCards to resolve caller and SMS contact names/photos (`kdeconnect.contacts.*`)
+- [ ] **Remote File Browser (SFTP)** — Browse phone folders and storage over SFTP (`kdeconnect.sftp`)
+- [ ] **System Volume Control** — View and adjust phone audio streams and expose Mac volume (`kdeconnect.systemvolume`)
+- [ ] **Control Mac Media from Phone** — Expose Mac Now Playing and media controls to the phone (`kdeconnect.mpris`)
+- [ ] **Remote Input (Touchpad & Keyboard)** — Use phone as Mac trackpad/keyboard and vice versa (`kdeconnect.mousepad.*`)
+- [ ] **Presentation Remote** — Control slides and laser pointer from phone (`kdeconnect.presenter`)
+- [ ] **Run Commands** — Trigger pre-configured shell commands between Mac and phone (`kdeconnect.runcommand`)
+- [ ] **Screen Lock** — Lock Mac or remote device screen and sync lock state (`kdeconnect.lock`)
+- [ ] **Share URLs & Text from Mac** — Send links and text snippets from Mac to phone (`kdeconnect.share.request`)
+- [ ] **Multi-File Batch Upload Queue** — Sequential multi-file upload progress (`kdeconnect.share.request.update`)
+- [ ] **Mac Battery Reporting** — Send MacBook battery & charging status to the phone (`kdeconnect.battery`)
+- [ ] **Drawing Tablet Input** — Stylus pressure/tilt input support (`kdeconnect.digitizer`)
+- [ ] **Device Settings & Preferences** — Unpair, custom download folder, per-plugin toggles, and Launch at Login
