@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="234 296 556 432" width="556" height="432">
+  <defs>
+    <mask id="devices-cutout-mask">
+      <rect x="0" y="0" width="1024" height="1024" fill="white" />
+      <!-- MacBook Notch Cutout on the Right Device Top Edge -->
+      <rect x="572" y="340" width="148" height="46" rx="20" ry="20" fill="black" />
+      <!-- Smooth Negative-Space Channel Around the Wireless Bridge Arc -->
+      <path
+        d="M 340 584 C 425 466, 565 466, 650 584"
+        fill="none"
+        stroke="black"
+        stroke-width="116"
+        stroke-linecap="round"
+      />
+    </mask>
+  </defs>
+
+  <g mask="url(#devices-cutout-mask)" fill="#ffffff">
+    <!-- Left Device: Tall Smartphone Silhouette -->
+    <rect x="234" y="296" width="224" height="432" rx="68" ry="68" />
+
+    <!-- Right Device: Wide Notched Mac Screen Silhouette -->
+    <rect x="486" y="352" width="304" height="376" rx="68" ry="68" />
+  </g>
+</svg>
