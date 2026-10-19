@@ -1,85 +1,152 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
-    <!-- Smooth Dark Indigo-to-Obsidian Background Gradient -->
-    <linearGradient id="bg-grad" x1="15%" y1="0%" x2="85%" y2="100%">
-      <stop offset="0%" stop-color="#1e1b4b" />
-      <stop offset="50%" stop-color="#0f172a" />
-      <stop offset="100%" stop-color="#09090b" />
+    <!-- Apple HIG Standard Squircle Shadow -->
+    <filter id="squircle-shadow" x="-15%" y="-15%" width="130%" height="135%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.52" />
+    </filter>
+
+    <clipPath id="squircle-clip">
+      <rect x="100" y="100" width="824" height="824" rx="185" ry="185" />
+    </clipPath>
+
+    <!-- Native macOS Dark Squircle Surface -->
+    <linearGradient id="squircle-bg" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#252836" />
+      <stop offset="45%" stop-color="#161821" />
+      <stop offset="100%" stop-color="#0c0d12" />
     </linearGradient>
 
-    <!-- Pure White-to-Silver Gradient for the Phone & Mac Shapes -->
-    <linearGradient id="device-white-grad" x1="50%" y1="0%" x2="50%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" />
-      <stop offset="100%" stop-color="#dbeafe" />
+    <!-- Subtle Ambient Center Glow -->
+    <radialGradient id="ambient-glow" cx="52%" cy="48%" r="46%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.22" />
+      <stop offset="55%" stop-color="#6366f1" stop-opacity="0.10" />
+      <stop offset="100%" stop-color="#0c0d12" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Native macOS Subtle Top-Lit Specular Rim Border -->
+    <linearGradient id="squircle-rim" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.24" />
+      <stop offset="35%" stop-color="#ffffff" stop-opacity="0.10" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.04" />
     </linearGradient>
 
-    <!-- Glowing Cyan -> Indigo -> Violet Bridge Arc Gradient -->
-    <linearGradient id="bridge-arc-grad" x1="0%" y1="50%" x2="100%" y2="50%">
+    <!-- Back Frame (Mac Display Portal): Electric Cyan -> Indigo -> Violet -->
+    <linearGradient id="mac-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#38bdf8" />
       <stop offset="50%" stop-color="#6366f1" />
       <stop offset="100%" stop-color="#a855f7" />
     </linearGradient>
 
-    <!-- Subtle Depth Shadow for the Central Symbol -->
-    <filter id="symbol-shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#000000" flood-opacity="0.55" />
-    </filter>
+    <!-- Front Frame (Phone Portal): Pure Pearl White -> Ice Blue -->
+    <linearGradient id="phone-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="70%" stop-color="#f1f5f9" />
+      <stop offset="100%" stop-color="#bae6fd" />
+    </linearGradient>
 
-    <!-- Mask that carves the MacBook camera notch and the smooth wireless bridge channel out of the two devices -->
-    <mask id="devices-cutout-mask">
+    <!-- Clip boxes isolating strictly the horizontal crossing bars -->
+    <clipPath id="bottom-crossing-clip">
+      <rect x="462" y="555" width="110" height="120" />
+    </clipPath>
+
+    <clipPath id="top-crossing-clip">
+      <rect x="370" y="310" width="110" height="112" />
+    </clipPath>
+
+    <!-- Exact Contour Over-Under Masks for True 3D Chain-Link Weaving -->
+    <mask id="phone-over-under-mask">
       <rect x="0" y="0" width="1024" height="1024" fill="white" />
-      <!-- MacBook Notch Cutout on the Right Device Top Edge -->
-      <rect x="572" y="340" width="148" height="46" rx="20" ry="20" fill="black" />
-      <!-- Smooth Negative-Space Channel Around the Wireless Bridge Arc -->
-      <path
-        d="M 340 584 C 425 466, 565 466, 650 584"
-        fill="none"
-        stroke="black"
-        stroke-width="116"
-        stroke-linecap="round"
-      />
+      <!-- Mac ring's bottom bar weaves OVER the Phone ring's right edge with a uniform 18px contour gap -->
+      <g clip-path="url(#bottom-crossing-clip)">
+        <rect
+          x="430"
+          y="286"
+          width="330"
+          height="324"
+          rx="82"
+          ry="82"
+          fill="none"
+          stroke="black"
+          stroke-width="100"
+        />
+      </g>
     </mask>
+
+    <mask id="mac-over-under-mask">
+      <rect x="0" y="0" width="1024" height="1024" fill="white" />
+      <!-- Phone ring's top bar weaves OVER the Mac ring's left edge with a uniform 18px contour gap -->
+      <g clip-path="url(#top-crossing-clip)">
+        <rect
+          x="264"
+          y="366"
+          width="236"
+          height="372"
+          rx="78"
+          ry="78"
+          fill="none"
+          stroke="black"
+          stroke-width="100"
+        />
+      </g>
+    </mask>
+
+    <filter id="symbol-shadow" x="-20%" y="-20%" width="140%" height="145%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
   </defs>
 
-  <!-- Single Thicker Solid White Squircle Border -->
+  <!-- 1. Apple HIG 824x824 Squircle (Matches exact size & shadow of native macOS Dock icons) -->
+  <g filter="url(#squircle-shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#squircle-bg)" />
+  </g>
+
+  <g clip-path="url(#squircle-clip)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#ambient-glow)" />
+  </g>
+
+  <!-- Subtle Inner Glass Rim Border -->
   <rect
-    x="0"
-    y="0"
-    width="1024"
-    height="1024"
-    rx="228"
-    ry="228"
-    fill="#ffffff"
+    x="105"
+    y="105"
+    width="814"
+    height="814"
+    rx="180"
+    ry="180"
+    fill="none"
+    stroke="url(#squircle-rim)"
+    stroke-width="10"
   />
 
-  <!-- Inner Dark Squircle Body (Inset by 32px for a single uniform 32px white border) -->
-  <rect
-    x="32"
-    y="32"
-    width="960"
-    height="960"
-    rx="196"
-    ry="196"
-    fill="url(#bg-grad)"
-  />
-
-  <!-- Recognizable Central Symbol: Phone (Left) + Notched Mac (Right) Linked by a Glowing Wireless Bridge Arc -->
+  <!-- 2. Central Symbol: 3D Interlocking Mac & Phone Continuity Portals -->
   <g filter="url(#symbol-shadow)">
-    <g mask="url(#devices-cutout-mask)" fill="url(#device-white-grad)">
-      <!-- Left Device: Tall Smartphone Silhouette -->
-      <rect x="234" y="296" width="224" height="432" rx="68" ry="68" />
-
-      <!-- Right Device: Wide Notched Mac Screen Silhouette -->
-      <rect x="486" y="352" width="304" height="376" rx="68" ry="68" />
+    <!-- Wide Mac Portal Ring (Upper-Right, weaving OVER at bottom-left and UNDER at top-left) -->
+    <g mask="url(#mac-over-under-mask)">
+      <rect
+        x="430"
+        y="286"
+        width="330"
+        height="324"
+        rx="82"
+        ry="82"
+        fill="none"
+        stroke="url(#mac-ring-grad)"
+        stroke-width="64"
+      />
     </g>
 
-    <!-- Smooth Glowing Wireless Bridge Arc Inside the Cutout Channel -->
-    <path
-      d="M 340 584 C 425 466, 565 466, 650 584"
-      fill="none"
-      stroke="url(#bridge-arc-grad)"
-      stroke-width="52"
-      stroke-linecap="round"
-    />
+    <!-- Tall Phone Portal Ring (Lower-Left, weaving OVER at top-right and UNDER at bottom-right) -->
+    <g mask="url(#phone-over-under-mask)">
+      <rect
+        x="264"
+        y="366"
+        width="236"
+        height="372"
+        rx="78"
+        ry="78"
+        fill="none"
+        stroke="url(#phone-ring-grad)"
+        stroke-width="64"
+      />
+    </g>
   </g>
 </svg>

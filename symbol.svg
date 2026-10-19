@@ -1,25 +1,76 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="234 296 556 432" width="556" height="432">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="200 200 624 624" width="512" height="512">
   <defs>
-    <mask id="devices-cutout-mask">
+    <clipPath id="bottom-crossing-clip">
+      <rect x="458" y="550" width="116" height="125" />
+    </clipPath>
+
+    <clipPath id="top-crossing-clip">
+      <rect x="366" y="305" width="116" height="118" />
+    </clipPath>
+
+    <!-- Exact Contour Over-Under Masks with generous 26px gap for 18pt macOS Menu Bar clarity -->
+    <mask id="phone-over-under-mask">
       <rect x="0" y="0" width="1024" height="1024" fill="white" />
-      <!-- MacBook Notch Cutout on the Right Device Top Edge -->
-      <rect x="572" y="340" width="148" height="46" rx="20" ry="20" fill="black" />
-      <!-- Smooth Negative-Space Channel Around the Wireless Bridge Arc -->
-      <path
-        d="M 340 584 C 425 466, 565 466, 650 584"
-        fill="none"
-        stroke="black"
-        stroke-width="116"
-        stroke-linecap="round"
-      />
+      <g clip-path="url(#bottom-crossing-clip)">
+        <rect
+          x="430"
+          y="286"
+          width="330"
+          height="324"
+          rx="82"
+          ry="82"
+          fill="none"
+          stroke="black"
+          stroke-width="116"
+        />
+      </g>
+    </mask>
+
+    <mask id="mac-over-under-mask">
+      <rect x="0" y="0" width="1024" height="1024" fill="white" />
+      <g clip-path="url(#top-crossing-clip)">
+        <rect
+          x="264"
+          y="366"
+          width="236"
+          height="372"
+          rx="78"
+          ry="78"
+          fill="none"
+          stroke="black"
+          stroke-width="116"
+        />
+      </g>
     </mask>
   </defs>
 
-  <g mask="url(#devices-cutout-mask)" fill="#ffffff">
-    <!-- Left Device: Tall Smartphone Silhouette -->
-    <rect x="234" y="296" width="224" height="432" rx="68" ry="68" />
+  <!-- Wide Mac Portal Ring (Upper-Right) -->
+  <g mask="url(#mac-over-under-mask)">
+    <rect
+      x="430"
+      y="286"
+      width="330"
+      height="324"
+      rx="82"
+      ry="82"
+      fill="none"
+      stroke="#ffffff"
+      stroke-width="64"
+    />
+  </g>
 
-    <!-- Right Device: Wide Notched Mac Screen Silhouette -->
-    <rect x="486" y="352" width="304" height="376" rx="68" ry="68" />
+  <!-- Tall Phone Portal Ring (Lower-Left) -->
+  <g mask="url(#phone-over-under-mask)">
+    <rect
+      x="264"
+      y="366"
+      width="236"
+      height="372"
+      rx="78"
+      ry="78"
+      fill="none"
+      stroke="#ffffff"
+      stroke-width="64"
+    />
   </g>
 </svg>
