@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@500;700&amp;display=swap');
+    </style>
+
+    <!-- Rich Dark Obsidian-to-Midnight Canvas Background -->
+    <linearGradient id="cover-bg" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#181b26" />
+      <stop offset="50%" stop-color="#10121a" />
+      <stop offset="100%" stop-color="#090a0f" />
+    </linearGradient>
+
+    <!-- Subtle Ambient Center Glow Behind the Symbol -->
+    <radialGradient id="center-glow" cx="50%" cy="38%" r="45%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.18" />
+      <stop offset="45%" stop-color="#6366f1" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#090a0f" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Back Frame (Mac Display Portal): Electric Cyan -> Indigo -> Violet -->
+    <linearGradient id="mac-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#a855f7" />
+    </linearGradient>
+
+    <!-- Front Frame (Phone Portal): Pure Pearl White -> Ice Blue -->
+    <linearGradient id="phone-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="70%" stop-color="#f1f5f9" />
+      <stop offset="100%" stop-color="#bae6fd" />
+    </linearGradient>
+
+    <!-- Clean Perpendicular Masks on Straight Segments (UserSpaceOnUse) -->
+    <mask id="mac-under-phone-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect x="0" y="0" width="1024" height="1024" fill="white" />
+      <line x1="330" y1="380" x2="450" y2="380" stroke="black" stroke-width="96" />
+    </mask>
+
+    <mask id="phone-under-mac-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect x="0" y="0" width="1024" height="1024" fill="white" />
+      <line x1="450" y1="600" x2="570" y2="600" stroke="black" stroke-width="96" />
+    </mask>
+
+    <filter id="symbol-shadow" x="-20%" y="-20%" width="140%" height="145%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <!-- 1. Background Canvas (1280 x 640) -->
+  <rect x="0" y="0" width="1280" height="640" fill="url(#cover-bg)" />
+  <rect x="0" y="0" width="1280" height="640" fill="url(#center-glow)" />
+
+  <!-- 2. Top-Center App Symbol Only (Centered at x=640, y=206) -->
+  <g transform="translate(640, 206) scale(0.38) translate(-512, -512)" filter="url(#symbol-shadow)">
+    <!-- Wide Mac Portal Ring -->
+    <g mask="url(#mac-under-phone-mask)">
+      <rect
+        x="390"
+        y="276"
+        width="360"
+        height="324"
+        rx="74"
+        ry="74"
+        fill="none"
+        stroke="url(#mac-ring-grad)"
+        stroke-width="60"
+      />
+    </g>
+
+    <!-- Tall Phone Portal Ring -->
+    <g mask="url(#phone-under-mac-mask)">
+      <rect
+        x="274"
+        y="380"
+        width="236"
+        height="368"
+        rx="74"
+        ry="74"
+        fill="none"
+        stroke="url(#phone-ring-grad)"
+        stroke-width="60"
+      />
+    </g>
+  </g>
+
+  <!-- 3. App Name "Velquo" in Urbanist 700 White -->
+  <text
+    x="640"
+    y="426"
+    text-anchor="middle"
+    font-family="Urbanist"
+    font-weight="700"
+    font-size="76"
+    fill="#ffffff"
+  >Velquo</text>
+
+  <!-- 4. Tagline in Urbanist 500 Smaller Text -->
+  <text
+    x="640"
+    y="482"
+    text-anchor="middle"
+    font-family="Urbanist"
+    font-weight="500"
+    font-size="28"
+    fill="#94a3b8"
+  >KDE Connect, reborn natively for Apple Silicon Macs.</text>
+</svg>
