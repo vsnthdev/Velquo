@@ -269,6 +269,21 @@ impl KdeConnectDaemon {
         }
     }
 
+    /// Displays a native macOS system notification with sound (works in both dev binary and bundled .app)
+    pub fn show_macos_notification(title: &str, body: &str) {
+        let escaped_title = title.replace('\\', "\\\\").replace('"', "\\\"");
+        let escaped_body = body.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = format!(
+            "display notification \"{}\" with title \"{}\" sound name \"Glass\"",
+            escaped_body, escaped_title
+        );
+        std::thread::spawn(move || {
+            let _ = std::process::Command::new("/usr/bin/osascript")
+                .args(["-e", &script])
+                .output();
+        });
+    }
+
     pub fn notify_ui(&self) {
         if let Ok(guard) = self.app_handle.lock() {
             if let Some(app) = guard.as_ref() {
@@ -1355,6 +1370,19 @@ impl KdeConnectDaemon {
             PACKET_TYPE_PING => {
                 let msg = packet.get_str("message").unwrap_or("Ping!");
                 log::info!("[ping] Received Ping from '{}': \"{}\"", device_name, msg);
+                Self::show_macos_notification(device_name, msg);
+                if let Ok(guard) = self.app_handle.lock() {
+                    if let Some(app) = guard.as_ref() {
+                        let _ = app.emit(
+                            "velquo://ping",
+                            serde_json::json!({
+                                "deviceId": device_id,
+                                "deviceName": device_name,
+                                "message": msg,
+                            }),
+                        );
+                    }
+                }
             }
             PACKET_TYPE_BATTERY_REQUEST => {
                 log::info!(

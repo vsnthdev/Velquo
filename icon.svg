@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Smooth Dark Indigo-to-Obsidian Background Gradient -->
+    <linearGradient id="bg-grad" x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="50%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#09090b" />
+    </linearGradient>
+
+    <!-- Pure White-to-Silver Gradient for the Phone & Mac Shapes -->
+    <linearGradient id="device-white-grad" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#dbeafe" />
+    </linearGradient>
+
+    <!-- Glowing Cyan -> Indigo -> Violet Bridge Arc Gradient -->
+    <linearGradient id="bridge-arc-grad" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#a855f7" />
+    </linearGradient>
+
+    <!-- Subtle Depth Shadow for the Central Symbol -->
+    <filter id="symbol-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#000000" flood-opacity="0.55" />
+    </filter>
+
+    <!-- Mask that carves the MacBook camera notch and the smooth wireless bridge channel out of the two devices -->
+    <mask id="devices-cutout-mask">
+      <rect x="0" y="0" width="1024" height="1024" fill="white" />
+      <!-- MacBook Notch Cutout on the Right Device Top Edge -->
+      <rect x="572" y="340" width="148" height="46" rx="20" ry="20" fill="black" />
+      <!-- Smooth Negative-Space Channel Around the Wireless Bridge Arc -->
+      <path
+        d="M 340 584 C 425 466, 565 466, 650 584"
+        fill="none"
+        stroke="black"
+        stroke-width="116"
+        stroke-linecap="round"
+      />
+    </mask>
+  </defs>
+
+  <!-- Single Thicker Solid White Squircle Border -->
+  <rect
+    x="0"
+    y="0"
+    width="1024"
+    height="1024"
+    rx="228"
+    ry="228"
+    fill="#ffffff"
+  />
+
+  <!-- Inner Dark Squircle Body (Inset by 32px for a single uniform 32px white border) -->
+  <rect
+    x="32"
+    y="32"
+    width="960"
+    height="960"
+    rx="196"
+    ry="196"
+    fill="url(#bg-grad)"
+  />
+
+  <!-- Recognizable Central Symbol: Phone (Left) + Notched Mac (Right) Linked by a Glowing Wireless Bridge Arc -->
+  <g filter="url(#symbol-shadow)">
+    <g mask="url(#devices-cutout-mask)" fill="url(#device-white-grad)">
+      <!-- Left Device: Tall Smartphone Silhouette -->
+      <rect x="234" y="296" width="224" height="432" rx="68" ry="68" />
+
+      <!-- Right Device: Wide Notched Mac Screen Silhouette -->
+      <rect x="486" y="352" width="304" height="376" rx="68" ry="68" />
+    </g>
+
+    <!-- Smooth Glowing Wireless Bridge Arc Inside the Cutout Channel -->
+    <path
+      d="M 340 584 C 425 466, 565 466, 650 584"
+      fill="none"
+      stroke="url(#bridge-arc-grad)"
+      stroke-width="52"
+      stroke-linecap="round"
+    />
+  </g>
+</svg>
