@@ -264,6 +264,14 @@ export default function App() {
     let unlistenDrop: (() => void) | undefined;
 
     const isInsideDropZone = (pos: { x: number; y: number }): boolean => {
+      const targetDevice = selectedDeviceRef.current;
+      if (
+        !targetDevice ||
+        !targetDevice.reachable ||
+        targetDevice.pairState !== "Paired"
+      ) {
+        return false;
+      }
       const el = dropZoneRef.current;
       if (!el) return false;
       const rect = el.getBoundingClientRect();
@@ -696,7 +704,7 @@ export default function App() {
       </aside>
 
       {/* Right main content area: selected device overview */}
-      <main className="relative h-full flex-1 overflow-y-auto bg-white px-8 pt-10 pb-8 dark:bg-zinc-900">
+      <main className="relative h-full flex-1 overflow-x-hidden overflow-y-auto bg-white px-8 pt-10 pb-8 dark:bg-zinc-900">
         {/* Top-to-50% Ambient Blurred Album Artwork Gradient for the Entire Right Section */}
         <AnimatePresence>
           {hasArtworkBackdrop && artworkSrc && (
@@ -722,6 +730,24 @@ export default function App() {
               {/* Subtle top scrim so pure white text always pops even on light album covers */}
               <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/20 to-transparent dark:from-black/30 dark:via-transparent" />
             </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Subtle bottom gray blur glow in Dark Theme ONLY when no music is playing */}
+        <AnimatePresence>
+          {!selectedDevice?.nowPlaying?.title && (
+            <motion.div
+              key="idle-bottom-blur-blob"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.45, ease: "easeOut" }}
+              style={{
+                background:
+                  "radial-gradient(ellipse 75% 80% at 82% 105%, rgba(113, 113, 122, 0.22) 0%, rgba(82, 82, 91, 0.10) 48%, rgba(24, 24, 27, 0) 100%)",
+              }}
+              className="pointer-events-none absolute inset-x-0 bottom-0 z-0 hidden h-[55%] dark:block"
+            />
           )}
         </AnimatePresence>
 
@@ -1022,21 +1048,30 @@ export default function App() {
               <motion.div
                 ref={dropZoneRef}
                 layout
-                onClick={handlePickFilesToSend}
+                onClick={
+                  selectedDevice.reachable ? handlePickFilesToSend : undefined
+                }
                 animate={{
-                  scale: isDraggingOver ? 1.015 : 1,
+                  scale:
+                    selectedDevice.reachable && isDraggingOver ? 1.015 : 1,
                 }}
-                whileHover={{ scale: 1.005 }}
-                whileTap={{ scale: 0.99 }}
+                whileHover={
+                  selectedDevice.reachable ? { scale: 1.005 } : undefined
+                }
+                whileTap={
+                  selectedDevice.reachable ? { scale: 0.99 } : undefined
+                }
                 transition={{
                   type: "spring",
                   stiffness: 420,
                   damping: 30,
                 }}
-                className={`group relative mt-6 flex cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dotted px-6 py-8 text-center backdrop-blur-md transition-colors duration-200 ${
-                  isDraggingOver
-                    ? "border-blue-500 bg-blue-500/[0.08] dark:border-blue-400 dark:bg-blue-500/[0.12]"
-                    : "border-black/20 bg-white/50 hover:border-black/35 hover:bg-white/70 dark:border-white/20 dark:bg-white/[0.03] dark:hover:border-white/35 dark:hover:bg-white/[0.05]"
+                className={`group relative mt-6 flex flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dotted px-6 py-8 text-center backdrop-blur-md transition-all duration-200 ${
+                  !selectedDevice.reachable
+                    ? "pointer-events-none cursor-not-allowed border-black/10 bg-zinc-100/40 opacity-45 grayscale dark:border-white/10 dark:bg-white/[0.015]"
+                    : isDraggingOver
+                      ? "cursor-pointer border-blue-500 bg-blue-500/[0.08] dark:border-blue-400 dark:bg-blue-500/[0.12]"
+                      : "cursor-pointer border-black/20 bg-white/50 hover:border-black/35 hover:bg-white/70 dark:border-white/20 dark:bg-white/[0.03] dark:hover:border-white/35 dark:hover:bg-white/[0.05]"
                 }`}
               >
                 <AnimatePresence mode="wait">

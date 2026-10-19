@@ -4,6 +4,11 @@ version = "0.1.0"
 description = "A fast, native Apple Silicon client for KDE Connect — seamlessly bridging Android and Linux devices with your Mac."
 authors = ["vsnthdev"]
 edition = "2021"
+default-run = "Velquo"
+
+[[bin]]
+name = "Velquo"
+path = "src/main.rs"
 
 [lib]
 name = "velquo_lib"
