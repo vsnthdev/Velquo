@@ -2,7 +2,7 @@ use crate::kdeconnect::cert::{
     compute_verification_key, extract_cert_common_name, sha256_fingerprint, HostIdentity,
 };
 use crate::kdeconnect::packet::{
-    current_millis, current_secs, NetworkPacket, PACKET_TYPE_BATTERY,
+    current_millis, current_secs, NetworkPacket, PACKET_TYPE_BATTERY, PACKET_TYPE_BATTERY_REQUEST,
     PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_IDENTITY, PACKET_TYPE_MPRIS, PACKET_TYPE_PAIR,
     PACKET_TYPE_PING, PACKET_TYPE_SHARE_REQUEST, PACKET_TYPE_SHARE_REQUEST_UPDATE,
     PROTOCOL_VERSION,
@@ -444,11 +444,26 @@ impl KdeConnectDaemon {
                 .into_iter()
                 .map(|(ip, _)| ip)
                 .collect();
+            let mut last_host_battery: Option<(i32, bool)> = Self::read_macos_battery_status();
             let mut interval = tokio::time::interval(Duration::from_secs(30));
             interval.tick().await; // consume immediate tick
 
             loop {
                 interval.tick().await;
+
+                // Check if MacBook battery % or charging state changed and push to paired devices
+                if let Some(current_bat) = Self::read_macos_battery_status() {
+                    if last_host_battery != Some(current_bat) {
+                        log::info!(
+                            "[battery-out] Mac battery changed ({:?} -> {:?}), broadcasting to paired devices",
+                            last_host_battery,
+                            current_bat
+                        );
+                        last_host_battery = Some(current_bat);
+                        daemon_bcast.broadcast_host_battery(current_bat.0, current_bat.1);
+                    }
+                }
+
                 let current_ips: Vec<Ipv4Addr> = Self::get_local_ipv4s()
                     .into_iter()
                     .map(|(ip, _)| ip)
@@ -1341,29 +1356,47 @@ impl KdeConnectDaemon {
                 let msg = packet.get_str("message").unwrap_or("Ping!");
                 log::info!("[ping] Received Ping from '{}': \"{}\"", device_name, msg);
             }
+            PACKET_TYPE_BATTERY_REQUEST => {
+                log::info!(
+                    "[battery-out] Device '{}' ({}) requested Mac battery status",
+                    device_name,
+                    device_id
+                );
+                self.send_host_battery_to_device(device_id);
+            }
             PACKET_TYPE_BATTERY => {
+                if packet.get_bool("request").unwrap_or(false) {
+                    log::info!(
+                        "[battery-out] Device '{}' ({}) requested Mac battery status (legacy packet)",
+                        device_name,
+                        device_id
+                    );
+                    self.send_host_battery_to_device(device_id);
+                }
                 let charge = packet.get_i64("currentCharge").map(|c| c as i32);
                 let is_charging = packet.get_bool("isCharging");
-                log::info!(
-                    "[battery] Device '{}' ({}) battery: {:?}% (charging={:?})",
-                    device_name,
-                    device_id,
-                    charge,
-                    is_charging
-                );
-                if let Ok(mut devices) = self.devices.lock() {
-                    if let Some(entry) = devices.get_mut(device_id) {
-                        if let Some(c) = charge {
-                            if (0..=100).contains(&c) {
-                                entry.view.battery_charge = Some(c);
+                if charge.is_some() || is_charging.is_some() {
+                    log::info!(
+                        "[battery] Device '{}' ({}) battery: {:?}% (charging={:?})",
+                        device_name,
+                        device_id,
+                        charge,
+                        is_charging
+                    );
+                    if let Ok(mut devices) = self.devices.lock() {
+                        if let Some(entry) = devices.get_mut(device_id) {
+                            if let Some(c) = charge {
+                                if (0..=100).contains(&c) {
+                                    entry.view.battery_charge = Some(c);
+                                }
+                            }
+                            if let Some(ch) = is_charging {
+                                entry.view.battery_charging = Some(ch);
                             }
                         }
-                        if let Some(ch) = is_charging {
-                            entry.view.battery_charging = Some(ch);
-                        }
                     }
+                    self.notify_ui();
                 }
-                self.notify_ui();
             }
             PACKET_TYPE_CONNECTIVITY_REPORT => {
                 if let Some(subs) = packet.body.get("signalStrengths").and_then(|v| v.as_object()) {
@@ -1602,11 +1635,74 @@ impl KdeConnectDaemon {
     }
 
     pub fn request_device_telemetry(&self, device_id: &str) {
+        self.send_host_battery_to_device(device_id);
         let _ = self.send_packet_to_device(device_id, &NetworkPacket::battery_request());
-        let _ = self.send_packet_to_device(device_id, &NetworkPacket::battery_legacy_request());
         let _ =
             self.send_packet_to_device(device_id, &NetworkPacket::connectivity_report_request());
         let _ = self.send_packet_to_device(device_id, &NetworkPacket::mpris_request_player_list());
+    }
+
+    /// Reads the host MacBook's battery percentage (0..=100) and charging status via `pmset -g batt`.
+    pub fn read_macos_battery_status() -> Option<(i32, bool)> {
+        let output = std::process::Command::new("/usr/bin/pmset")
+            .args(["-g", "batt"])
+            .output()
+            .ok()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let on_ac_power = stdout.contains("'AC Power'");
+        for line in stdout.lines() {
+            if let Some(pct_idx) = line.find("%;") {
+                let prefix = &line[..pct_idx];
+                let num_str: String = prefix
+                    .chars()
+                    .rev()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>()
+                    .chars()
+                    .rev()
+                    .collect();
+                if let Ok(charge) = num_str.parse::<i32>() {
+                    let clamped = charge.clamp(0, 100);
+                    let after = &line[pct_idx + 2..];
+                    let is_charging = on_ac_power
+                        || (after.contains("charging") && !after.contains("discharging") && !after.contains("not charging"))
+                        || after.contains("charged")
+                        || after.contains("finishing charge");
+                    return Some((clamped, is_charging));
+                }
+            }
+        }
+        None
+    }
+
+    pub fn send_host_battery_to_device(&self, device_id: &str) {
+        if let Some((charge, is_charging)) = Self::read_macos_battery_status() {
+            let pkt = NetworkPacket::battery_status(charge, is_charging);
+            if self.send_packet_to_device(device_id, &pkt).is_ok() {
+                log::info!(
+                    "[battery-out] Sent Mac battery status to {}: {}% (charging={})",
+                    device_id,
+                    charge,
+                    is_charging
+                );
+            }
+        }
+    }
+
+    pub fn broadcast_host_battery(&self, charge: i32, is_charging: bool) {
+        let pkt = NetworkPacket::battery_status(charge, is_charging);
+        let paired_online_ids: Vec<String> = {
+            let devices = self.devices.lock().unwrap();
+            devices
+                .values()
+                .filter(|d| d.view.reachable && d.view.pair_state == PairState::Paired)
+                .map(|d| d.view.device_id.clone())
+                .collect()
+        };
+        for id in paired_online_ids {
+            let _ = self.send_packet_to_device(&id, &pkt);
+        }
     }
 
     pub fn send_mpris_action(&self, device_id: &str, player: &str, action: &str) -> Result<()> {

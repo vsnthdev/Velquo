@@ -17,6 +17,6 @@
 - [ ] **Screen Lock** — Lock Mac or remote device screen and sync lock state (`kdeconnect.lock`)
 - [ ] **Share URLs & Text from Mac** — Send links and text snippets from Mac to phone (`kdeconnect.share.request`)
 - [ ] **Multi-File Batch Upload Queue** — Sequential multi-file upload progress (`kdeconnect.share.request.update`)
-- [ ] **Mac Battery Reporting** — Send MacBook battery & charging status to the phone (`kdeconnect.battery`)
+- [x] **Mac Battery Reporting** — Send MacBook battery & charging status to the phone (`kdeconnect.battery`)
 - [ ] **Drawing Tablet Input** — Stylus pressure/tilt input support (`kdeconnect.digitizer`)
 - [ ] **Device Settings & Preferences** — Unpair, custom download folder, per-plugin toggles, and Launch at Login

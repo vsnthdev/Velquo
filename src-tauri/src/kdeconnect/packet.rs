@@ -233,9 +233,16 @@ impl NetworkPacket {
         Self::new(PACKET_TYPE_BATTERY_REQUEST, body)
     }
 
-    pub fn battery_legacy_request() -> Self {
+    pub fn battery_status(current_charge: i32, is_charging: bool) -> Self {
+        let threshold_event = if current_charge <= 15 && !is_charging {
+            1
+        } else {
+            0
+        };
         let mut body = Map::new();
-        body.insert("request".into(), json!(true));
+        body.insert("currentCharge".into(), json!(current_charge));
+        body.insert("isCharging".into(), json!(is_charging));
+        body.insert("thresholdEvent".into(), json!(threshold_event));
         Self::new(PACKET_TYPE_BATTERY, body)
     }
 
