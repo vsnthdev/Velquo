@@ -1,76 +1,46 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="200 200 624 624" width="512" height="512">
   <defs>
-    <clipPath id="bottom-crossing-clip">
-      <rect x="458" y="550" width="116" height="125" />
-    </clipPath>
-
-    <clipPath id="top-crossing-clip">
-      <rect x="366" y="305" width="116" height="118" />
-    </clipPath>
-
-    <!-- Exact Contour Over-Under Masks with generous 26px gap for 18pt macOS Menu Bar clarity -->
-    <mask id="phone-over-under-mask">
+    <!-- Clean Perpendicular Masks on Straight Segments (maskUnits="userSpaceOnUse" prevents -10% stroke clipping!) -->
+    <!-- Intersection 1 at (390, 380): Phone top horizontal bar (y=380) passes OVER Mac left vertical bar (x=390) -->
+    <mask id="mac-under-phone-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
       <rect x="0" y="0" width="1024" height="1024" fill="white" />
-      <g clip-path="url(#bottom-crossing-clip)">
-        <rect
-          x="430"
-          y="286"
-          width="330"
-          height="324"
-          rx="82"
-          ry="82"
-          fill="none"
-          stroke="black"
-          stroke-width="116"
-        />
-      </g>
+      <line x1="320" y1="380" x2="460" y2="380" stroke="black" stroke-width="108" />
     </mask>
 
-    <mask id="mac-over-under-mask">
+    <!-- Intersection 2 at (510, 600): Mac bottom horizontal bar (y=600) passes OVER Phone right vertical bar (x=510) -->
+    <mask id="phone-under-mac-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
       <rect x="0" y="0" width="1024" height="1024" fill="white" />
-      <g clip-path="url(#top-crossing-clip)">
-        <rect
-          x="264"
-          y="366"
-          width="236"
-          height="372"
-          rx="78"
-          ry="78"
-          fill="none"
-          stroke="black"
-          stroke-width="116"
-        />
-      </g>
+      <line x1="440" y1="600" x2="580" y2="600" stroke="black" stroke-width="108" />
     </mask>
   </defs>
 
-  <!-- Wide Mac Portal Ring (Upper-Right) -->
-  <g mask="url(#mac-over-under-mask)">
+  <!-- Wide Mac Portal Ring (x=390..750, y=276..600, rx=74) -->
+  <g mask="url(#mac-under-phone-mask)">
     <rect
-      x="430"
-      y="286"
-      width="330"
+      x="390"
+      y="276"
+      width="360"
       height="324"
-      rx="82"
-      ry="82"
+      rx="74"
+      ry="74"
       fill="none"
       stroke="#ffffff"
-      stroke-width="64"
+      stroke-width="60"
     />
   </g>
 
-  <!-- Tall Phone Portal Ring (Lower-Left) -->
-  <g mask="url(#phone-over-under-mask)">
+  <!-- Tall Phone Portal Ring (x=274..510, y=380..748, rx=74) -->
+  <g mask="url(#phone-under-mac-mask)">
     <rect
-      x="264"
-      y="366"
+      x="274"
+      y="380"
       width="236"
-      height="372"
-      rx="78"
-      ry="78"
+      height="368"
+      rx="74"
+      ry="74"
       fill="none"
       stroke="#ffffff"
-      stroke-width="64"
+      stroke-width="60"
     />
   </g>
 </svg>
