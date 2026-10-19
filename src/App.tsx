@@ -6,7 +6,9 @@ import {
   DeviceTablet,
   GearSix,
   Laptop,
+  Link,
   MusicNotes,
+  PaperPlaneRight,
   Pause,
   Play,
   SkipBack,
@@ -14,6 +16,7 @@ import {
   Television,
   UploadSimple,
 } from "@phosphor-icons/react";
+import * as Popover from "@radix-ui/react-popover";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -175,6 +178,21 @@ function formatDurationMs(ms: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+function isValidHttpUrl(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      Boolean(parsed.hostname) &&
+      (parsed.hostname.includes(".") || parsed.hostname === "localhost")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   const [devices, setDevices] = useState<DeviceView[]>([]);
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
@@ -190,6 +208,10 @@ export default function App() {
     null
   );
   const [displaySecs, setDisplaySecs] = useState<number>(0);
+  const [isShareLinkOpen, setIsShareLinkOpen] = useState<boolean>(false);
+  const [shareLinkInput, setShareLinkInput] = useState<string>("");
+  const [shareLinkTouchedInvalid, setShareLinkTouchedInvalid] =
+    useState<boolean>(false);
   const seekBarRef = useRef<HTMLDivElement | null>(null);
   const dropZoneRef = useRef<HTMLDivElement | null>(null);
   const selectedDeviceRef = useRef<DeviceView | null>(null);
@@ -499,6 +521,37 @@ export default function App() {
     selectedDevice?.reachable && selectedDevice?.nowPlaying?.title
   );
   const hasArtworkBackdrop = Boolean(hasActiveMedia && artworkSrc);
+
+  const isShareLinkInvalid =
+    (shareLinkInput.trim().length > 0 && !isValidHttpUrl(shareLinkInput)) ||
+    shareLinkTouchedInvalid;
+
+  const handleSendShareLink = async () => {
+    if (
+      !selectedDevice ||
+      !selectedDevice.reachable ||
+      selectedDevice.pairState !== "Paired"
+    ) {
+      return;
+    }
+    const trimmed = shareLinkInput.trim();
+    if (!isValidHttpUrl(trimmed)) {
+      setShareLinkTouchedInvalid(true);
+      return;
+    }
+    try {
+      await invoke("send_url", {
+        deviceId: selectedDevice.deviceId,
+        url: trimmed,
+      });
+      setShareLinkInput("");
+      setShareLinkTouchedInvalid(false);
+      setIsShareLinkOpen(false);
+    } catch (err) {
+      console.error("Failed to share URL:", err);
+      setShareLinkTouchedInvalid(true);
+    }
+  };
 
   const handleDragMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     if (e.buttons === 1) {
@@ -1222,6 +1275,124 @@ export default function App() {
                   );
                 })()}
               </motion.div>
+
+              {/* Quick actions */}
+              <div
+                className={`mt-6 flex flex-col gap-2.5 transition-opacity duration-200 ${
+                  !selectedDevice.reachable
+                    ? "pointer-events-none opacity-45 grayscale"
+                    : ""
+                }`}
+              >
+                <span className="text-[12.5px] font-medium text-zinc-500 dark:text-zinc-400">
+                  Quick actions
+                </span>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <Popover.Root
+                    open={selectedDevice.reachable && isShareLinkOpen}
+                    onOpenChange={(open) => {
+                      setIsShareLinkOpen(open);
+                      if (!open) {
+                        setShareLinkTouchedInvalid(false);
+                      }
+                    }}
+                  >
+                    <Popover.Trigger asChild>
+                      <motion.button
+                        type="button"
+                        whileHover={
+                          selectedDevice.reachable ? { scale: 1.015 } : undefined
+                        }
+                        whileTap={
+                          selectedDevice.reachable ? { scale: 0.985 } : undefined
+                        }
+                        transition={{
+                          type: "spring",
+                          stiffness: 450,
+                          damping: 28,
+                        }}
+                        className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/12 bg-black/[0.02] px-4 py-2.5 text-[13.5px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.05] data-[state=open]:border-black/25 data-[state=open]:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05] dark:data-[state=open]:border-white/25 dark:data-[state=open]:bg-white/[0.07]"
+                      >
+                        <Link size={16} weight="regular" />
+                        <span>Share link</span>
+                      </motion.button>
+                    </Popover.Trigger>
+
+                    <AnimatePresence>
+                      {selectedDevice.reachable && isShareLinkOpen && (
+                        <Popover.Portal forceMount>
+                          <Popover.Content
+                            asChild
+                            forceMount
+                            side="top"
+                            align="start"
+                            sideOffset={8}
+                          >
+                            <motion.div
+                              initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                              transition={{
+                                type: "spring",
+                                stiffness: 480,
+                                damping: 32,
+                              }}
+                              style={{
+                                transformOrigin:
+                                  "var(--radix-popover-content-transform-origin)",
+                              }}
+                              className="z-50 flex w-72 flex-col gap-2 rounded-2xl border border-black/12 bg-white/95 p-3 shadow-xl backdrop-blur-xl outline-none dark:border-white/15 dark:bg-zinc-800/95"
+                            >
+                              <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                                Paste your link here
+                              </span>
+
+                              <div
+                                className={`flex items-center gap-1.5 rounded-xl border bg-black/[0.03] p-1 transition-colors dark:bg-zinc-900/80 ${
+                                  isShareLinkInvalid
+                                    ? "border-red-500/80 focus-within:border-red-500 dark:border-red-400/80 dark:focus-within:border-red-400"
+                                    : "border-black/12 focus-within:border-blue-500/60 dark:border-white/12 dark:focus-within:border-blue-400/60"
+                                }`}
+                              >
+                                <input
+                                  type="url"
+                                  value={shareLinkInput}
+                                  onChange={(e) => {
+                                    setShareLinkInput(e.target.value);
+                                    if (shareLinkTouchedInvalid) {
+                                      setShareLinkTouchedInvalid(false);
+                                    }
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      handleSendShareLink();
+                                    }
+                                  }}
+                                  placeholder="https://example.com"
+                                  autoFocus
+                                  className="min-w-0 flex-1 select-text bg-transparent px-2.5 py-1 text-[13px] text-zinc-900 placeholder:text-zinc-400 focus:outline-none dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                                />
+                                <motion.button
+                                  type="button"
+                                  onClick={handleSendShareLink}
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.94 }}
+                                  className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white shadow-xs transition-colors hover:bg-blue-500"
+                                  title="Send link"
+                                >
+                                  <PaperPlaneRight size={14} weight="fill" />
+                                </motion.button>
+                              </div>
+                            </motion.div>
+                          </Popover.Content>
+                        </Popover.Portal>
+                      )}
+                    </AnimatePresence>
+                  </Popover.Root>
+                </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

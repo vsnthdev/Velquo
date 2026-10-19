@@ -163,6 +163,25 @@ async fn send_file(
 }
 
 #[tauri::command]
+fn send_url(
+    device_id: String,
+    url: String,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<String, String> {
+    log::info!(
+        "[ui] Request to share URL '{}' to device_id={}",
+        url,
+        device_id
+    );
+    daemon
+        .send_url_to_device(&device_id, &url)
+        .map_err(|e| {
+            log::error!("[ui] send_url failed: {:?}", e);
+            e.to_string()
+        })
+}
+
+#[tauri::command]
 fn clear_logs() {
     AppLogger::clear_entries();
     log::info!("[ui] Logs cleared");
@@ -236,6 +255,7 @@ pub fn run() {
             send_media_action,
             seek_media,
             send_file,
+            send_url,
             clear_logs,
             quit_app,
         ])

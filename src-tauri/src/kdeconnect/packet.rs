@@ -312,4 +312,16 @@ impl NetworkPacket {
         pkt.payload_transfer_info = Some(transfer_info);
         pkt
     }
+
+    pub fn share_url(url: &str) -> Self {
+        let mut body = Map::new();
+        body.insert("url".into(), json!(url));
+        Self::new(PACKET_TYPE_SHARE_REQUEST, body)
+    }
+
+    pub fn share_text(text: &str) -> Self {
+        let mut body = Map::new();
+        body.insert("text".into(), json!(text));
+        Self::new(PACKET_TYPE_SHARE_REQUEST, body)
+    }
 }

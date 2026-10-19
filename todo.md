@@ -15,7 +15,7 @@
 - [ ] **Presentation Remote** — Control slides and laser pointer from phone (`kdeconnect.presenter`)
 - [ ] **Run Commands** — Trigger pre-configured shell commands between Mac and phone (`kdeconnect.runcommand`)
 - [ ] **Screen Lock** — Lock Mac or remote device screen and sync lock state (`kdeconnect.lock`)
-- [ ] **Share URLs & Text from Mac** — Send links and text snippets from Mac to phone (`kdeconnect.share.request`)
+- [x] **Share URLs & Text from Mac** — Send links and text snippets from Mac to phone (`kdeconnect.share.request`)
 - [ ] **Multi-File Batch Upload Queue** — Sequential multi-file upload progress (`kdeconnect.share.request.update`)
 - [x] **Mac Battery Reporting** — Send MacBook battery & charging status to the phone (`kdeconnect.battery`)
 - [x] **Ping Notifications** — Show native macOS & in-app notification when receiving a ping from a device (`kdeconnect.ping`)

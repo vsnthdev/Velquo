@@ -2621,6 +2621,63 @@ impl KdeConnectDaemon {
         Ok(dest_path.to_path_buf())
     }
 
+    /// Sends a URL (`kdeconnect.share.request` with `{"url": ...}`) to a paired KDE Connect device
+    pub fn send_url_to_device(&self, device_id: &str, url: &str) -> Result<String> {
+        let trimmed = url.trim();
+        if trimmed.is_empty() {
+            return Err(anyhow!("URL cannot be empty"));
+        }
+
+        let lower = trimmed.to_ascii_lowercase();
+        if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+            return Err(anyhow!("URL must start with http:// or https://"));
+        }
+
+        let device_name = {
+            let devices = self.devices.lock().unwrap();
+            let entry = devices
+                .get(device_id)
+                .ok_or_else(|| anyhow!("Device {} not found", device_id))?;
+            if entry.view.pair_state != PairState::Paired {
+                return Err(anyhow!("Device '{}' is not paired", entry.view.device_name));
+            }
+            if !entry.view.reachable {
+                return Err(anyhow!("Device '{}' is offline", entry.view.device_name));
+            }
+            entry.view.device_name.clone()
+        };
+
+        let pkt = NetworkPacket::share_url(trimmed);
+        self.send_packet_to_device(device_id, &pkt)?;
+
+        log::info!(
+            "[share-out] Shared URL '{}' to '{}' ({})",
+            trimmed,
+            device_name,
+            device_id
+        );
+
+        let transfer_id = Uuid::new_v4().to_string();
+        self.upsert_transfer(TransferItem {
+            id: transfer_id.clone(),
+            device_id: device_id.to_string(),
+            device_name,
+            direction: "Outgoing".to_string(),
+            kind: "Url".to_string(),
+            filename: trimmed.to_string(),
+            total_bytes: 0,
+            transferred_bytes: 0,
+            status: "Completed".to_string(),
+            saved_path: None,
+            text_content: None,
+            url_content: Some(trimmed.to_string()),
+            error: None,
+            timestamp_ms: current_millis(),
+        });
+
+        Ok(transfer_id)
+    }
+
     /// Sends a local file to a paired KDE Connect device (`CompositeUploadJob` + `UploadJob`)
     pub async fn send_file_to_device(
         self: &Arc<Self>,
