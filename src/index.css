@@ -2,6 +2,7 @@
 
 @theme {
   --font-sans: "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Google Sans Code", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 :root {

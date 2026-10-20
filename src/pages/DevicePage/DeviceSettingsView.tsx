@@ -52,7 +52,7 @@ export function DeviceSettingsView({
             value={fileSaveLocation}
             onChange={(e) => onChangeFileSaveLocation(e.target.value)}
             readOnly
-            className="min-w-0 flex-1 select-text bg-transparent px-3.5 py-2.5 text-[13px] text-zinc-800 focus:outline-none dark:text-zinc-200"
+            className="min-w-0 flex-1 select-text bg-transparent px-3.5 py-2.5 font-mono text-[12.5px] text-zinc-800 focus:outline-none dark:text-zinc-200"
           />
 
           <motion.button
