@@ -5,7 +5,7 @@
 - [ ] **OTP / 2FA Auto-Copy** — Extract and copy verification codes from incoming notifications
 - [ ] **Find My Phone / Mac** — Ring the remote phone at full volume or ring this Mac (`kdeconnect.findmyphone.request`)
 - [ ] **Telephony & Call Alerts** — Show incoming/missed call banners with Mute Call button (`kdeconnect.telephony`)
-- [ ] **Auto-Pause Media on Calls** — Pause Mac media playback automatically during phone calls
+- [x] **Auto-Pause Media on Calls** — Pause Mac media playback automatically during phone calls
 - [ ] **SMS & MMS Messaging** — View threads, send/reply to SMS, and download MMS attachments (`kdeconnect.sms.*`)
 - [ ] **Contacts Sync** — Sync phone vCards to resolve caller and SMS contact names/photos (`kdeconnect.contacts.*`)
 - [ ] **Remote File Browser (SFTP)** — Browse phone folders and storage over SFTP (`kdeconnect.sftp`)

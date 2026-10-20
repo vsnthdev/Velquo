@@ -15,6 +15,7 @@ pub const PACKET_TYPE_CONNECTIVITY_REPORT: &str = "kdeconnect.connectivity_repor
 pub const PACKET_TYPE_CONNECTIVITY_REPORT_REQUEST: &str = "kdeconnect.connectivity_report.request";
 pub const PACKET_TYPE_MPRIS: &str = "kdeconnect.mpris";
 pub const PACKET_TYPE_MPRIS_REQUEST: &str = "kdeconnect.mpris.request";
+pub const PACKET_TYPE_TELEPHONY: &str = "kdeconnect.telephony";
 pub const PACKET_TYPE_SHARE_REQUEST: &str = "kdeconnect.share.request";
 pub const PACKET_TYPE_SHARE_REQUEST_UPDATE: &str = "kdeconnect.share.request.update";
 
@@ -60,6 +61,7 @@ pub fn supported_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_CONNECTIVITY_REPORT.to_string(),
         PACKET_TYPE_MPRIS.to_string(),
         PACKET_TYPE_MPRIS_REQUEST.to_string(),
+        PACKET_TYPE_TELEPHONY.to_string(),
     ]
 }
 

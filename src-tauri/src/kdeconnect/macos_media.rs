@@ -144,6 +144,7 @@ pub fn query_mac_player_status(requested_player: &str) -> MacPlayerSnapshot {
     }
 
     let sys_vol = get_macos_system_volume().unwrap_or(50);
+    let audio_running = is_macos_audio_output_running();
     MacPlayerSnapshot {
         player: if requested_player.is_empty() {
             DEFAULT_MAC_PLAYER.to_string()
@@ -153,7 +154,7 @@ pub fn query_mac_player_status(requested_player: &str) -> MacPlayerSnapshot {
         title: String::new(),
         artist: String::new(),
         album: String::new(),
-        is_playing: false,
+        is_playing: audio_running,
         position_ms: 0,
         length_ms: 0,
         volume: sys_vol,
@@ -162,6 +163,63 @@ pub fn query_mac_player_status(requested_player: &str) -> MacPlayerSnapshot {
         can_go_next: true,
         can_go_previous: true,
         can_seek: true,
+    }
+}
+
+/// Automatically pauses any currently playing Mac media when a phone call starts (`ringing` or `talking`),
+/// returning the list of player source names that were actively playing and paused by Velquo.
+pub fn pause_mac_media_for_call() -> Vec<String> {
+    let mut paused_sources = Vec::new();
+
+    for app in [PLAYER_SPOTIFY, PLAYER_APPLE_MUSIC] {
+        if let Some(snap) = query_app_player(app, app) {
+            if snap.is_playing {
+                log::info!(
+                    "[pause-music] Pausing Mac '{}' playback during phone call",
+                    app
+                );
+                execute_mac_player_action(app, "Pause");
+                paused_sources.push(app.to_string());
+            }
+        }
+    }
+
+    // If neither Spotify nor Apple Music was playing, check CoreAudio hardware output
+    // to see if a browser (Chrome/Safari/Arc/YouTube) or video player (VLC/IINA) is actively playing audio.
+    if paused_sources.is_empty() && is_macos_audio_output_running() {
+        log::info!(
+            "[pause-music] Active macOS audio output detected during phone call, sending hardware Play/Pause key"
+        );
+        send_macos_media_key(NX_KEYTYPE_PLAY);
+        paused_sources.push(DEFAULT_MAC_PLAYER.to_string());
+    }
+
+    paused_sources
+}
+
+/// Resumes only the Mac media sources that were automatically paused by `pause_mac_media_for_call`
+/// once the phone call ends (`isCancel: true`).
+pub fn resume_mac_media_after_call(paused_sources: &[String]) {
+    for source in paused_sources {
+        match source.as_str() {
+            PLAYER_SPOTIFY | PLAYER_APPLE_MUSIC => {
+                log::info!(
+                    "[pause-music] Resuming Mac '{}' playback after phone call ended",
+                    source
+                );
+                execute_mac_player_action(source, "Play");
+            }
+            DEFAULT_MAC_PLAYER => {
+                // Only send the toggle key if system audio is still paused/silent
+                if !is_macos_audio_output_running() {
+                    log::info!(
+                        "[pause-music] Resuming macOS system media playback after phone call ended"
+                    );
+                    send_macos_media_key(NX_KEYTYPE_PLAY);
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -478,15 +536,89 @@ struct NSPoint {
 }
 
 #[cfg(target_os = "macos")]
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct AudioObjectPropertyAddress {
+    m_selector: u32,
+    m_scope: u32,
+    m_element: u32,
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreAudio", kind = "framework")]
 #[link(name = "ApplicationServices", kind = "framework")]
 #[link(name = "CoreGraphics", kind = "framework")]
 #[link(name = "AppKit", kind = "framework")]
 extern "C" {
+    fn AudioObjectGetPropertyData(
+        in_object_id: u32,
+        in_address: *const AudioObjectPropertyAddress,
+        in_qualifier_data_size: u32,
+        in_qualifier_data: *const c_void,
+        io_data_size: *mut u32,
+        out_data: *mut c_void,
+    ) -> i32;
     fn objc_getClass(name: *const libc::c_char) -> *mut c_void;
     fn sel_registerName(name: *const libc::c_char) -> *const c_void;
     fn objc_msgSend();
     fn CGEventPost(tap: u32, event: *mut c_void);
     fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
+}
+
+/// Checks via macOS `CoreAudio.framework` (`kAudioDevicePropertyDeviceIsRunningSomewhere`)
+/// whether the default output audio device is actively rendering audio from any application.
+#[cfg(target_os = "macos")]
+pub fn is_macos_audio_output_running() -> bool {
+    const K_AUDIO_OBJECT_SYSTEM_OBJECT: u32 = 1;
+    const K_AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE: u32 = u32::from_be_bytes(*b"dOut");
+    const K_AUDIO_DEVICE_PROPERTY_DEVICE_IS_RUNNING_SOMEWHERE: u32 = u32::from_be_bytes(*b"gone");
+    const K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL: u32 = u32::from_be_bytes(*b"glob");
+    const K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN: u32 = 0;
+
+    unsafe {
+        let mut default_device_id: u32 = 0;
+        let mut data_size = std::mem::size_of::<u32>() as u32;
+        let default_dev_addr = AudioObjectPropertyAddress {
+            m_selector: K_AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE,
+            m_scope: K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL,
+            m_element: K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN,
+        };
+
+        let status = AudioObjectGetPropertyData(
+            K_AUDIO_OBJECT_SYSTEM_OBJECT,
+            &default_dev_addr,
+            0,
+            std::ptr::null(),
+            &mut data_size,
+            &mut default_device_id as *mut u32 as *mut c_void,
+        );
+        if status != 0 || default_device_id == 0 {
+            return false;
+        }
+
+        let mut is_running: u32 = 0;
+        let mut running_size = std::mem::size_of::<u32>() as u32;
+        let running_addr = AudioObjectPropertyAddress {
+            m_selector: K_AUDIO_DEVICE_PROPERTY_DEVICE_IS_RUNNING_SOMEWHERE,
+            m_scope: K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL,
+            m_element: K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN,
+        };
+
+        let run_status = AudioObjectGetPropertyData(
+            default_device_id,
+            &running_addr,
+            0,
+            std::ptr::null(),
+            &mut running_size,
+            &mut is_running as *mut u32 as *mut c_void,
+        );
+        run_status == 0 && is_running != 0
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn is_macos_audio_output_running() -> bool {
+    false
 }
 
 /// Posts a system-wide macOS media key event (`NX_SUBTYPE_AUX_CONTROL_BUTTONS`) via `NSEvent` + `CGEventPost`,

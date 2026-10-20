@@ -2,14 +2,14 @@ use crate::kdeconnect::cert::{
     compute_verification_key, extract_cert_common_name, sha256_fingerprint, HostIdentity,
 };
 use crate::kdeconnect::macos_media::{
-    get_mac_player_list, handle_incoming_mpris_request, query_mac_player_status,
-    DEFAULT_MAC_PLAYER,
+    get_mac_player_list, handle_incoming_mpris_request, pause_mac_media_for_call,
+    query_mac_player_status, resume_mac_media_after_call, DEFAULT_MAC_PLAYER,
 };
 use crate::kdeconnect::packet::{
     current_millis, current_secs, NetworkPacket, PACKET_TYPE_BATTERY, PACKET_TYPE_BATTERY_REQUEST,
     PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_IDENTITY, PACKET_TYPE_MPRIS,
     PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING, PACKET_TYPE_SHARE_REQUEST,
-    PACKET_TYPE_SHARE_REQUEST_UPDATE, PROTOCOL_VERSION,
+    PACKET_TYPE_SHARE_REQUEST_UPDATE, PACKET_TYPE_TELEPHONY, PROTOCOL_VERSION,
 };
 use crate::kdeconnect::tls::{build_tls_acceptor, build_tls_connector};
 use anyhow::{anyhow, Context, Result};
@@ -170,6 +170,9 @@ pub struct KdeConnectDaemon {
     pub last_discovery_attempt_ms: Mutex<HashMap<String, i64>>,
     pub udp_socket: Mutex<Option<Arc<UdpSocket>>>,
     pub app_handle: Mutex<Option<AppHandle>>,
+    pub active_call_events: Mutex<HashSet<String>>,
+    pub call_paused_sources: Mutex<HashSet<String>>,
+    pub call_state_seq: Mutex<u64>,
 }
 
 impl KdeConnectDaemon {
@@ -237,6 +240,9 @@ impl KdeConnectDaemon {
             last_discovery_attempt_ms: Mutex::new(HashMap::new()),
             udp_socket: Mutex::new(None),
             app_handle: Mutex::new(None),
+            active_call_events: Mutex::new(HashSet::new()),
+            call_paused_sources: Mutex::new(HashSet::new()),
+            call_state_seq: Mutex::new(0),
         }))
     }
 
@@ -1700,6 +1706,9 @@ impl KdeConnectDaemon {
                     }
                 });
             }
+            PACKET_TYPE_TELEPHONY => {
+                self.handle_telephony_packet(device_id, device_name, &packet);
+            }
             PACKET_TYPE_SHARE_REQUEST => {
                 self.handle_share_request(device_id, device_name, peer_ip, packet)
                     .await;
@@ -1718,6 +1727,128 @@ impl KdeConnectDaemon {
                     device_name
                 );
             }
+        }
+    }
+
+    /// Handles incoming `kdeconnect.telephony` packets to automatically pause Mac media during
+    /// incoming/active phone calls (`ringing` / `talking`) and resume when the call ends (`isCancel: true`).
+    fn handle_telephony_packet(
+        self: &Arc<Self>,
+        device_id: &str,
+        device_name: &str,
+        packet: &NetworkPacket,
+    ) {
+        let Some(event) = packet.get_str("event") else {
+            return;
+        };
+        let is_cancel = packet.get_bool("isCancel").unwrap_or(false);
+        let contact = packet
+            .get_str("contactName")
+            .or_else(|| packet.get_str("phoneNumber"))
+            .unwrap_or("Unknown caller");
+
+        log::info!(
+            "[telephony] Device '{}' ({}) telephony event='{}' isCancel={} caller='{}'",
+            device_name,
+            device_id,
+            event,
+            is_cancel,
+            contact
+        );
+
+        match event {
+            "ringing" | "talking" if !is_cancel => {
+                {
+                    let mut active = self.active_call_events.lock().unwrap();
+                    active.insert(format!("{}:{}", device_id, event));
+                    let mut seq = self.call_state_seq.lock().unwrap();
+                    *seq = seq.wrapping_add(1);
+                }
+
+                let daemon = Arc::clone(self);
+                tokio::spawn(async move {
+                    if let Ok(newly_paused) =
+                        tokio::task::spawn_blocking(pause_mac_media_for_call).await
+                    {
+                        if !newly_paused.is_empty() {
+                            let mut paused = daemon.call_paused_sources.lock().unwrap();
+                            for src in newly_paused {
+                                paused.insert(src);
+                            }
+                        }
+                    }
+                });
+            }
+            "ringing" | "talking" if is_cancel => {
+                let (all_calls_ended, snapshot_seq) = {
+                    let mut active = self.active_call_events.lock().unwrap();
+                    active.remove(&format!("{}:{}", device_id, event));
+                    if event == "talking" {
+                        active.remove(&format!("{}:ringing", device_id));
+                    }
+                    let mut seq = self.call_state_seq.lock().unwrap();
+                    *seq = seq.wrapping_add(1);
+                    (active.is_empty(), *seq)
+                };
+
+                if all_calls_ended {
+                    let daemon = Arc::clone(self);
+                    tokio::spawn(async move {
+                        // Brief 450ms debounce so a `ringing (isCancel=true)` -> `talking` transition
+                        // when answering a call does not momentarily unpause media.
+                        tokio::time::sleep(Duration::from_millis(450)).await;
+                        let sources_to_resume: Vec<String> = {
+                            let active = daemon.active_call_events.lock().unwrap();
+                            let seq = *daemon.call_state_seq.lock().unwrap();
+                            if !active.is_empty() || seq != snapshot_seq {
+                                return;
+                            }
+                            let mut paused = daemon.call_paused_sources.lock().unwrap();
+                            paused.drain().collect()
+                        };
+
+                        if !sources_to_resume.is_empty() {
+                            let _ = tokio::task::spawn_blocking(move || {
+                                resume_mac_media_after_call(&sources_to_resume);
+                            })
+                            .await;
+                        }
+                    });
+                }
+            }
+            "missedCall" if !is_cancel => {
+                let (all_calls_ended, snapshot_seq) = {
+                    let mut active = self.active_call_events.lock().unwrap();
+                    active.remove(&format!("{}:ringing", device_id));
+                    let mut seq = self.call_state_seq.lock().unwrap();
+                    *seq = seq.wrapping_add(1);
+                    (active.is_empty(), *seq)
+                };
+
+                if all_calls_ended {
+                    let daemon = Arc::clone(self);
+                    tokio::spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(450)).await;
+                        let sources_to_resume: Vec<String> = {
+                            let active = daemon.active_call_events.lock().unwrap();
+                            let seq = *daemon.call_state_seq.lock().unwrap();
+                            if !active.is_empty() || seq != snapshot_seq {
+                                return;
+                            }
+                            let mut paused = daemon.call_paused_sources.lock().unwrap();
+                            paused.drain().collect()
+                        };
+
+                        if !sources_to_resume.is_empty() {
+                            let _ = tokio::task::spawn_blocking(move || {
+                                resume_mac_media_after_call(&sources_to_resume);
+                            })
+                            .await;
+                        }
+                    });
+                }
+            }
+            _ => {}
         }
     }
 
