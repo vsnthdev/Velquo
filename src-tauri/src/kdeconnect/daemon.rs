@@ -1,15 +1,19 @@
 use crate::kdeconnect::cert::{
     compute_verification_key, extract_cert_common_name, sha256_fingerprint, HostIdentity,
 };
+use crate::kdeconnect::clipboard::{
+    get_macos_pasteboard_change_count, read_macos_clipboard_text, write_macos_clipboard_text,
+};
 use crate::kdeconnect::macos_media::{
     get_mac_player_list, handle_incoming_mpris_request, pause_mac_media_for_call,
     query_mac_player_status, resume_mac_media_after_call, DEFAULT_MAC_PLAYER,
 };
 use crate::kdeconnect::packet::{
     current_millis, current_secs, NetworkPacket, PACKET_TYPE_BATTERY, PACKET_TYPE_BATTERY_REQUEST,
-    PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_IDENTITY, PACKET_TYPE_MPRIS,
-    PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING, PACKET_TYPE_SHARE_REQUEST,
-    PACKET_TYPE_SHARE_REQUEST_UPDATE, PACKET_TYPE_TELEPHONY, PROTOCOL_VERSION,
+    PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT, PACKET_TYPE_CONNECTIVITY_REPORT,
+    PACKET_TYPE_IDENTITY, PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_PAIR,
+    PACKET_TYPE_PING, PACKET_TYPE_SHARE_REQUEST, PACKET_TYPE_SHARE_REQUEST_UPDATE,
+    PACKET_TYPE_TELEPHONY, PROTOCOL_VERSION,
 };
 use crate::kdeconnect::tls::{build_tls_acceptor, build_tls_connector};
 use anyhow::{anyhow, Context, Result};
@@ -113,6 +117,7 @@ pub struct DeviceView {
     pub sim_signals: Vec<SimSignalInfo>,
     pub storage_free_gb: Option<f64>,
     pub now_playing: Option<NowPlayingInfo>,
+    pub sync_clipboard: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,6 +139,10 @@ pub struct TransferItem {
     pub timestamp_ms: i64,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrustedDeviceRecord {
     pub device_id: String,
@@ -141,6 +150,14 @@ pub struct TrustedDeviceRecord {
     pub device_type: String,
     pub protocol_version: i32,
     pub cert_der: Vec<u8>,
+    #[serde(default = "default_true")]
+    pub sync_clipboard: bool,
+}
+
+pub struct ClipboardState {
+    pub last_change_count: isize,
+    pub last_content: String,
+    pub last_timestamp_ms: i64,
 }
 
 pub struct DeviceEntry {
@@ -173,6 +190,7 @@ pub struct KdeConnectDaemon {
     pub active_call_events: Mutex<HashSet<String>>,
     pub call_paused_sources: Mutex<HashSet<String>>,
     pub call_state_seq: Mutex<u64>,
+    pub clipboard_state: Mutex<ClipboardState>,
 }
 
 impl KdeConnectDaemon {
@@ -212,6 +230,7 @@ impl KdeConnectDaemon {
                         sim_signals: Vec::new(),
                         storage_free_gb: None,
                         now_playing: None,
+                        sync_clipboard: rec.sync_clipboard,
                     },
                     peer_cert_der: Some(rec.cert_der.clone()),
                     sender: None,
@@ -243,6 +262,11 @@ impl KdeConnectDaemon {
             active_call_events: Mutex::new(HashSet::new()),
             call_paused_sources: Mutex::new(HashSet::new()),
             call_state_seq: Mutex::new(0),
+            clipboard_state: Mutex::new(ClipboardState {
+                last_change_count: get_macos_pasteboard_change_count(),
+                last_content: String::new(),
+                last_timestamp_ms: 0,
+            }),
         }))
     }
 
@@ -556,6 +580,58 @@ impl KdeConnectDaemon {
                         "[udp] Auto-broadcasting discovery (waiting for offline/unconnected devices)"
                     );
                     daemon_bcast.broadcast_udp_discovery().await;
+                }
+            }
+        });
+
+        // 7. Spawn 500ms macOS Clipboard (`NSPasteboard.changeCount`) monitor
+        let daemon_clip = Arc::clone(&self);
+        tokio::spawn(async move {
+            let mut clip_interval = tokio::time::interval(Duration::from_millis(500));
+            clip_interval.tick().await;
+            loop {
+                clip_interval.tick().await;
+                let current_count = get_macos_pasteboard_change_count();
+                let count_changed = {
+                    let state = daemon_clip.clipboard_state.lock().unwrap();
+                    current_count != state.last_change_count
+                };
+                if !count_changed {
+                    continue;
+                }
+
+                // Update last_change_count immediately
+                {
+                    let mut state = daemon_clip.clipboard_state.lock().unwrap();
+                    state.last_change_count = current_count;
+                }
+
+                // Only read pasteboard text if at least one online paired device has clipboard sync enabled
+                if !daemon_clip.has_online_clipboard_sync_device() {
+                    continue;
+                }
+
+                if let Ok(Some(text)) = tokio::task::spawn_blocking(read_macos_clipboard_text).await
+                {
+                    let should_broadcast = {
+                        let mut state = daemon_clip.clipboard_state.lock().unwrap();
+                        if state.last_content == text {
+                            false
+                        } else {
+                            state.last_content = text.clone();
+                            state.last_timestamp_ms = current_millis();
+                            true
+                        }
+                    };
+
+                    if should_broadcast {
+                        log::info!(
+                            "[clipboard-out] Mac clipboard changed ({} chars), syncing to paired devices",
+                            text.len()
+                        );
+                        let pkt = NetworkPacket::clipboard(&text);
+                        daemon_clip.broadcast_clipboard_to_synced_devices(&pkt);
+                    }
                 }
             }
         });
@@ -1264,7 +1340,7 @@ impl KdeConnectDaemon {
         }
 
         // Verify pinned certificate if this device is already trusted/paired
-        let is_trusted = {
+        let (is_trusted, saved_sync_clipboard) = {
             let trusted = self.trusted_devices.lock().unwrap();
             if let Some(rec) = trusted.get(&device_id) {
                 if rec.cert_der != peer_cert_der {
@@ -1275,9 +1351,9 @@ impl KdeConnectDaemon {
                     );
                     return Err(anyhow!("Certificate mismatch for paired device {}", device_id));
                 }
-                true
+                (true, rec.sync_clipboard)
             } else {
-                false
+                (false, true)
             }
         };
 
@@ -1382,6 +1458,7 @@ impl KdeConnectDaemon {
                         sim_signals: prev_sim_signals,
                         storage_free_gb: prev_storage,
                         now_playing: prev_now_playing,
+                        sync_clipboard: saved_sync_clipboard,
                     },
                     peer_cert_der: Some(peer_cert_der.clone()),
                     sender: Some(tx),
@@ -1720,6 +1797,9 @@ impl KdeConnectDaemon {
             PACKET_TYPE_TELEPHONY => {
                 self.handle_telephony_packet(device_id, device_name, &packet);
             }
+            PACKET_TYPE_CLIPBOARD | PACKET_TYPE_CLIPBOARD_CONNECT => {
+                self.handle_clipboard_packet(device_id, device_name, &packet);
+            }
             PACKET_TYPE_SHARE_REQUEST => {
                 self.handle_share_request(device_id, device_name, peer_ip, packet)
                     .await;
@@ -1895,6 +1975,7 @@ impl KdeConnectDaemon {
                         device_type: entry.view.device_type.clone(),
                         protocol_version: entry.view.protocol_version,
                         cert_der: peer_cert_der.to_vec(),
+                        sync_clipboard: entry.view.sync_clipboard,
                     };
                     drop(devices);
                     self.trusted_devices
@@ -2011,6 +2092,7 @@ impl KdeConnectDaemon {
                         device_type: entry.view.device_type.clone(),
                         protocol_version: entry.view.protocol_version,
                         cert_der: cert_der.clone(),
+                        sync_clipboard: entry.view.sync_clipboard,
                     });
                 }
                 log::info!(
@@ -2041,6 +2123,171 @@ impl KdeConnectDaemon {
             self.send_packet_to_device(device_id, &NetworkPacket::connectivity_report_request());
         let _ = self.send_packet_to_device(device_id, &NetworkPacket::mpris_request_player_list());
         self.send_host_mpris_to_device(device_id);
+        self.send_host_clipboard_connect_to_device(device_id);
+    }
+
+    pub fn has_online_clipboard_sync_device(&self) -> bool {
+        let devices = self.devices.lock().unwrap();
+        devices.values().any(|d| {
+            d.view.reachable && d.view.pair_state == PairState::Paired && d.view.sync_clipboard
+        })
+    }
+
+    pub fn broadcast_clipboard_to_synced_devices(&self, pkt: &NetworkPacket) {
+        let synced_online_ids: Vec<String> = {
+            let devices = self.devices.lock().unwrap();
+            devices
+                .values()
+                .filter(|d| {
+                    d.view.reachable
+                        && d.view.pair_state == PairState::Paired
+                        && d.view.sync_clipboard
+                })
+                .map(|d| d.view.device_id.clone())
+                .collect()
+        };
+        for id in synced_online_ids {
+            let _ = self.send_packet_to_device(&id, pkt);
+        }
+    }
+
+    pub fn send_host_clipboard_connect_to_device(&self, device_id: &str) {
+        let maybe_sender = {
+            let devices = self.devices.lock().unwrap();
+            devices
+                .get(device_id)
+                .filter(|d| d.view.pair_state == PairState::Paired && d.view.sync_clipboard)
+                .and_then(|d| d.sender.clone())
+        };
+        let Some(sender) = maybe_sender else {
+            return;
+        };
+
+        let existing_ts = {
+            let state = self.clipboard_state.lock().unwrap();
+            state.last_timestamp_ms
+        };
+
+        tauri::async_runtime::spawn(async move {
+            if let Ok(Some(text)) = tokio::task::spawn_blocking(read_macos_clipboard_text).await {
+                let ts = if existing_ts > 0 {
+                    existing_ts
+                } else {
+                    current_millis()
+                };
+                let pkt = NetworkPacket::clipboard_connect(&text, ts);
+                if let Ok(bytes) = pkt.serialize_line() {
+                    let _ = sender.send(bytes);
+                }
+            }
+        });
+    }
+
+    pub fn set_device_clipboard_sync(&self, device_id: &str, enabled: bool) -> Result<()> {
+        let mut is_online_and_paired = false;
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry.view.sync_clipboard = enabled;
+                is_online_and_paired =
+                    entry.view.reachable && entry.view.pair_state == PairState::Paired;
+                log::info!(
+                    "[clipboard] Set sync_clipboard={} for '{}' ({})",
+                    enabled,
+                    entry.view.device_name,
+                    device_id
+                );
+            }
+        }
+
+        {
+            let mut trusted = self.trusted_devices.lock().unwrap();
+            if let Some(rec) = trusted.get_mut(device_id) {
+                rec.sync_clipboard = enabled;
+            }
+        }
+        self.save_trusted_devices();
+        self.notify_ui();
+
+        if enabled && is_online_and_paired {
+            self.send_host_clipboard_connect_to_device(device_id);
+        }
+
+        Ok(())
+    }
+
+    fn handle_clipboard_packet(
+        self: &Arc<Self>,
+        device_id: &str,
+        device_name: &str,
+        packet: &NetworkPacket,
+    ) {
+        let is_allowed = {
+            let devices = self.devices.lock().unwrap();
+            devices
+                .get(device_id)
+                .map(|d| d.view.pair_state == PairState::Paired && d.view.sync_clipboard)
+                .unwrap_or(false)
+        };
+        if !is_allowed {
+            log::debug!(
+                "[clipboard-in] Ignoring clipboard packet from '{}' (sync_clipboard is disabled or unpaired)",
+                device_name
+            );
+            return;
+        }
+
+        let Some(content) = packet.get_str("content") else {
+            return;
+        };
+        if content.is_empty() {
+            return;
+        }
+
+        if packet.packet_type == PACKET_TYPE_CLIPBOARD_CONNECT {
+            let remote_ts = packet.get_i64("timestamp").unwrap_or(0);
+            let local_ts = self.clipboard_state.lock().unwrap().last_timestamp_ms;
+            if remote_ts == 0 || (local_ts > 0 && remote_ts < local_ts) {
+                log::debug!(
+                    "[clipboard-in] Ignoring older clipboard.connect from '{}' (remote_ts={}, local_ts={})",
+                    device_name,
+                    remote_ts,
+                    local_ts
+                );
+                return;
+            }
+        }
+
+        let text_to_write = content.to_string();
+        let now_ms = packet
+            .get_i64("timestamp")
+            .filter(|&t| t > 0)
+            .unwrap_or_else(current_millis);
+
+        {
+            let mut state = self.clipboard_state.lock().unwrap();
+            if state.last_content == text_to_write {
+                return;
+            }
+            state.last_content = text_to_write.clone();
+            state.last_timestamp_ms = now_ms;
+        }
+
+        log::info!(
+            "[clipboard-in] Received clipboard from '{}' ({} chars), updating macOS pasteboard",
+            device_name,
+            text_to_write.len()
+        );
+
+        let daemon = Arc::clone(self);
+        tokio::spawn(async move {
+            if let Ok(Some(new_count)) =
+                tokio::task::spawn_blocking(move || write_macos_clipboard_text(&text_to_write))
+                    .await
+            {
+                let mut state = daemon.clipboard_state.lock().unwrap();
+                state.last_change_count = new_count;
+            }
+        });
     }
 
     pub fn has_online_paired_device(&self) -> bool {

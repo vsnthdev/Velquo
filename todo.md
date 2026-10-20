@@ -1,6 +1,6 @@
 # Velquo — Remaining KDE Connect Features
 
-- [ ] **Clipboard Sync** — Auto-sync copied text between Mac and phone (`kdeconnect.clipboard`)
+- [x] **Clipboard Sync** — Auto-sync copied text between Mac and phone (`kdeconnect.clipboard`)
 - [ ] **Notifications Sync** — View, dismiss, and inline-reply to phone notifications on Mac (`kdeconnect.notification`)
 - [ ] **OTP / 2FA Auto-Copy** — Extract and copy verification codes from incoming notifications
 - [ ] **Find My Phone / Mac** — Ring the remote phone at full volume or ring this Mac (`kdeconnect.findmyphone.request`)

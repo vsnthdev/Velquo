@@ -22,7 +22,8 @@
 ## ✨ Features
 
 1. **File Transfer** — Drag and drop files to send to your phone, or receive files straight into your Mac's `Downloads` folder
-2. **Media Control** — Control what's playing on your phone from your Mac, or control your Mac's media playback from your phone
-3. **Link Sharing** — Send links between your Mac and phone to open them instantly in the default browser
-4. **Auto-Pause on Calls** — Automatically pauses Mac media playback when your phone rings or is on a call, and resumes when the call ends
-5. **Native Apple Silicon** — Lightweight, fast macOS app built natively for M-series Macs with menu bar and Dock support
+2. **Clipboard Sync** — Automatically syncs copied text between your Mac and phone, with per-device toggle control
+3. **Media Control** — Control what's playing on your phone from your Mac, or control your Mac's media playback from your phone
+4. **Link Sharing** — Send links between your Mac and phone to open them instantly in the default browser
+5. **Auto-Pause on Calls** — Automatically pauses Mac media playback when your phone rings or is on a call, and resumes when the call ends
+6. **Native Apple Silicon** — Lightweight, fast macOS app built natively for M-series Macs with menu bar and Dock support

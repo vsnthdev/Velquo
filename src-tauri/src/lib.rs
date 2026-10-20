@@ -182,6 +182,22 @@ fn send_url(
 }
 
 #[tauri::command]
+fn set_device_clipboard_sync(
+    device_id: String,
+    enabled: bool,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Setting clipboard sync enabled={} for device_id={}",
+        enabled,
+        device_id
+    );
+    daemon
+        .set_device_clipboard_sync(&device_id, enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn clear_logs() {
     AppLogger::clear_entries();
     log::info!("[ui] Logs cleared");
@@ -256,6 +272,7 @@ pub fn run() {
             seek_media,
             send_file,
             send_url,
+            set_device_clipboard_sync,
             clear_logs,
             quit_app,
         ])

@@ -16,6 +16,8 @@ pub const PACKET_TYPE_CONNECTIVITY_REPORT_REQUEST: &str = "kdeconnect.connectivi
 pub const PACKET_TYPE_MPRIS: &str = "kdeconnect.mpris";
 pub const PACKET_TYPE_MPRIS_REQUEST: &str = "kdeconnect.mpris.request";
 pub const PACKET_TYPE_TELEPHONY: &str = "kdeconnect.telephony";
+pub const PACKET_TYPE_CLIPBOARD: &str = "kdeconnect.clipboard";
+pub const PACKET_TYPE_CLIPBOARD_CONNECT: &str = "kdeconnect.clipboard.connect";
 pub const PACKET_TYPE_SHARE_REQUEST: &str = "kdeconnect.share.request";
 pub const PACKET_TYPE_SHARE_REQUEST_UPDATE: &str = "kdeconnect.share.request.update";
 
@@ -62,6 +64,8 @@ pub fn supported_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_MPRIS.to_string(),
         PACKET_TYPE_MPRIS_REQUEST.to_string(),
         PACKET_TYPE_TELEPHONY.to_string(),
+        PACKET_TYPE_CLIPBOARD.to_string(),
+        PACKET_TYPE_CLIPBOARD_CONNECT.to_string(),
     ]
 }
 
@@ -76,6 +80,8 @@ pub fn supported_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_CONNECTIVITY_REPORT_REQUEST.to_string(),
         PACKET_TYPE_MPRIS.to_string(),
         PACKET_TYPE_MPRIS_REQUEST.to_string(),
+        PACKET_TYPE_CLIPBOARD.to_string(),
+        PACKET_TYPE_CLIPBOARD_CONNECT.to_string(),
     ]
 }
 
@@ -327,5 +333,18 @@ impl NetworkPacket {
         let mut body = Map::new();
         body.insert("text".into(), json!(text));
         Self::new(PACKET_TYPE_SHARE_REQUEST, body)
+    }
+
+    pub fn clipboard(content: &str) -> Self {
+        let mut body = Map::new();
+        body.insert("content".into(), json!(content));
+        Self::new(PACKET_TYPE_CLIPBOARD, body)
+    }
+
+    pub fn clipboard_connect(content: &str, timestamp_ms: i64) -> Self {
+        let mut body = Map::new();
+        body.insert("content".into(), json!(content));
+        body.insert("timestamp".into(), json!(timestamp_ms));
+        Self::new(PACKET_TYPE_CLIPBOARD_CONNECT, body)
     }
 }

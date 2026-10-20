@@ -43,6 +43,7 @@ export interface DeviceView {
   simSignals: SimSignalInfo[];
   storageFreeGb: number | null;
   nowPlaying: NowPlayingInfo | null;
+  syncClipboard: boolean;
 }
 
 export interface TransferItem {

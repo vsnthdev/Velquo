@@ -33,7 +33,6 @@ export default function App() {
     null
   );
   const [fileSaveLocation, setFileSaveLocation] = useState<string>("");
-  const [syncClipboard, setSyncClipboard] = useState<boolean>(true);
 
   const dropZoneRef = useRef<HTMLDivElement | null>(null);
   const selectedDeviceRef = useRef<DeviceView | null>(null);
@@ -405,8 +404,13 @@ export default function App() {
               onFilesPicked={handleFilesPicked}
               fileSaveLocation={fileSaveLocation}
               onChangeFileSaveLocation={setFileSaveLocation}
-              syncClipboard={syncClipboard}
-              onToggleSyncClipboard={() => setSyncClipboard((prev) => !prev)}
+              syncClipboard={selectedDevice.syncClipboard}
+              onToggleSyncClipboard={() =>
+                invoke("set_device_clipboard_sync", {
+                  deviceId: selectedDevice.deviceId,
+                  enabled: !selectedDevice.syncClipboard,
+                })
+              }
               onUnpair={() => handleUnpairDevice(selectedDevice.deviceId)}
             />
           )}
