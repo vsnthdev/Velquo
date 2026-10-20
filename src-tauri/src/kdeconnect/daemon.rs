@@ -563,18 +563,13 @@ impl KdeConnectDaemon {
         Ok(())
     }
 
-    /// Returns true if we have no connected devices or at least one trusted device is currently offline.
-    /// If all known/trusted devices are already online, returns false to prevent unnecessary connection churn.
+    /// Returns true ONLY if at least one already-paired (trusted) device is currently offline.
+    /// Searching for new unpaired devices only happens when the user opens the "Pair new device" page.
     fn should_auto_broadcast(&self) -> bool {
         let devices = self.devices.lock().unwrap();
-        let online_count = devices.values().filter(|d| d.view.reachable).count();
-        if online_count == 0 {
-            return true;
-        }
-        let any_trusted_offline = devices
+        devices
             .values()
-            .any(|d| d.view.pair_state == PairState::Paired && !d.view.reachable);
-        any_trusted_offline
+            .any(|d| d.view.pair_state == PairState::Paired && !d.view.reachable)
     }
 
     /// Configures TCP_NODELAY, aggressive TCP Keepalive (2s idle, 1s interval, 2 retries),
@@ -1313,8 +1308,12 @@ impl KdeConnectDaemon {
                     .unwrap_or(PairState::NotPaired)
             };
 
-            let verification_key =
-                compute_verification_key(&self.host.cert_der, &peer_cert_der, current_secs());
+            let verification_key = devices
+                .get(&device_id)
+                .and_then(|d| d.view.verification_key.clone())
+                .or_else(|| {
+                    compute_verification_key(&self.host.cert_der, &peer_cert_der, current_secs())
+                });
 
             let (
                 prev_bat_charge,
@@ -1450,16 +1449,28 @@ impl KdeConnectDaemon {
                         }
                     } else {
                         unacked_since = None;
-                        if let Ok(hb_bytes) = NetworkPacket::keepalive().serialize_line() {
-                            if let Err(e) = write_half.write_all(&hb_bytes).await {
-                                log::warn!("[heartbeat] Write error to '{}': {}", device_name, e);
-                                break;
+                        let is_currently_paired = self
+                            .devices
+                            .lock()
+                            .ok()
+                            .and_then(|d| d.get(&device_id).map(|e| e.view.pair_state == PairState::Paired))
+                            .unwrap_or(false);
+
+                        // Only send application-layer keepalive packets when PAIRED!
+                        // In KDE Connect, sending any non-`kdeconnect.pair` packet to an unpaired device
+                        // causes the remote peer to respond with `{"type":"kdeconnect.pair","body":{"pair":false}}`.
+                        if is_currently_paired {
+                            if let Ok(hb_bytes) = NetworkPacket::keepalive().serialize_line() {
+                                if let Err(e) = write_half.write_all(&hb_bytes).await {
+                                    log::warn!("[heartbeat] Write error to '{}': {}", device_name, e);
+                                    break;
+                                }
+                                if let Err(e) = write_half.flush().await {
+                                    log::warn!("[heartbeat] Flush error to '{}': {}", device_name, e);
+                                    break;
+                                }
+                                unacked_since = Some(Instant::now());
                             }
-                            if let Err(e) = write_half.flush().await {
-                                log::warn!("[heartbeat] Flush error to '{}': {}", device_name, e);
-                                break;
-                            }
-                            unacked_since = Some(Instant::now());
                         }
                     }
                 }
@@ -1922,6 +1933,14 @@ impl KdeConnectDaemon {
             );
             entry.view.pair_state = PairState::NotPaired;
             entry.view.verification_key = None;
+            entry.view.now_playing = None;
+            entry.view.battery_charge = None;
+            entry.view.battery_charging = None;
+            entry.view.sim_signals.clear();
+            entry.mpris_players.clear();
+            entry.mpris_player_order.clear();
+            entry.active_mpris_player = None;
+            entry.album_art_in_flight.clear();
             drop(devices);
             self.trusted_devices.lock().unwrap().remove(device_id);
             self.save_trusted_devices();
@@ -2053,7 +2072,7 @@ impl KdeConnectDaemon {
         let Some(sender) = maybe_sender else {
             return;
         };
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             if let Ok((players, snap)) = tokio::task::spawn_blocking(|| {
                 let p = get_mac_player_list();
                 let s = query_mac_player_status(DEFAULT_MAC_PLAYER);
@@ -2596,14 +2615,29 @@ impl KdeConnectDaemon {
         let _ = self.send_packet_to_device(device_id, &pkt);
 
         if let Ok(mut devices) = self.devices.lock() {
-            if let Some(entry) = devices.get_mut(device_id) {
+            let should_remove = if let Some(entry) = devices.get_mut(device_id) {
                 entry.view.pair_state = PairState::NotPaired;
                 entry.view.verification_key = None;
+                entry.view.now_playing = None;
+                entry.view.battery_charge = None;
+                entry.view.battery_charging = None;
+                entry.view.sim_signals.clear();
+                entry.mpris_players.clear();
+                entry.mpris_player_order.clear();
+                entry.active_mpris_player = None;
+                entry.album_art_in_flight.clear();
                 log::info!(
                     "[pair] Unpaired / rejected pairing with '{}' ({})",
                     entry.view.device_name,
                     device_id
                 );
+                !entry.view.reachable
+            } else {
+                false
+            };
+
+            if should_remove {
+                devices.remove(device_id);
             }
         }
         self.trusted_devices.lock().unwrap().remove(device_id);

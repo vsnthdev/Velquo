@@ -22,6 +22,7 @@ interface DevicePageProps {
   onChangeFileSaveLocation: (nextPath: string) => void;
   syncClipboard: boolean;
   onToggleSyncClipboard: () => void;
+  onUnpair: () => void;
 }
 
 export function DevicePage({
@@ -39,6 +40,7 @@ export function DevicePage({
   onChangeFileSaveLocation,
   syncClipboard,
   onToggleSyncClipboard,
+  onUnpair,
 }: DevicePageProps) {
   const isSettingsOpen = subview === "settings";
 
@@ -143,6 +145,7 @@ export function DevicePage({
             onChangeFileSaveLocation={onChangeFileSaveLocation}
             syncClipboard={syncClipboard}
             onToggleSyncClipboard={onToggleSyncClipboard}
+            onUnpair={onUnpair}
           />
         ) : (
           <DeviceControlView

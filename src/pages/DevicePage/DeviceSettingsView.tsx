@@ -7,6 +7,7 @@ interface DeviceSettingsViewProps {
   onChangeFileSaveLocation: (nextPath: string) => void;
   syncClipboard: boolean;
   onToggleSyncClipboard: () => void;
+  onUnpair: () => void;
 }
 
 export function DeviceSettingsView({
@@ -14,6 +15,7 @@ export function DeviceSettingsView({
   onChangeFileSaveLocation,
   syncClipboard,
   onToggleSyncClipboard,
+  onUnpair,
 }: DeviceSettingsViewProps) {
   const handleChooseSaveLocation = async () => {
     const selected = await open({
@@ -107,6 +109,7 @@ export function DeviceSettingsView({
 
       <motion.button
         type="button"
+        onClick={onUnpair}
         whileHover={{ scale: 1.008 }}
         whileTap={{ scale: 0.99 }}
         transition={{

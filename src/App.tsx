@@ -39,6 +39,7 @@ export default function App() {
   const selectedDeviceRef = useRef<DeviceView | null>(null);
   const activeViewRef = useRef<ActiveView>(activeView);
   activeViewRef.current = activeView;
+  const prevPairedIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -52,21 +53,39 @@ export default function App() {
           const defaultDir = snap.host.downloadsDir;
           setFileSaveLocation((prev) => (prev ? prev : defaultDir));
         }
+
+        const paired = snap.devices.filter((d) => d.pairState === "Paired");
+        const newlyPaired = paired.find(
+          (d) => !prevPairedIdsRef.current.has(d.deviceId)
+        );
+        prevPairedIdsRef.current = new Set(paired.map((d) => d.deviceId));
+
         setActiveView((prev) => {
+          // If the user is on the Pair New Device page and a device just finished pairing, open it immediately!
+          if (prev.kind === "pair-device" && newlyPaired) {
+            return {
+              kind: "device",
+              deviceId: newlyPaired.deviceId,
+              subview: "control",
+            };
+          }
           if (prev.kind !== "device") {
             return prev;
           }
           if (
             prev.deviceId &&
-            snap.devices.some((d) => d.deviceId === prev.deviceId)
+            paired.some((d) => d.deviceId === prev.deviceId)
           ) {
             return prev;
           }
-          return {
-            kind: "device",
-            deviceId: snap.devices[0]?.deviceId ?? "",
-            subview: "control",
-          };
+          if (paired.length > 0) {
+            return {
+              kind: "device",
+              deviceId: paired[0].deviceId,
+              subview: "control",
+            };
+          }
+          return { kind: "pair-device" };
         });
       } catch (err) {
         console.error("Failed to load devices:", err);
@@ -104,10 +123,15 @@ export default function App() {
     };
   }, []);
 
+  const pairedDevices = devices.filter((d) => d.pairState === "Paired");
+  const unpairedDevices = devices.filter(
+    (d) => d.pairState !== "Paired" && d.reachable
+  );
+
   const selectedDevice =
     activeView.kind === "device"
-      ? (devices.find((d) => d.deviceId === activeView.deviceId) ??
-        devices[0] ??
+      ? (pairedDevices.find((d) => d.deviceId === activeView.deviceId) ??
+        pairedDevices[0] ??
         null)
       : null;
   selectedDeviceRef.current = selectedDevice;
@@ -262,6 +286,24 @@ export default function App() {
     setTimeout(() => setJustDroppedCount(0), 2200);
   };
 
+  const handleUnpairDevice = async (deviceId: string) => {
+    try {
+      await invoke("unpair_device", { deviceId });
+      const remaining = pairedDevices.filter((d) => d.deviceId !== deviceId);
+      if (remaining.length > 0) {
+        setActiveView({
+          kind: "device",
+          deviceId: remaining[0].deviceId,
+          subview: "control",
+        });
+      } else {
+        setActiveView({ kind: "pair-device" });
+      }
+    } catch (err) {
+      console.error("Failed to unpair device:", err);
+    }
+  };
+
   return (
     <div className="relative flex h-screen w-screen select-none overflow-hidden bg-transparent text-zinc-900 dark:text-zinc-100">
       {/* Top window drag region aligned with macOS traffic lights */}
@@ -276,7 +318,7 @@ export default function App() {
 
       {/* Left transparent/vibrant sidebar */}
       <Sidebar
-        devices={devices}
+        devices={pairedDevices}
         activeView={activeView}
         onSelectDevice={(deviceId) =>
           setActiveView({
@@ -365,6 +407,7 @@ export default function App() {
               onChangeFileSaveLocation={setFileSaveLocation}
               syncClipboard={syncClipboard}
               onToggleSyncClipboard={() => setSyncClipboard((prev) => !prev)}
+              onUnpair={() => handleUnpairDevice(selectedDevice.deviceId)}
             />
           )}
 
@@ -373,7 +416,10 @@ export default function App() {
           )}
 
           {activeView.kind === "pair-device" && (
-            <PairDevicePage key="pair-device" />
+            <PairDevicePage
+              key="pair-device"
+              unpairedDevices={unpairedDevices}
+            />
           )}
         </AnimatePresence>
       </main>
