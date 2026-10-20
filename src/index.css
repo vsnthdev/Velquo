@@ -1,7 +1,12 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
 :root {
   color-scheme: light dark;
+  font-family: "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 *,
@@ -26,6 +31,7 @@ body,
   padding: 0;
   background: transparent;
   overflow: hidden;
+  font-family: "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-user-select: none;
   user-select: none;
 }

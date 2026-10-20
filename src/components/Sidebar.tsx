@@ -19,27 +19,28 @@ export function Sidebar({
   onSelectAppSettings,
   onSelectPairDevice,
 }: SidebarProps) {
-  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+  const [hoveredDeviceId, setHoveredDeviceId] = useState<string | null>(null);
+  const [hoveredBottomId, setHoveredBottomId] = useState<string | null>(null);
 
   const isAppSettingsSelected = activeView.kind === "app-settings";
   const isPairDeviceSelected = activeView.kind === "pair-device";
 
   return (
-    <aside
-      className="flex h-full w-60 shrink-0 select-none flex-col border-r border-black/10 bg-transparent px-2 pt-12 pb-4 dark:border-white/10"
-      onMouseLeave={() => setHoveredItemId(null)}
-    >
+    <aside className="flex h-full w-60 shrink-0 select-none flex-col border-r border-black/10 bg-transparent px-2 pt-12 pb-4 dark:border-white/10">
       <div className="mb-2 select-none px-3.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
         Devices
       </div>
 
-      <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-1.5 py-1">
+      <div
+        className="flex flex-1 flex-col gap-1 overflow-y-auto px-1.5 py-1"
+        onMouseLeave={() => setHoveredDeviceId(null)}
+      >
         <AnimatePresence initial={false}>
           {devices.map((device, index) => {
             const isSelected =
               activeView.kind === "device" &&
               activeView.deviceId === device.deviceId;
-            const isHovered = hoveredItemId === device.deviceId;
+            const isHovered = hoveredDeviceId === device.deviceId;
 
             return (
               <motion.div
@@ -54,9 +55,8 @@ export function Sidebar({
                   damping: 34,
                   delay: index * 0.03,
                 }}
-                whileHover={{ x: 2 }}
                 whileTap={{ scale: 0.975 }}
-                onMouseEnter={() => setHoveredItemId(device.deviceId)}
+                onMouseEnter={() => setHoveredDeviceId(device.deviceId)}
                 onClick={() => onSelectDevice(device.deviceId)}
                 className={`relative flex cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 transition-colors duration-150 ${
                   isSelected
@@ -64,10 +64,10 @@ export function Sidebar({
                     : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
                 }`}
               >
-                {/* Animated active selection pill */}
+                {/* Animated active selection pill (top devices group only) */}
                 {isSelected && (
                   <motion.div
-                    layoutId="active-sidebar-pill"
+                    layoutId="active-device-pill"
                     transition={{
                       type: "spring",
                       stiffness: 500,
@@ -77,10 +77,10 @@ export function Sidebar({
                   />
                 )}
 
-                {/* Subtle animated hover pill when not selected */}
+                {/* Subtle animated hover pill (top devices group only) */}
                 {!isSelected && isHovered && (
                   <motion.div
-                    layoutId="hover-sidebar-pill"
+                    layoutId="hover-device-pill"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
@@ -128,13 +128,15 @@ export function Sidebar({
       </div>
 
       {/* Bottom sidebar action buttons */}
-      <div className="mt-2 flex flex-col gap-1 border-t border-black/8 px-1.5 pt-2.5 dark:border-white/8">
+      <div
+        className="mt-2 flex flex-col gap-1 border-t border-black/8 px-1.5 pt-2.5 dark:border-white/8"
+        onMouseLeave={() => setHoveredBottomId(null)}
+      >
         <motion.button
           type="button"
-          whileHover={{ x: 2 }}
           whileTap={{ scale: 0.975 }}
           transition={{ type: "spring", stiffness: 520, damping: 34 }}
-          onMouseEnter={() => setHoveredItemId("__app_settings__")}
+          onMouseEnter={() => setHoveredBottomId("app-settings")}
           onClick={onSelectAppSettings}
           className={`relative flex w-full cursor-pointer select-none items-center gap-2.5 rounded-xl px-3 py-2 text-[13.5px] font-medium transition-colors duration-150 ${
             isAppSettingsSelected
@@ -144,7 +146,7 @@ export function Sidebar({
         >
           {isAppSettingsSelected && (
             <motion.div
-              layoutId="active-sidebar-pill"
+              layoutId="active-bottom-pill"
               transition={{
                 type: "spring",
                 stiffness: 500,
@@ -154,9 +156,9 @@ export function Sidebar({
             />
           )}
 
-          {!isAppSettingsSelected && hoveredItemId === "__app_settings__" && (
+          {!isAppSettingsSelected && hoveredBottomId === "app-settings" && (
             <motion.div
-              layoutId="hover-sidebar-pill"
+              layoutId="hover-bottom-pill"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -177,10 +179,9 @@ export function Sidebar({
 
         <motion.button
           type="button"
-          whileHover={{ x: 2 }}
           whileTap={{ scale: 0.975 }}
           transition={{ type: "spring", stiffness: 520, damping: 34 }}
-          onMouseEnter={() => setHoveredItemId("__pair_device__")}
+          onMouseEnter={() => setHoveredBottomId("pair-device")}
           onClick={onSelectPairDevice}
           className={`relative flex w-full cursor-pointer select-none items-center gap-2.5 rounded-xl px-3 py-2 text-[13.5px] font-medium transition-colors duration-150 ${
             isPairDeviceSelected
@@ -190,7 +191,7 @@ export function Sidebar({
         >
           {isPairDeviceSelected && (
             <motion.div
-              layoutId="active-sidebar-pill"
+              layoutId="active-bottom-pill"
               transition={{
                 type: "spring",
                 stiffness: 500,
@@ -200,9 +201,9 @@ export function Sidebar({
             />
           )}
 
-          {!isPairDeviceSelected && hoveredItemId === "__pair_device__" && (
+          {!isPairDeviceSelected && hoveredBottomId === "pair-device" && (
             <motion.div
-              layoutId="hover-sidebar-pill"
+              layoutId="hover-bottom-pill"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
