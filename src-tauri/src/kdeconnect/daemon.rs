@@ -1,11 +1,15 @@
 use crate::kdeconnect::cert::{
     compute_verification_key, extract_cert_common_name, sha256_fingerprint, HostIdentity,
 };
+use crate::kdeconnect::macos_media::{
+    get_mac_player_list, handle_incoming_mpris_request, query_mac_player_status,
+    DEFAULT_MAC_PLAYER,
+};
 use crate::kdeconnect::packet::{
     current_millis, current_secs, NetworkPacket, PACKET_TYPE_BATTERY, PACKET_TYPE_BATTERY_REQUEST,
-    PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_IDENTITY, PACKET_TYPE_MPRIS, PACKET_TYPE_PAIR,
-    PACKET_TYPE_PING, PACKET_TYPE_SHARE_REQUEST, PACKET_TYPE_SHARE_REQUEST_UPDATE,
-    PROTOCOL_VERSION,
+    PACKET_TYPE_CONNECTIVITY_REPORT, PACKET_TYPE_IDENTITY, PACKET_TYPE_MPRIS,
+    PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING, PACKET_TYPE_SHARE_REQUEST,
+    PACKET_TYPE_SHARE_REQUEST_UPDATE, PROTOCOL_VERSION,
 };
 use crate::kdeconnect::tls::{build_tls_acceptor, build_tls_connector};
 use anyhow::{anyhow, Context, Result};
@@ -461,6 +465,8 @@ impl KdeConnectDaemon {
                 .map(|(ip, _)| ip)
                 .collect();
             let mut last_host_battery: Option<(i32, bool)> = Self::read_macos_battery_status();
+            let mut last_mac_players: Vec<String> = Vec::new();
+            let mut last_mac_media_sig: Option<(String, String, String, bool)> = None;
             let mut interval = tokio::time::interval(Duration::from_secs(5));
             interval.tick().await; // consume immediate tick
             let mut tick_count: u64 = 0;
@@ -480,6 +486,47 @@ impl KdeConnectDaemon {
                             );
                             last_host_battery = Some(current_bat);
                             daemon_bcast.broadcast_host_battery(current_bat.0, current_bat.1);
+                        }
+                    }
+                }
+
+                // If at least one paired device is online, push Mac media changes (playerList or track/play state)
+                if daemon_bcast.has_online_paired_device() {
+                    if let Ok((players, snap)) = tokio::task::spawn_blocking(|| {
+                        let p = get_mac_player_list();
+                        let s = query_mac_player_status(DEFAULT_MAC_PLAYER);
+                        (p, s)
+                    })
+                    .await
+                    {
+                        if players != last_mac_players {
+                            last_mac_players = players.clone();
+                            let mut body = serde_json::Map::new();
+                            body.insert("playerList".into(), serde_json::json!(players));
+                            body.insert("supportAlbumArtPayload".into(), serde_json::json!(false));
+                            let pkt = NetworkPacket::new(PACKET_TYPE_MPRIS, body);
+                            daemon_bcast.broadcast_to_paired_devices(&pkt);
+                        }
+
+                        let sig = (
+                            snap.title.clone(),
+                            snap.artist.clone(),
+                            snap.album.clone(),
+                            snap.is_playing,
+                        );
+                        if last_mac_media_sig.as_ref() != Some(&sig) {
+                            last_mac_media_sig = Some(sig);
+                            let pkt = snap.to_mpris_packet(true, true);
+                            daemon_bcast.broadcast_to_paired_devices(&pkt);
+                            for p in &last_mac_players {
+                                if p != DEFAULT_MAC_PLAYER {
+                                    let mut specific = snap.clone();
+                                    specific.player = p.clone();
+                                    daemon_bcast.broadcast_to_paired_devices(
+                                        &specific.to_mpris_packet(true, true),
+                                    );
+                                }
+                            }
                         }
                     }
                 }
@@ -1631,6 +1678,28 @@ impl KdeConnectDaemon {
             PACKET_TYPE_MPRIS => {
                 self.handle_mpris_packet(device_id, device_name, peer_ip, &packet);
             }
+            PACKET_TYPE_MPRIS_REQUEST => {
+                let daemon = Arc::clone(self);
+                let dev_id = device_id.to_string();
+                let dev_name = device_name.to_string();
+                let pkt_clone = packet.clone();
+                tokio::spawn(async move {
+                    if let Ok(responses) =
+                        tokio::task::spawn_blocking(move || handle_incoming_mpris_request(&pkt_clone))
+                            .await
+                    {
+                        for resp in responses {
+                            if let Err(e) = daemon.send_packet_to_device(&dev_id, &resp) {
+                                log::warn!(
+                                    "[mpris-host] Failed to send Mac MPRIS response to '{}': {}",
+                                    dev_name,
+                                    e
+                                );
+                            }
+                        }
+                    }
+                });
+            }
             PACKET_TYPE_SHARE_REQUEST => {
                 self.handle_share_request(device_id, device_name, peer_ip, packet)
                     .await;
@@ -1821,6 +1890,58 @@ impl KdeConnectDaemon {
         let _ =
             self.send_packet_to_device(device_id, &NetworkPacket::connectivity_report_request());
         let _ = self.send_packet_to_device(device_id, &NetworkPacket::mpris_request_player_list());
+        self.send_host_mpris_to_device(device_id);
+    }
+
+    pub fn has_online_paired_device(&self) -> bool {
+        let devices = self.devices.lock().unwrap();
+        devices
+            .values()
+            .any(|d| d.view.reachable && d.view.pair_state == PairState::Paired)
+    }
+
+    pub fn broadcast_to_paired_devices(&self, pkt: &NetworkPacket) {
+        let paired_online_ids: Vec<String> = {
+            let devices = self.devices.lock().unwrap();
+            devices
+                .values()
+                .filter(|d| d.view.reachable && d.view.pair_state == PairState::Paired)
+                .map(|d| d.view.device_id.clone())
+                .collect()
+        };
+        for id in paired_online_ids {
+            let _ = self.send_packet_to_device(&id, pkt);
+        }
+    }
+
+    pub fn send_host_mpris_to_device(&self, device_id: &str) {
+        let maybe_sender = {
+            let devices = self.devices.lock().unwrap();
+            devices.get(device_id).and_then(|d| d.sender.clone())
+        };
+        let Some(sender) = maybe_sender else {
+            return;
+        };
+        tokio::spawn(async move {
+            if let Ok((players, snap)) = tokio::task::spawn_blocking(|| {
+                let p = get_mac_player_list();
+                let s = query_mac_player_status(DEFAULT_MAC_PLAYER);
+                (p, s)
+            })
+            .await
+            {
+                let mut body = serde_json::Map::new();
+                body.insert("playerList".into(), serde_json::json!(players));
+                body.insert("supportAlbumArtPayload".into(), serde_json::json!(false));
+                let list_pkt = NetworkPacket::new(PACKET_TYPE_MPRIS, body);
+                if let Ok(bytes) = list_pkt.serialize_line() {
+                    let _ = sender.send(bytes);
+                }
+                if let Ok(bytes) = snap.to_mpris_packet(true, true).serialize_line() {
+                    let _ = sender.send(bytes);
+                }
+            }
+        });
     }
 
     /// Reads the host MacBook's battery percentage (0..=100) and charging status via `pmset -g batt`.

@@ -59,6 +59,7 @@ pub fn supported_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_BATTERY_REQUEST.to_string(),
         PACKET_TYPE_CONNECTIVITY_REPORT.to_string(),
         PACKET_TYPE_MPRIS.to_string(),
+        PACKET_TYPE_MPRIS_REQUEST.to_string(),
     ]
 }
 
@@ -71,6 +72,7 @@ pub fn supported_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_BATTERY_REQUEST.to_string(),
         PACKET_TYPE_CONNECTIVITY_REPORT.to_string(),
         PACKET_TYPE_CONNECTIVITY_REPORT_REQUEST.to_string(),
+        PACKET_TYPE_MPRIS.to_string(),
         PACKET_TYPE_MPRIS_REQUEST.to_string(),
     ]
 }
