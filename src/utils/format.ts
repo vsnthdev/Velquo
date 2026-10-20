@@ -1,5 +1,3 @@
-import type { DeviceView, SimSignalInfo } from "../types";
-
 // In-memory cache for iTunes fallback artwork lookups
 export const itunesArtCache = new Map<string, string | null>();
 
@@ -23,36 +21,6 @@ export function formatLastSeen(
   }
   const hours = Math.floor(mins / 60);
   return `Offline, last seen ${hours}h ago`;
-}
-
-export function formatSimSignal(sim: SimSignalInfo): string {
-  if (sim.networkType && sim.signalStrength >= 0) {
-    return `${sim.networkType} • ${sim.signalStrength}/4`;
-  }
-  if (sim.signalStrength >= 0) {
-    return `${sim.signalStrength}/4 bars`;
-  }
-  return sim.networkType || "—";
-}
-
-export function formatSignal(device: DeviceView): string {
-  if (
-    device.cellularNetworkType &&
-    device.cellularSignalStrength !== null &&
-    device.cellularSignalStrength >= 0
-  ) {
-    return `${device.cellularNetworkType} • ${device.cellularSignalStrength}/4`;
-  }
-  if (
-    device.cellularSignalStrength !== null &&
-    device.cellularSignalStrength >= 0
-  ) {
-    return `${device.cellularSignalStrength}/4 bars`;
-  }
-  if (device.cellularNetworkType) {
-    return device.cellularNetworkType;
-  }
-  return device.reachable ? "Wi-Fi" : "—";
 }
 
 export function formatDurationMs(ms: number): string {
