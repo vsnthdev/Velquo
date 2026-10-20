@@ -305,14 +305,16 @@ impl NetworkPacket {
         creation_time_ms: i64,
         last_modified_ms: i64,
         payload_port: u16,
+        number_of_files: usize,
+        total_payload_size: u64,
     ) -> Self {
         let mut body = Map::new();
         body.insert("filename".into(), json!(filename));
         body.insert("creationTime".into(), json!(creation_time_ms));
         body.insert("lastModified".into(), json!(last_modified_ms));
         body.insert("open".into(), json!(false));
-        body.insert("numberOfFiles".into(), json!(1));
-        body.insert("totalPayloadSize".into(), json!(file_size));
+        body.insert("numberOfFiles".into(), json!(number_of_files.max(1)));
+        body.insert("totalPayloadSize".into(), json!(total_payload_size));
 
         let mut transfer_info = Map::new();
         transfer_info.insert("port".into(), json!(payload_port));
@@ -321,6 +323,13 @@ impl NetworkPacket {
         pkt.payload_size = Some(file_size as i64);
         pkt.payload_transfer_info = Some(transfer_info);
         pkt
+    }
+
+    pub fn share_request_update(number_of_files: usize, total_payload_size: u64) -> Self {
+        let mut body = Map::new();
+        body.insert("numberOfFiles".into(), json!(number_of_files.max(1)));
+        body.insert("totalPayloadSize".into(), json!(total_payload_size));
+        Self::new(PACKET_TYPE_SHARE_REQUEST_UPDATE, body)
     }
 
     pub fn share_url(url: &str) -> Self {

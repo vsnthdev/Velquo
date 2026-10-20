@@ -41,11 +41,15 @@ export default function App() {
   const prevPairedIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
+    let disposed = false;
     let unlisten: (() => void) | undefined;
+    let unlistenPing: (() => void) | undefined;
+    let pingTimer: ReturnType<typeof setTimeout> | undefined;
 
     async function loadDevices() {
       try {
         const snap = await invoke<AppSnapshot>("get_app_snapshot");
+        if (disposed) return;
         setDevices(snap.devices);
         setTransfers(snap.transfers || []);
         if (snap.host?.downloadsDir) {
@@ -96,14 +100,17 @@ export default function App() {
     listen("velquo://state-updated", () => {
       loadDevices();
     }).then((fn) => {
-      unlisten = fn;
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
     });
 
-    let unlistenPing: (() => void) | undefined;
-    let pingTimer: ReturnType<typeof setTimeout> | undefined;
     listen<{ deviceId: string; deviceName: string; message: string }>(
       "velquo://ping",
       (event) => {
+        if (disposed) return;
         setPingToast({
           deviceName: event.payload.deviceName,
           message: event.payload.message,
@@ -112,10 +119,15 @@ export default function App() {
         pingTimer = setTimeout(() => setPingToast(null), 4000);
       }
     ).then((fn) => {
-      unlistenPing = fn;
+      if (disposed) {
+        fn();
+      } else {
+        unlistenPing = fn;
+      }
     });
 
     return () => {
+      disposed = true;
       if (unlisten) unlisten();
       if (unlistenPing) unlistenPing();
       if (pingTimer) clearTimeout(pingTimer);
@@ -137,7 +149,9 @@ export default function App() {
 
   // Native Tauri drag-and-drop file listener scoped strictly to the drop zone bounding rect
   useEffect(() => {
+    let disposed = false;
     let unlistenDrop: (() => void) | undefined;
+    let lastDropAtMs = 0;
 
     const isInsideDropZone = (pos: { x: number; y: number }): boolean => {
       const currentView = activeViewRef.current;
@@ -165,6 +179,7 @@ export default function App() {
 
     getCurrentWebview()
       .onDragDropEvent(async (event) => {
+        if (disposed) return;
         if (event.payload.type === "enter" || event.payload.type === "over") {
           setIsDraggingOver(isInsideDropZone(event.payload.position));
         } else if (event.payload.type === "leave") {
@@ -175,6 +190,12 @@ export default function App() {
           if (!droppedInside) {
             return;
           }
+          const now = Date.now();
+          if (now - lastDropAtMs < 250) {
+            return;
+          }
+          lastDropAtMs = now;
+
           const targetDevice = selectedDeviceRef.current;
           if (
             targetDevice &&
@@ -184,24 +205,27 @@ export default function App() {
           ) {
             setJustDroppedCount(event.payload.paths.length);
             setTimeout(() => setJustDroppedCount(0), 2200);
-            for (const filePath of event.payload.paths) {
-              try {
-                await invoke("send_file", {
-                  deviceId: targetDevice.deviceId,
-                  filePath,
-                });
-              } catch (err) {
-                console.error("Failed to send dropped file:", err);
-              }
+            try {
+              await invoke("send_files", {
+                deviceId: targetDevice.deviceId,
+                filePaths: event.payload.paths,
+              });
+            } catch (err) {
+              console.error("Failed to send dropped files:", err);
             }
           }
         }
       })
       .then((fn) => {
-        unlistenDrop = fn;
+        if (disposed) {
+          fn();
+        } else {
+          unlistenDrop = fn;
+        }
       });
 
     return () => {
+      disposed = true;
       if (unlistenDrop) unlistenDrop();
     };
   }, []);

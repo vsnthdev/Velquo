@@ -163,6 +163,27 @@ async fn send_file(
 }
 
 #[tauri::command]
+async fn send_files(
+    device_id: String,
+    file_paths: Vec<String>,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<Vec<String>, String> {
+    log::info!(
+        "[ui] Request to send batch of {} file(s) to device_id={}",
+        file_paths.len(),
+        device_id
+    );
+    let paths: Vec<PathBuf> = file_paths.into_iter().map(PathBuf::from).collect();
+    daemon
+        .send_files_to_device(&device_id, paths)
+        .await
+        .map_err(|e| {
+            log::error!("[ui] send_files failed: {:?}", e);
+            e.to_string()
+        })
+}
+
+#[tauri::command]
 fn send_url(
     device_id: String,
     url: String,
@@ -271,6 +292,7 @@ pub fn run() {
             send_media_action,
             seek_media,
             send_file,
+            send_files,
             send_url,
             set_device_clipboard_sync,
             clear_logs,

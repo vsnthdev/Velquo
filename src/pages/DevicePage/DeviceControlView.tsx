@@ -47,6 +47,7 @@ export function DeviceControlView({
   const [shareLinkInput, setShareLinkInput] = useState<string>("");
   const [shareLinkTouchedInvalid, setShareLinkTouchedInvalid] =
     useState<boolean>(false);
+  const [nowTickMs, setNowTickMs] = useState<number>(() => Date.now());
 
   const seekBarRef = useRef<HTMLDivElement | null>(null);
   const isAnimatingSeekRef = useRef<boolean>(false);
@@ -158,19 +159,32 @@ export function DeviceControlView({
       const paths = Array.isArray(selected) ? selected : [selected];
       if (paths.length > 0) {
         onFilesPicked(paths.length);
-      }
-      for (const filePath of paths) {
         try {
-          await invoke("send_file", {
+          await invoke("send_files", {
             deviceId: device.deviceId,
-            filePath,
+            filePaths: paths,
           });
         } catch (err) {
-          console.error("Failed to send selected file:", err);
+          console.error("Failed to send selected files:", err);
         }
       }
     }
   };
+
+  // Refresh timestamp after recent transfers finish so completed bars stay visible for ~2.2s and then fade out
+  useEffect(() => {
+    setNowTickMs(Date.now());
+    const hasRecentCompleted = transfers.some(
+      (t) =>
+        t.deviceId === device.deviceId &&
+        t.kind === "File" &&
+        t.status === "Completed" &&
+        Date.now() - t.timestampMs < 2400
+    );
+    if (!hasRecentCompleted) return;
+    const timer = setTimeout(() => setNowTickMs(Date.now()), 2300);
+    return () => clearTimeout(timer);
+  }, [transfers, device.deviceId]);
 
   const handleMediaAction = async (action: string) => {
     if (!device.nowPlaying) return;
@@ -614,44 +628,85 @@ export function DeviceControlView({
           )}
         </AnimatePresence>
 
-        {/* Active file transfer progress bar inside the drop card if a transfer is currently running */}
+        {/* Per-file transfer progress bars inside the drop card */}
         {(() => {
-          const activeTransfer = transfers.find(
-            (t) =>
-              t.deviceId === device.deviceId &&
-              t.status === "InProgress" &&
-              t.kind === "File"
+          const deviceFileTransfers = transfers.filter(
+            (t) => t.deviceId === device.deviceId && t.kind === "File"
           );
-          if (!activeTransfer) return null;
-          const pct =
-            activeTransfer.totalBytes > 0
-              ? Math.min(
-                  100,
-                  Math.round(
-                    (activeTransfer.transferredBytes /
-                      activeTransfer.totalBytes) *
-                      100
-                  )
-                )
-              : 50;
+          const anyInProgress = deviceFileTransfers.some(
+            (t) => t.status === "InProgress"
+          );
+          const visibleTransfers = deviceFileTransfers
+            .filter(
+              (t) =>
+                t.status === "InProgress" ||
+                (t.status === "Completed" &&
+                  (anyInProgress
+                    ? nowTickMs - t.timestampMs < 15000
+                    : nowTickMs - t.timestampMs < 2200))
+            )
+            .slice(0, 6);
+
+          if (visibleTransfers.length === 0) return null;
+
           return (
-            <div className="mt-4 flex w-full max-w-sm flex-col gap-1.5">
-              <div className="flex items-center justify-between text-[11.5px] font-medium text-zinc-600 dark:text-zinc-300">
-                <span className="truncate">
-                  {activeTransfer.direction === "Outgoing"
-                    ? "Sending"
-                    : "Receiving"}{" "}
-                  {activeTransfer.filename}
-                </span>
-                <span className="tabular-nums">{pct}%</span>
-              </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
-                <motion.div
-                  className="h-full rounded-full bg-blue-500"
-                  animate={{ width: `${pct}%` }}
-                  transition={{ ease: "easeOut", duration: 0.2 }}
-                />
-              </div>
+            <div className="mt-5 flex w-full max-w-md flex-col gap-2.5">
+              <AnimatePresence initial={false}>
+                {visibleTransfers.map((item) => {
+                  const pct =
+                    item.status === "Completed"
+                      ? 100
+                      : item.totalBytes > 0
+                        ? Math.min(
+                            100,
+                            Math.round(
+                              (item.transferredBytes / item.totalBytes) * 100
+                            )
+                          )
+                        : 0;
+                  const isDone = item.status === "Completed";
+
+                  return (
+                    <motion.div
+                      key={item.id}
+                      layout
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 460,
+                        damping: 34,
+                      }}
+                      className="flex w-full flex-col gap-1"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-[11.5px] font-medium text-zinc-600 dark:text-zinc-300">
+                        <span className="truncate">
+                          {isDone
+                            ? "Sent"
+                            : item.direction === "Outgoing"
+                              ? "Sending"
+                              : "Receiving"}{" "}
+                          {item.filename}
+                        </span>
+                        <span className="shrink-0 font-mono text-[11px] tabular-nums">
+                          {pct}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+                        <motion.div
+                          className={`h-full rounded-full transition-colors duration-200 ${
+                            isDone ? "bg-emerald-500" : "bg-blue-500"
+                          }`}
+                          initial={{ width: "0%" }}
+                          animate={{ width: `${pct}%` }}
+                          transition={{ ease: "easeOut", duration: 0.18 }}
+                        />
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
             </div>
           );
         })()}
