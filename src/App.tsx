@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   BellRinging,
   CheckCircle,
   Desktop,
@@ -11,9 +12,12 @@ import {
   PaperPlaneRight,
   Pause,
   Play,
+  PlusCircle,
   SkipBack,
   SkipForward,
+  SlidersHorizontal,
   Television,
+  Trash,
   UploadSimple,
 } from "@phosphor-icons/react";
 import * as Popover from "@radix-ui/react-popover";
@@ -94,6 +98,9 @@ interface TransferItem {
 }
 
 interface AppSnapshot {
+  host?: {
+    downloadsDir?: string;
+  };
   devices: DeviceView[];
   transfers: TransferItem[];
 }
@@ -212,9 +219,14 @@ export default function App() {
   const [shareLinkInput, setShareLinkInput] = useState<string>("");
   const [shareLinkTouchedInvalid, setShareLinkTouchedInvalid] =
     useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [fileSaveLocation, setFileSaveLocation] = useState<string>("");
+  const [syncClipboard, setSyncClipboard] = useState<boolean>(true);
   const seekBarRef = useRef<HTMLDivElement | null>(null);
   const dropZoneRef = useRef<HTMLDivElement | null>(null);
   const selectedDeviceRef = useRef<DeviceView | null>(null);
+  const isSettingsOpenRef = useRef<boolean>(false);
+  isSettingsOpenRef.current = isSettingsOpen;
   const isAnimatingSeekRef = useRef<boolean>(false);
   const optimisticSeekRef = useRef<{
     player: string;
@@ -235,6 +247,10 @@ export default function App() {
         const snap = await invoke<AppSnapshot>("get_app_snapshot");
         setDevices(snap.devices);
         setTransfers(snap.transfers || []);
+        if (snap.host?.downloadsDir) {
+          const defaultDir = snap.host.downloadsDir;
+          setFileSaveLocation((prev) => (prev ? prev : defaultDir));
+        }
         setSelectedDeviceId((prev) => {
           if (prev && snap.devices.some((d) => d.deviceId === prev)) {
             return prev;
@@ -286,6 +302,9 @@ export default function App() {
     let unlistenDrop: (() => void) | undefined;
 
     const isInsideDropZone = (pos: { x: number; y: number }): boolean => {
+      if (isSettingsOpenRef.current) {
+        return false;
+      }
       const targetDevice = selectedDeviceRef.current;
       if (
         !targetDevice ||
@@ -518,7 +537,9 @@ export default function App() {
 
   const artworkSrc = nativeArtData || fallbackArtworkUrl;
   const hasActiveMedia = Boolean(
-    selectedDevice?.reachable && selectedDevice?.nowPlaying?.title
+    !isSettingsOpen &&
+      selectedDevice?.reachable &&
+      selectedDevice?.nowPlaying?.title
   );
   const hasArtworkBackdrop = Boolean(hasActiveMedia && artworkSrc);
 
@@ -550,6 +571,18 @@ export default function App() {
     } catch (err) {
       console.error("Failed to share URL:", err);
       setShareLinkTouchedInvalid(true);
+    }
+  };
+
+  const handleChooseSaveLocation = async () => {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      defaultPath: fileSaveLocation || undefined,
+      title: "Select File Save Location",
+    });
+    if (typeof selected === "string" && selected.trim()) {
+      setFileSaveLocation(selected);
     }
   };
 
@@ -662,7 +695,7 @@ export default function App() {
         </div>
 
         <div
-          className="flex flex-col gap-1 overflow-y-auto px-1.5 py-1"
+          className="flex flex-1 flex-col gap-1 overflow-y-auto px-1.5 py-1"
           onMouseLeave={() => setHoveredDeviceId(null)}
         >
           <AnimatePresence initial={false}>
@@ -686,7 +719,13 @@ export default function App() {
                   whileHover={{ x: 2 }}
                   whileTap={{ scale: 0.975 }}
                   onMouseEnter={() => setHoveredDeviceId(device.deviceId)}
-                  onClick={() => setSelectedDeviceId(device.deviceId)}
+                  onClick={() => {
+                    if (device.deviceId !== selectedDevice?.deviceId) {
+                      setIsSettingsOpen(false);
+                      setIsShareLinkOpen(false);
+                    }
+                    setSelectedDeviceId(device.deviceId);
+                  }}
                   className={`relative flex cursor-pointer select-none items-center justify-between rounded-xl px-3 py-2 transition-colors duration-150 ${
                     isSelected
                       ? "text-zinc-900 dark:text-zinc-100"
@@ -754,6 +793,31 @@ export default function App() {
               );
             })}
           </AnimatePresence>
+        </div>
+
+        {/* Bottom sidebar action buttons */}
+        <div className="mt-2 flex flex-col gap-1 border-t border-black/8 px-1.5 pt-2.5 dark:border-white/8">
+          <motion.button
+            type="button"
+            whileHover={{ x: 2 }}
+            whileTap={{ scale: 0.975 }}
+            transition={{ type: "spring", stiffness: 520, damping: 34 }}
+            className="flex w-full cursor-pointer select-none items-center gap-2.5 rounded-xl px-3 py-2 text-[13.5px] font-medium text-zinc-600 transition-colors duration-150 hover:bg-black/[0.04] hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.05] dark:hover:text-zinc-200"
+          >
+            <GearSix size={18} weight="regular" className="shrink-0" />
+            <span className="truncate">Settings</span>
+          </motion.button>
+
+          <motion.button
+            type="button"
+            whileHover={{ x: 2 }}
+            whileTap={{ scale: 0.975 }}
+            transition={{ type: "spring", stiffness: 520, damping: 34 }}
+            className="flex w-full cursor-pointer select-none items-center gap-2.5 rounded-xl px-3 py-2 text-[13.5px] font-medium text-zinc-600 transition-colors duration-150 hover:bg-black/[0.04] hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.05] dark:hover:text-zinc-200"
+          >
+            <PlusCircle size={18} weight="regular" className="shrink-0" />
+            <span className="truncate">Pair new device</span>
+          </motion.button>
         </div>
       </aside>
 
@@ -857,17 +921,161 @@ export default function App() {
                   type="button"
                   whileHover={{ scale: 1.04 }}
                   whileTap={{ scale: 0.96 }}
-                  className={`flex h-9 w-11 cursor-pointer items-center justify-center rounded-xl border transition-colors duration-300 ${
+                  onClick={() => {
+                    setIsShareLinkOpen(false);
+                    setIsSettingsOpen((prev) => !prev);
+                  }}
+                  className={`relative flex h-9 w-11 cursor-pointer items-center justify-center overflow-hidden rounded-xl border transition-colors duration-300 ${
                     hasArtworkBackdrop
                       ? "border-white/25 bg-white/10 text-white backdrop-blur-md hover:bg-white/20"
                       : "border-black/10 bg-black/[0.02] text-zinc-600 hover:bg-black/[0.05] dark:border-white/10 dark:bg-white/[0.02] dark:text-zinc-300 dark:hover:bg-white/[0.06]"
                   }`}
-                  title="Device Settings"
+                  title={isSettingsOpen ? "Back to Device" : "Device Settings"}
                 >
-                  <GearSix size={18} weight="regular" />
+                  <AnimatePresence mode="wait" initial={false}>
+                    {isSettingsOpen ? (
+                      <motion.span
+                        key="back-arrow-icon"
+                        initial={{ opacity: 0, rotate: 45, scale: 0.7 }}
+                        animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                        exit={{ opacity: 0, rotate: -45, scale: 0.7 }}
+                        transition={{
+                          type: "spring",
+                          stiffness: 520,
+                          damping: 30,
+                        }}
+                        className="flex items-center justify-center"
+                      >
+                        <ArrowLeft size={18} weight="regular" />
+                      </motion.span>
+                    ) : (
+                      <motion.span
+                        key="settings-sliders-icon"
+                        initial={{ opacity: 0, scale: 0.7 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.7 }}
+                        transition={{
+                          type: "spring",
+                          stiffness: 520,
+                          damping: 30,
+                        }}
+                        className="flex items-center justify-center"
+                      >
+                        <SlidersHorizontal size={18} weight="regular" />
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
                 </motion.button>
               </div>
 
+              {/* Animated view swap between Device Control Page and Device Settings Page */}
+              <AnimatePresence mode="wait" initial={false}>
+                {isSettingsOpen ? (
+                  <motion.div
+                    key="device-settings-view"
+                    initial={{ opacity: 0, y: 10, filter: "blur(4px)" }}
+                    animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                    exit={{ opacity: 0, y: -8, filter: "blur(4px)" }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 460,
+                      damping: 34,
+                    }}
+                    className="mt-6 flex flex-col gap-5"
+                  >
+                    {/* File save location setting */}
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[12.5px] font-medium text-zinc-500 dark:text-zinc-400">
+                        File save location
+                      </label>
+
+                      <div className="flex items-center overflow-hidden rounded-xl border border-black/12 bg-black/[0.02] focus-within:border-black/25 dark:border-white/12 dark:bg-white/[0.02] dark:focus-within:border-white/25">
+                        <input
+                          type="text"
+                          value={fileSaveLocation}
+                          onChange={(e) => setFileSaveLocation(e.target.value)}
+                          readOnly
+                          className="min-w-0 flex-1 select-text bg-transparent px-3.5 py-2.5 text-[13px] text-zinc-800 focus:outline-none dark:text-zinc-200"
+                        />
+
+                        <motion.button
+                          type="button"
+                          onClick={handleChooseSaveLocation}
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.98 }}
+                          className="shrink-0 cursor-pointer border-l border-black/12 bg-black/[0.04] px-4 py-2.5 text-[13px] font-medium text-zinc-800 transition-colors hover:bg-black/[0.08] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:bg-white/[0.10]"
+                        >
+                          Change
+                        </motion.button>
+                      </div>
+                    </div>
+
+                    {/* Sync clipboard toggle */}
+                    <div
+                      onClick={() => setSyncClipboard((prev) => !prev)}
+                      className="flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
+                    >
+                      <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
+                        Sync clipboard
+                      </span>
+
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={syncClipboard}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSyncClipboard((prev) => !prev);
+                        }}
+                        className={`relative flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors duration-200 ${
+                          syncClipboard
+                            ? "bg-blue-600 dark:bg-blue-500"
+                            : "bg-zinc-300 dark:bg-zinc-700"
+                        }`}
+                      >
+                        <motion.span
+                          layout
+                          transition={{
+                            type: "spring",
+                            stiffness: 560,
+                            damping: 34,
+                          }}
+                          animate={{
+                            x: syncClipboard ? 20 : 0,
+                          }}
+                          className="h-5 w-5 rounded-full bg-white shadow-sm"
+                        />
+                      </button>
+                    </div>
+
+                    <motion.button
+                      type="button"
+                      whileHover={{ scale: 1.008 }}
+                      whileTap={{ scale: 0.99 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 450,
+                        damping: 28,
+                      }}
+                      className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-red-500/25 bg-red-500/[0.08] px-4 py-2.5 text-[13.5px] font-medium text-red-600 transition-colors hover:border-red-500/40 hover:bg-red-500/[0.14] dark:border-red-500/25 dark:bg-red-500/[0.10] dark:text-red-400 dark:hover:border-red-400/40 dark:hover:bg-red-500/[0.16]"
+                    >
+                      <Trash size={16} weight="regular" />
+                      <span>Unpair</span>
+                    </motion.button>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="device-control-view"
+                    initial={{ opacity: 0, y: 10, filter: "blur(4px)" }}
+                    animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                    exit={{ opacity: 0, y: -8, filter: "blur(4px)" }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 460,
+                      damping: 34,
+                    }}
+                    className="flex flex-col"
+                  >
               {/* Pairing Banner when device is not yet paired */}
               {selectedDevice.pairState !== "Paired" && (
                 <div className="mt-6 flex items-center justify-between gap-4 rounded-2xl border border-amber-500/25 bg-amber-500/[0.08] px-4 py-3 text-sm">
@@ -1393,6 +1601,9 @@ export default function App() {
                   </Popover.Root>
                 </div>
               </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
         </AnimatePresence>
