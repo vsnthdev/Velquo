@@ -219,6 +219,22 @@ fn set_device_clipboard_sync(
 }
 
 #[tauri::command]
+fn set_device_save_location(
+    device_id: String,
+    save_location: String,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Setting save_location='{}' for device_id={}",
+        save_location,
+        device_id
+    );
+    daemon
+        .set_device_save_location(&device_id, &save_location)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn clear_logs() {
     AppLogger::clear_entries();
     log::info!("[ui] Logs cleared");
@@ -299,6 +315,7 @@ pub fn run() {
             send_files,
             send_url,
             set_device_clipboard_sync,
+            set_device_save_location,
             clear_logs,
             quit_app,
         ])

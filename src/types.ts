@@ -44,6 +44,7 @@ export interface DeviceView {
   storageFreeGb: number | null;
   nowPlaying: NowPlayingInfo | null;
   syncClipboard: boolean;
+  saveLocation: string;
 }
 
 export interface TransferItem {

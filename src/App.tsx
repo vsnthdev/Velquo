@@ -32,7 +32,6 @@ export default function App() {
   const [fallbackArtworkUrl, setFallbackArtworkUrl] = useState<string | null>(
     null
   );
-  const [fileSaveLocation, setFileSaveLocation] = useState<string>("");
 
   const dropZoneRef = useRef<HTMLDivElement | null>(null);
   const selectedDeviceRef = useRef<DeviceView | null>(null);
@@ -52,10 +51,6 @@ export default function App() {
         if (disposed) return;
         setDevices(snap.devices);
         setTransfers(snap.transfers || []);
-        if (snap.host?.downloadsDir) {
-          const defaultDir = snap.host.downloadsDir;
-          setFileSaveLocation((prev) => (prev ? prev : defaultDir));
-        }
 
         const paired = snap.devices.filter((d) => d.pairState === "Paired");
         const newlyPaired = paired.find(
@@ -426,8 +421,13 @@ export default function App() {
               isDraggingOver={isDraggingOver}
               justDroppedCount={justDroppedCount}
               onFilesPicked={handleFilesPicked}
-              fileSaveLocation={fileSaveLocation}
-              onChangeFileSaveLocation={setFileSaveLocation}
+              fileSaveLocation={selectedDevice.saveLocation}
+              onChangeFileSaveLocation={(nextPath) =>
+                invoke("set_device_save_location", {
+                  deviceId: selectedDevice.deviceId,
+                  saveLocation: nextPath,
+                })
+              }
               syncClipboard={selectedDevice.syncClipboard}
               onToggleSyncClipboard={() =>
                 invoke("set_device_clipboard_sync", {

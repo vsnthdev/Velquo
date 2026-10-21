@@ -13,7 +13,7 @@
 - [ ] **Run Commands** — Trigger pre-configured shell commands between Mac and phone (`kdeconnect.runcommand`)
 - [ ] **Screen Lock** — Lock Mac or remote device screen and sync lock state (`kdeconnect.lock`)
 - [ ] **Drawing Tablet Input** — Stylus pressure/tilt input support (`kdeconnect.digitizer`)
-- [ ] **Device Settings & Preferences** — Unpair, custom download folder, per-plugin toggles, and Launch at Login
+- [x] **Device Settings & Preferences** — Unpair, custom download folder, per-plugin toggles, and Launch at Login
 - [x] **Clipboard Sync** — Auto-sync copied text between Mac and phone (`kdeconnect.clipboard`)
 - [x] **Auto-Pause Media on Calls** — Pause Mac media playback automatically during phone calls
 - [x] **Control Mac Media from Phone** — Expose Mac Now Playing and media controls to the phone (`kdeconnect.mpris`)

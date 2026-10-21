@@ -118,6 +118,7 @@ pub struct DeviceView {
     pub storage_free_gb: Option<f64>,
     pub now_playing: Option<NowPlayingInfo>,
     pub sync_clipboard: bool,
+    pub save_location: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +153,8 @@ pub struct TrustedDeviceRecord {
     pub cert_der: Vec<u8>,
     #[serde(default = "default_true")]
     pub sync_clipboard: bool,
+    #[serde(default)]
+    pub save_location: Option<String>,
 }
 
 pub struct ClipboardState {
@@ -203,9 +206,15 @@ impl KdeConnectDaemon {
         let tls_connector = build_tls_connector(&host)?;
 
         let trusted_map = Self::load_trusted_devices(&config_dir);
+        let default_downloads_str = downloads_dir.to_string_lossy().to_string();
         let mut initial_devices = HashMap::new();
         for (id, rec) in &trusted_map {
             let fp = sha256_fingerprint(&rec.cert_der);
+            let device_save_loc = rec
+                .save_location
+                .clone()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| default_downloads_str.clone());
             initial_devices.insert(
                 id.clone(),
                 DeviceEntry {
@@ -231,6 +240,7 @@ impl KdeConnectDaemon {
                         storage_free_gb: None,
                         now_playing: None,
                         sync_clipboard: rec.sync_clipboard,
+                        save_location: device_save_loc,
                     },
                     peer_cert_der: Some(rec.cert_der.clone()),
                     sender: None,
@@ -1340,7 +1350,8 @@ impl KdeConnectDaemon {
         }
 
         // Verify pinned certificate if this device is already trusted/paired
-        let (is_trusted, saved_sync_clipboard) = {
+        let default_downloads_str = self.downloads_dir.to_string_lossy().to_string();
+        let (is_trusted, saved_sync_clipboard, saved_save_location) = {
             let trusted = self.trusted_devices.lock().unwrap();
             if let Some(rec) = trusted.get(&device_id) {
                 if rec.cert_der != peer_cert_der {
@@ -1351,9 +1362,14 @@ impl KdeConnectDaemon {
                     );
                     return Err(anyhow!("Certificate mismatch for paired device {}", device_id));
                 }
-                (true, rec.sync_clipboard)
+                let loc = rec
+                    .save_location
+                    .clone()
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or_else(|| default_downloads_str.clone());
+                (true, rec.sync_clipboard, loc)
             } else {
-                (false, true)
+                (false, true, default_downloads_str)
             }
         };
 
@@ -1459,6 +1475,7 @@ impl KdeConnectDaemon {
                         storage_free_gb: prev_storage,
                         now_playing: prev_now_playing,
                         sync_clipboard: saved_sync_clipboard,
+                        save_location: saved_save_location,
                     },
                     peer_cert_der: Some(peer_cert_der.clone()),
                     sender: Some(tx),
@@ -1976,6 +1993,7 @@ impl KdeConnectDaemon {
                         protocol_version: entry.view.protocol_version,
                         cert_der: peer_cert_der.to_vec(),
                         sync_clipboard: entry.view.sync_clipboard,
+                        save_location: Some(entry.view.save_location.clone()),
                     };
                     drop(devices);
                     self.trusted_devices
@@ -2093,6 +2111,7 @@ impl KdeConnectDaemon {
                         protocol_version: entry.view.protocol_version,
                         cert_der: cert_der.clone(),
                         sync_clipboard: entry.view.sync_clipboard,
+                        save_location: Some(entry.view.save_location.clone()),
                     });
                 }
                 log::info!(
@@ -2212,6 +2231,41 @@ impl KdeConnectDaemon {
             self.send_host_clipboard_connect_to_device(device_id);
         }
 
+        Ok(())
+    }
+
+    pub fn set_device_save_location(&self, device_id: &str, save_location: &str) -> Result<()> {
+        let trimmed = save_location.trim();
+        let target_dir = if trimmed.is_empty() {
+            self.downloads_dir.clone()
+        } else {
+            let p = PathBuf::from(trimmed);
+            fs::create_dir_all(&p)
+                .with_context(|| format!("Cannot create or access directory {:?}", p))?;
+            p
+        };
+        let target_str = target_dir.to_string_lossy().to_string();
+
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry.view.save_location = target_str.clone();
+                log::info!(
+                    "[settings] Set save_location='{}' for '{}' ({})",
+                    target_str,
+                    entry.view.device_name,
+                    device_id
+                );
+            }
+        }
+
+        {
+            let mut trusted = self.trusted_devices.lock().unwrap();
+            if let Some(rec) = trusted.get_mut(device_id) {
+                rec.save_location = Some(target_str);
+            }
+        }
+        self.save_trusted_devices();
+        self.notify_ui();
         Ok(())
     }
 
@@ -2915,7 +2969,7 @@ impl KdeConnectDaemon {
             let total_bytes = packet.payload_size.unwrap_or(0).max(0) as u64;
 
             let transfer_id = Uuid::new_v4().to_string();
-            let dest_path = self.unique_download_path(&clean_name);
+            let dest_path = self.unique_download_path(device_id, &clean_name);
 
             log::info!(
                 "[share-in] Starting file download '{}' ({} bytes) from '{}' at {}:{} -> {:?}",
@@ -2994,7 +3048,7 @@ impl KdeConnectDaemon {
         // Case 2: Shared Text
         if let Some(text) = packet.get_str("text") {
             let filename = format!("shared-text-{}.txt", current_millis());
-            let save_path = self.unique_download_path(&filename);
+            let save_path = self.unique_download_path(device_id, &filename);
             let _ = fs::write(&save_path, text.as_bytes());
             log::info!(
                 "[share-in] Received shared text from '{}' ({} chars), saved to {:?}",
@@ -3463,8 +3517,36 @@ impl KdeConnectDaemon {
         Ok(())
     }
 
-    fn unique_download_path(&self, filename: &str) -> PathBuf {
-        let candidate = self.downloads_dir.join(filename);
+    fn resolve_device_save_dir(&self, device_id: &str) -> PathBuf {
+        let configured = {
+            let devices = self.devices.lock().unwrap();
+            devices
+                .get(device_id)
+                .map(|d| d.view.save_location.trim().to_string())
+                .filter(|s| !s.is_empty())
+        }
+        .or_else(|| {
+            let trusted = self.trusted_devices.lock().unwrap();
+            trusted
+                .get(device_id)
+                .and_then(|r| r.save_location.clone())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
+
+        if let Some(dir_str) = configured {
+            let dir = PathBuf::from(dir_str);
+            if fs::create_dir_all(&dir).is_ok() {
+                return dir;
+            }
+        }
+        let _ = fs::create_dir_all(&self.downloads_dir);
+        self.downloads_dir.clone()
+    }
+
+    fn unique_download_path(&self, device_id: &str, filename: &str) -> PathBuf {
+        let base_dir = self.resolve_device_save_dir(device_id);
+        let candidate = base_dir.join(filename);
         if !candidate.exists() {
             return candidate;
         }
@@ -3479,13 +3561,12 @@ impl KdeConnectDaemon {
             .unwrap_or_default();
 
         for i in 1..10000 {
-            let next = self.downloads_dir.join(format!("{} ({}){}", stem, i, ext));
+            let next = base_dir.join(format!("{} ({}){}", stem, i, ext));
             if !next.exists() {
                 return next;
             }
         }
-        self.downloads_dir
-            .join(format!("{}-{}", current_millis(), filename))
+        base_dir.join(format!("{}-{}", current_millis(), filename))
     }
 
     fn upsert_transfer(&self, item: TransferItem) {
