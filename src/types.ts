@@ -89,6 +89,7 @@ export interface HostInfo {
   downloadsDir?: string;
   logFilePath?: string;
   localIps?: string[];
+  ignoreWhatsappConversations?: boolean;
 }
 
 export interface AppSnapshot {

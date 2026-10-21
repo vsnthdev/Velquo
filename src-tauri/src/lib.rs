@@ -323,6 +323,20 @@ fn copy_text_to_clipboard(
 }
 
 #[tauri::command]
+fn set_ignore_whatsapp_conversations(
+    enabled: bool,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Setting ignore_whatsapp_conversations={}",
+        enabled
+    );
+    daemon
+        .set_ignore_whatsapp_conversations(enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn clear_logs() {
     AppLogger::clear_entries();
     log::info!("[ui] Logs cleared");
@@ -410,6 +424,7 @@ pub fn run() {
             set_device_auto_copy_otp,
             dismiss_notification,
             copy_text_to_clipboard,
+            set_ignore_whatsapp_conversations,
             clear_logs,
             quit_app,
         ])

@@ -66,6 +66,7 @@ pub struct HostInfo {
     pub downloads_dir: String,
     pub log_file_path: String,
     pub local_ips: Vec<String>,
+    pub ignore_whatsapp_conversations: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,6 +184,20 @@ pub struct TrustedDeviceRecord {
     pub save_location: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppSettings {
+    #[serde(default = "default_true")]
+    pub ignore_whatsapp_conversations: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            ignore_whatsapp_conversations: true,
+        }
+    }
+}
+
 pub struct ClipboardState {
     pub last_change_count: isize,
     pub last_content: String,
@@ -220,6 +235,7 @@ pub struct KdeConnectDaemon {
     pub call_paused_sources: Mutex<HashSet<String>>,
     pub call_state_seq: Mutex<u64>,
     pub clipboard_state: Mutex<ClipboardState>,
+    pub app_settings: Mutex<AppSettings>,
 }
 
 impl KdeConnectDaemon {
@@ -232,6 +248,7 @@ impl KdeConnectDaemon {
         let tls_connector = build_tls_connector(&host)?;
 
         let trusted_map = Self::load_trusted_devices(&config_dir);
+        let app_settings = Self::load_app_settings(&config_dir);
         let default_downloads_str = downloads_dir.to_string_lossy().to_string();
         let mut initial_devices = HashMap::new();
         for (id, rec) in &trusted_map {
@@ -308,6 +325,7 @@ impl KdeConnectDaemon {
                 last_content: String::new(),
                 last_timestamp_ms: 0,
             }),
+            app_settings: Mutex::new(app_settings),
         }))
     }
 
@@ -337,6 +355,60 @@ impl KdeConnectDaemon {
                 }
             }
         }
+    }
+
+    fn app_settings_file(config_dir: &Path) -> PathBuf {
+        config_dir.join("app_settings.json")
+    }
+
+    fn load_app_settings(config_dir: &Path) -> AppSettings {
+        let path = Self::app_settings_file(config_dir);
+        if let Ok(data) = fs::read_to_string(&path) {
+            if let Ok(settings) = serde_json::from_str::<AppSettings>(&data) {
+                return settings;
+            }
+        }
+        AppSettings::default()
+    }
+
+    fn save_app_settings(&self) {
+        let path = Self::app_settings_file(&self.config_dir);
+        if let Ok(guard) = self.app_settings.lock() {
+            if let Ok(json) = serde_json::to_string_pretty(&*guard) {
+                let _ = fs::write(&path, json);
+            }
+        }
+    }
+
+    pub fn is_ignore_whatsapp_conversations_enabled(&self) -> bool {
+        self.app_settings
+            .lock()
+            .map(|s| s.ignore_whatsapp_conversations)
+            .unwrap_or(true)
+    }
+
+    pub fn set_ignore_whatsapp_conversations(&self, enabled: bool) -> Result<()> {
+        {
+            let mut settings = self.app_settings.lock().unwrap();
+            settings.ignore_whatsapp_conversations = enabled;
+        }
+        self.save_app_settings();
+
+        if enabled {
+            if let Ok(mut devices) = self.devices.lock() {
+                for entry in devices.values_mut() {
+                    entry.view.notifications.retain(|n| {
+                        let is_wa = n.app_name.eq_ignore_ascii_case("whatsapp")
+                            || n.app_name.eq_ignore_ascii_case("whatsapp business")
+                            || n.id.contains("com.whatsapp");
+                        !(is_wa && n.otp_code.is_none())
+                    });
+                }
+            }
+        }
+
+        self.notify_ui();
+        Ok(())
     }
 
     pub fn set_app_handle(&self, handle: AppHandle) {
@@ -405,6 +477,7 @@ impl KdeConnectDaemon {
             downloads_dir: self.downloads_dir.to_string_lossy().to_string(),
             log_file_path: self.log_file_path.to_string_lossy().to_string(),
             local_ips,
+            ignore_whatsapp_conversations: self.is_ignore_whatsapp_conversations_enabled(),
         }
     }
 
@@ -2614,6 +2687,18 @@ impl KdeConnectDaemon {
 
         let combined = format!("{} {} {}", title, text, ticker);
         let otp_code = Self::extract_otp_code(&combined);
+
+        let is_whatsapp = app_name.eq_ignore_ascii_case("whatsapp")
+            || app_name.eq_ignore_ascii_case("whatsapp business")
+            || norm_id.contains("|com.whatsapp|")
+            || norm_id.contains("|com.whatsapp.w4b|");
+        if is_whatsapp && otp_code.is_none() && self.is_ignore_whatsapp_conversations_enabled() {
+            log::debug!(
+                "[notifications] Ignoring non-OTP WhatsApp conversation notification from '{}'",
+                device_name
+            );
+            return;
+        }
 
         let notif_item = PhoneNotification {
             id: raw_id_original.clone(),

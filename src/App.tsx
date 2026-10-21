@@ -32,6 +32,8 @@ export default function App() {
   const [fallbackArtworkUrl, setFallbackArtworkUrl] = useState<string | null>(
     null
   );
+  const [ignoreWhatsappConversations, setIgnoreWhatsappConversations] =
+    useState<boolean>(true);
 
   const dropZoneRef = useRef<HTMLDivElement | null>(null);
   const selectedDeviceRef = useRef<DeviceView | null>(null);
@@ -51,6 +53,9 @@ export default function App() {
         if (disposed) return;
         setDevices(snap.devices);
         setTransfers(snap.transfers || []);
+        if (typeof snap.host?.ignoreWhatsappConversations === "boolean") {
+          setIgnoreWhatsappConversations(snap.host.ignoreWhatsappConversations);
+        }
 
         const paired = snap.devices.filter((d) => d.pairState === "Paired");
         const newlyPaired = paired.find(
@@ -462,7 +467,15 @@ export default function App() {
           )}
 
           {activeView.kind === "app-settings" && (
-            <AppSettingsPage key="app-settings" />
+            <AppSettingsPage
+              key="app-settings"
+              ignoreWhatsappConversations={ignoreWhatsappConversations}
+              onToggleIgnoreWhatsappConversations={() =>
+                invoke("set_ignore_whatsapp_conversations", {
+                  enabled: !ignoreWhatsappConversations,
+                })
+              }
+            />
           )}
 
           {activeView.kind === "pair-device" && (

@@ -5,7 +5,15 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 
-export function AppSettingsPage() {
+interface AppSettingsPageProps {
+  ignoreWhatsappConversations: boolean;
+  onToggleIgnoreWhatsappConversations: () => void;
+}
+
+export function AppSettingsPage({
+  ignoreWhatsappConversations,
+  onToggleIgnoreWhatsappConversations,
+}: AppSettingsPageProps) {
   const [launchOnStartup, setLaunchOnStartup] = useState<boolean>(false);
   const [appVersion, setAppVersion] = useState<string>("0.1.0");
 
@@ -97,6 +105,44 @@ export function AppSettingsPage() {
             }}
             animate={{
               x: launchOnStartup ? 20 : 0,
+            }}
+            className="h-5 w-5 rounded-full bg-white shadow-sm"
+          />
+        </button>
+      </div>
+
+      {/* Ignore WhatsApp conversations toggle */}
+      <div
+        onClick={onToggleIgnoreWhatsappConversations}
+        className="mt-3 flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
+      >
+        <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
+          Ignore WhatsApp conversations
+        </span>
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={ignoreWhatsappConversations}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleIgnoreWhatsappConversations();
+          }}
+          className={`relative flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors duration-200 ${
+            ignoreWhatsappConversations
+              ? "bg-blue-600 dark:bg-blue-500"
+              : "bg-zinc-300 dark:bg-zinc-700"
+          }`}
+        >
+          <motion.span
+            layout
+            transition={{
+              type: "spring",
+              stiffness: 560,
+              damping: 34,
+            }}
+            animate={{
+              x: ignoreWhatsappConversations ? 20 : 0,
             }}
             className="h-5 w-5 rounded-full bg-white shadow-sm"
           />
