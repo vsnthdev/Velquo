@@ -350,36 +350,8 @@ export default function App() {
       />
 
       {/* Right main content area */}
-      <main className="relative h-full flex-1 overflow-x-hidden overflow-y-auto bg-white px-8 pt-10 pb-8 dark:bg-zinc-900">
-        {/* Top-to-50% Ambient Blurred Album Artwork Gradient for the Entire Right Section */}
-        <AnimatePresence>
-          {hasArtworkBackdrop && artworkSrc && (
-            <motion.div
-              key={artworkSrc}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
-              style={{
-                WebkitMaskImage:
-                  "linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 42%, rgba(0,0,0,0.35) 75%, rgba(0,0,0,0) 100%)",
-                maskImage:
-                  "linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 42%, rgba(0,0,0,0.35) 75%, rgba(0,0,0,0) 100%)",
-              }}
-              className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[54%] overflow-hidden"
-            >
-              <img
-                src={artworkSrc}
-                alt=""
-                className="h-full w-full scale-125 object-cover opacity-90 brightness-95 blur-2xl saturate-150 dark:opacity-75 dark:brightness-100"
-              />
-              {/* Subtle top scrim so pure white text always pops even on light album covers */}
-              <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/20 to-transparent dark:from-black/30 dark:via-transparent" />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Subtle bottom gray blur glow in Dark Theme ONLY when no music is playing */}
+      <div className="relative h-full flex-1 overflow-hidden bg-white dark:bg-zinc-900">
+        {/* Subtle bottom gray blur glow in Dark Theme ONLY when no music is playing (anchored to viewport bottom so scrolling never clips it) */}
         <AnimatePresence>
           {!hasActiveMedia && (
             <motion.div
@@ -396,6 +368,35 @@ export default function App() {
             />
           )}
         </AnimatePresence>
+
+        <main className="relative z-10 h-full w-full overflow-x-hidden overflow-y-auto px-8 pt-10 pb-8">
+          {/* Top-to-50% Ambient Blurred Album Artwork Gradient for the Entire Right Section */}
+          <AnimatePresence>
+            {hasArtworkBackdrop && artworkSrc && (
+              <motion.div
+                key={artworkSrc}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+                style={{
+                  WebkitMaskImage:
+                    "linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 42%, rgba(0,0,0,0.35) 75%, rgba(0,0,0,0) 100%)",
+                  maskImage:
+                    "linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 42%, rgba(0,0,0,0.35) 75%, rgba(0,0,0,0) 100%)",
+                }}
+                className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[300px] overflow-hidden"
+              >
+                <img
+                  src={artworkSrc}
+                  alt=""
+                  className="h-full w-full scale-125 object-cover opacity-90 brightness-95 blur-2xl saturate-150 dark:opacity-75 dark:brightness-100"
+                />
+                {/* Subtle top scrim so pure white text always pops even on light album covers */}
+                <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/20 to-transparent dark:from-black/30 dark:via-transparent" />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
         <AnimatePresence mode="wait">
           {activeView.kind === "device" && selectedDevice && (
@@ -471,7 +472,8 @@ export default function App() {
             />
           )}
         </AnimatePresence>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

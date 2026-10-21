@@ -1,4 +1,5 @@
 import {
+  ArrowSquareOut,
   BellRinging,
   Check,
   CheckCircle,
@@ -16,6 +17,7 @@ import {
 import * as Popover from "@radix-ui/react-popover";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   animate,
   AnimatePresence,
@@ -829,25 +831,82 @@ export function DeviceControlView({
 
           <motion.button
             type="button"
+            disabled={device.isRinging}
             onClick={() => {
-              if (!device.reachable || device.pairState !== "Paired") return;
+              if (
+                !device.reachable ||
+                device.pairState !== "Paired" ||
+                device.isRinging
+              ) {
+                return;
+              }
               invoke("ring_device", { deviceId: device.deviceId }).catch(
                 (err) => {
                   console.error("Failed to ring device:", err);
                 }
               );
             }}
-            whileHover={device.reachable ? { scale: 1.015 } : undefined}
-            whileTap={device.reachable ? { scale: 0.985 } : undefined}
-            transition={{
-              type: "spring",
-              stiffness: 450,
-              damping: 28,
-            }}
-            className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/12 bg-black/[0.02] px-4 py-2.5 text-[13.5px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05]"
+            animate={
+              device.isRinging
+                ? {
+                    x: [0, -2.5, 2.5, -2, 2, 0],
+                  }
+                : { x: 0 }
+            }
+            whileHover={
+              device.reachable && !device.isRinging
+                ? { scale: 1.015 }
+                : undefined
+            }
+            whileTap={
+              device.reachable && !device.isRinging
+                ? { scale: 0.985 }
+                : undefined
+            }
+            transition={
+              device.isRinging
+                ? {
+                    duration: 0.48,
+                    repeat: Infinity,
+                    repeatDelay: 0.35,
+                    ease: "easeInOut",
+                  }
+                : {
+                    type: "spring",
+                    stiffness: 450,
+                    damping: 28,
+                  }
+            }
+            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-[13.5px] font-medium transition-colors ${
+              device.isRinging
+                ? "cursor-default border-blue-500/35 bg-blue-500/[0.08] text-blue-600 dark:border-blue-400/35 dark:bg-blue-500/[0.12] dark:text-blue-400"
+                : "cursor-pointer border-black/12 bg-black/[0.02] text-zinc-800 hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05]"
+            }`}
           >
-            <BellRinging size={16} weight="regular" />
-            <span>Ring phone</span>
+            <motion.span
+              animate={
+                device.isRinging
+                  ? { rotate: [0, -18, 18, -14, 14, -8, 8, 0] }
+                  : { rotate: 0 }
+              }
+              transition={
+                device.isRinging
+                  ? {
+                      duration: 0.48,
+                      repeat: Infinity,
+                      repeatDelay: 0.35,
+                      ease: "easeInOut",
+                    }
+                  : { duration: 0.15 }
+              }
+              className="flex items-center"
+            >
+              <BellRinging
+                size={16}
+                weight={device.isRinging ? "fill" : "regular"}
+              />
+            </motion.span>
+            <span>{device.isRinging ? "Ringing" : "Ring phone"}</span>
           </motion.button>
         </div>
       </div>
@@ -870,6 +929,9 @@ export function DeviceControlView({
                   const displayBody =
                     notif.text ||
                     (notif.ticker !== notif.title ? notif.ticker : "");
+                  const isSensitiveHidden = displayBody
+                    .toLowerCase()
+                    .includes("sensitive notification content hidden");
                   const isCopied = copiedNotifId === notif.id;
 
                   return (
@@ -902,6 +964,23 @@ export function DeviceControlView({
                           <p className="mt-1 line-clamp-2 text-[12.5px] text-zinc-600 dark:text-zinc-400">
                             {displayBody}
                           </p>
+                        )}
+
+                        {isSensitiveHidden && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              openUrl(
+                                "https://github.com/vsnthdev/Velquo/blob/main/docs/sensitive-notifications.md"
+                              ).catch((err) => {
+                                console.error("Failed to open docs URL:", err);
+                              });
+                            }}
+                            className="mt-1 inline-flex w-fit cursor-pointer items-center gap-1 text-[11.5px] font-medium text-blue-600 underline decoration-blue-500/40 underline-offset-2 transition-colors hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
+                          >
+                            <span>See how to remove this</span>
+                            <ArrowSquareOut size={12} weight="regular" />
+                          </button>
                         )}
                       </div>
 

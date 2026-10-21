@@ -136,6 +136,7 @@ pub struct DeviceView {
     pub allow_presenter: bool,
     pub sync_notifications: bool,
     pub auto_copy_otp: bool,
+    pub is_ringing: bool,
     pub save_location: String,
     pub notifications: Vec<PhoneNotification>,
 }
@@ -268,6 +269,7 @@ impl KdeConnectDaemon {
                         allow_presenter: rec.allow_presenter,
                         sync_notifications: rec.sync_notifications,
                         auto_copy_otp: rec.auto_copy_otp,
+                        is_ringing: false,
                         save_location: device_save_loc,
                         notifications: Vec::new(),
                     },
@@ -1526,6 +1528,7 @@ impl KdeConnectDaemon {
                         allow_presenter: saved_allow_presenter,
                         sync_notifications: saved_sync_notifications,
                         auto_copy_otp: saved_auto_copy_otp,
+                        is_ringing: false,
                         save_location: saved_save_location,
                         notifications: prev_notifications,
                     },
@@ -1675,6 +1678,7 @@ impl KdeConnectDaemon {
             if let Some(entry) = devices.get_mut(&device_id) {
                 if entry.connection_generation == generation {
                     entry.view.reachable = false;
+                    entry.view.is_ringing = false;
                     entry.view.now_playing = None;
                     entry.view.notifications.clear();
                     entry.mpris_players.clear();
@@ -2320,12 +2324,25 @@ impl KdeConnectDaemon {
             device_id,
             &NetworkPacket::notification_cancel(notification_id),
         );
+        let norm_target = Self::normalize_notif_id(notification_id);
         if let Ok(mut devices) = self.devices.lock() {
             if let Some(entry) = devices.get_mut(device_id) {
                 entry
                     .view
                     .notifications
-                    .retain(|n| n.id != notification_id);
+                    .retain(|n| Self::normalize_notif_id(&n.id) != norm_target);
+            }
+        }
+        self.notify_ui();
+        Ok(())
+    }
+
+    pub fn ring_device(&self, device_id: &str) -> Result<()> {
+        let pkt = NetworkPacket::find_my_phone();
+        self.send_packet_to_device(device_id, &pkt)?;
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry.view.is_ringing = true;
             }
         }
         self.notify_ui();
@@ -2355,12 +2372,13 @@ impl KdeConnectDaemon {
     /// verification/OTP context keywords (`otp`, `code`, `verification`, `verify`, `passcode`, `2fa`, `pin`, etc.).
     fn extract_otp_code(combined_text: &str) -> Option<String> {
         let lower = combined_text.to_ascii_lowercase();
-        const KEYWORDS: [&str; 15] = [
+        const KEYWORDS: [&str; 16] = [
             "otp",
             "code",
             "verification",
             "verify",
             "passcode",
+            "password",
             "2fa",
             "security",
             "one-time",
@@ -2409,12 +2427,76 @@ impl KdeConnectDaemon {
         None
     }
 
+    fn normalize_notif_id(raw: &str) -> String {
+        let mut s = raw.replace(['\r', '\n'], "").trim().to_string();
+        if let Some(idx) = s.find("org.kde.kdeconnect_tp::") {
+            s = s[idx + "org.kde.kdeconnect_tp::".len()..].to_string();
+        }
+        s
+    }
+
+    fn extract_notif_package(norm_id: &str) -> Option<&str> {
+        // Android StatusBarNotification key format: `userId|packageName|id|tag|uid`
+        let mut parts = norm_id.split('|');
+        let _user = parts.next()?;
+        let pkg = parts.next()?;
+        if pkg.contains('.') {
+            Some(pkg)
+        } else {
+            None
+        }
+    }
+
+    fn is_group_summary_notif_id(norm_id: &str) -> bool {
+        // Group summary notifications typically have `null` as the 4th pipe-separated segment (`tag`)
+        let parts: Vec<&str> = norm_id.split('|').collect();
+        parts.len() >= 4 && parts[3] == "null"
+    }
+
+    fn is_generic_summary_placeholder(n: &PhoneNotification) -> bool {
+        let norm = Self::normalize_notif_id(&n.id);
+        let title_generic = n.title.is_empty() || n.title.eq_ignore_ascii_case(&n.app_name);
+        let body_redacted = n
+            .text
+            .to_ascii_lowercase()
+            .contains("sensitive notification content hidden");
+        Self::is_group_summary_notif_id(&norm) && (title_generic || body_redacted)
+    }
+
     fn handle_notification_packet(
         self: &Arc<Self>,
         device_id: &str,
         device_name: &str,
         packet: &NetworkPacket,
     ) {
+        let is_cancel = packet.get_bool("isCancel").unwrap_or(false);
+        let raw_id_original = packet.get_str("id").unwrap_or("").to_string();
+        let norm_id = Self::normalize_notif_id(&raw_id_original);
+
+        // When the user dismisses the Find My Phone ring alert on their phone, Android sends
+        // `kdeconnect.notification` with `isCancel: true` (often with id containing `org.kde.kdeconnect_tp`).
+        if is_cancel {
+            let mut ring_stopped = false;
+            if let Ok(mut devices) = self.devices.lock() {
+                if let Some(entry) = devices.get_mut(device_id) {
+                    if entry.view.is_ringing
+                        && (norm_id.contains("kdeconnect") || !norm_id.is_empty())
+                    {
+                        entry.view.is_ringing = false;
+                        ring_stopped = true;
+                        log::info!(
+                            "[findmyphone] Ringing dismissed on '{}' (notif_id='{}')",
+                            device_name,
+                            norm_id
+                        );
+                    }
+                }
+            }
+            if ring_stopped {
+                self.notify_ui();
+            }
+        }
+
         if !self.is_device_notifications_allowed(device_id) {
             return;
         }
@@ -2423,24 +2505,79 @@ impl KdeConnectDaemon {
             return;
         }
 
-        let Some(raw_id) = packet.get_str("id") else {
-            return;
-        };
-        let notif_id = raw_id.trim().to_string();
-        if notif_id.is_empty() {
+        if norm_id.is_empty() {
             return;
         }
 
-        if packet.get_bool("isCancel").unwrap_or(false) {
+        if is_cancel {
             let mut removed = false;
+            let cancel_pkg = Self::extract_notif_package(&norm_id).map(|s| s.to_string());
+            let cancel_is_summary = Self::is_group_summary_notif_id(&norm_id);
+
             if let Ok(mut devices) = self.devices.lock() {
                 if let Some(entry) = devices.get_mut(device_id) {
                     let before = entry.view.notifications.len();
+
+                    // 1. Remove exact normalized ID match
                     entry.view.notifications.retain(|n| {
-                        n.id != notif_id
-                            && !n.id.ends_with(&format!("::{}", notif_id))
-                            && !notif_id.ends_with(&format!("::{}", n.id))
+                        let existing_norm = Self::normalize_notif_id(&n.id);
+                        existing_norm != norm_id
+                            && !existing_norm.ends_with(&format!("::{}", norm_id))
+                            && !norm_id.ends_with(&format!("::{}", existing_norm))
                     });
+
+                    // 2. If Android cancelled the group summary (`|null|`), or if a child notification
+                    // was cancelled leaving only a generic summary placeholder for that package, clean it up
+                    if let Some(ref pkg) = cancel_pkg {
+                        if cancel_is_summary && entry.view.notifications.len() == before {
+                            // User swiped away the grouped notification stack or Android cancelled a summary ID
+                            // Remove any generic summary placeholder for this package
+                            entry.view.notifications.retain(|n| {
+                                let n_norm = Self::normalize_notif_id(&n.id);
+                                let same_pkg = Self::extract_notif_package(&n_norm) == Some(pkg.as_str());
+                                !(same_pkg && Self::is_generic_summary_placeholder(n))
+                            });
+                            // If still nothing was removed (e.g. only 1 notification from this package existed with a different sub-id), remove it
+                            if entry.view.notifications.len() == before {
+                                let pkg_count = entry
+                                    .view
+                                    .notifications
+                                    .iter()
+                                    .filter(|n| {
+                                        Self::extract_notif_package(&Self::normalize_notif_id(&n.id))
+                                            == Some(pkg.as_str())
+                                    })
+                                    .count();
+                                if pkg_count == 1 {
+                                    entry.view.notifications.retain(|n| {
+                                        Self::extract_notif_package(&Self::normalize_notif_id(&n.id))
+                                            != Some(pkg.as_str())
+                                    });
+                                }
+                            }
+                        } else {
+                            // If a specific child notification was removed, check if only a generic summary placeholder remains for this package
+                            let remaining_specific_for_pkg = entry
+                                .view
+                                .notifications
+                                .iter()
+                                .filter(|n| {
+                                    let n_norm = Self::normalize_notif_id(&n.id);
+                                    Self::extract_notif_package(&n_norm) == Some(pkg.as_str())
+                                        && !Self::is_generic_summary_placeholder(n)
+                                })
+                                .count();
+                            if remaining_specific_for_pkg == 0 {
+                                entry.view.notifications.retain(|n| {
+                                    let n_norm = Self::normalize_notif_id(&n.id);
+                                    let same_pkg =
+                                        Self::extract_notif_package(&n_norm) == Some(pkg.as_str());
+                                    !(same_pkg && Self::is_generic_summary_placeholder(n))
+                                });
+                            }
+                        }
+                    }
+
                     removed = entry.view.notifications.len() != before;
                 }
             }
@@ -2479,7 +2616,7 @@ impl KdeConnectDaemon {
         let otp_code = Self::extract_otp_code(&combined);
 
         let notif_item = PhoneNotification {
-            id: notif_id.clone(),
+            id: raw_id_original.clone(),
             app_name: if app_name.is_empty() {
                 device_name.to_string()
             } else {
@@ -2493,14 +2630,39 @@ impl KdeConnectDaemon {
             otp_code: otp_code.clone(),
         };
 
+        let incoming_pkg = Self::extract_notif_package(&norm_id).map(|s| s.to_string());
+        let incoming_is_generic_summary = Self::is_generic_summary_placeholder(&notif_item);
+
         let mut is_new_or_changed = false;
         if let Ok(mut devices) = self.devices.lock() {
             if let Some(entry) = devices.get_mut(device_id) {
+                // If this incoming notification is a generic group-summary placeholder (`|null|`)
+                // and we already have a specific notification for the same package, ignore the redundant summary card!
+                if incoming_is_generic_summary {
+                    if let Some(ref pkg) = incoming_pkg {
+                        let has_specific = entry.view.notifications.iter().any(|n| {
+                            let n_norm = Self::normalize_notif_id(&n.id);
+                            Self::extract_notif_package(&n_norm) == Some(pkg.as_str())
+                                && !Self::is_generic_summary_placeholder(n)
+                        });
+                        if has_specific {
+                            return;
+                        }
+                    }
+                } else if let Some(ref pkg) = incoming_pkg {
+                    // Conversely, when a specific notification arrives for a package, remove any generic summary placeholder for that package
+                    entry.view.notifications.retain(|n| {
+                        let n_norm = Self::normalize_notif_id(&n.id);
+                        let same_pkg = Self::extract_notif_package(&n_norm) == Some(pkg.as_str());
+                        !(same_pkg && Self::is_generic_summary_placeholder(n))
+                    });
+                }
+
                 if let Some(existing) = entry
                     .view
                     .notifications
                     .iter_mut()
-                    .find(|n| n.id == notif_id)
+                    .find(|n| Self::normalize_notif_id(&n.id) == norm_id)
                 {
                     if existing.title != notif_item.title
                         || existing.text != notif_item.text

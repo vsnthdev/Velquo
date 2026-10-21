@@ -114,9 +114,8 @@ fn ring_device(
         "[ui] Sending Find My Phone (ring) request to device_id={}",
         device_id
     );
-    let pkt = NetworkPacket::find_my_phone();
     daemon
-        .send_packet_to_device(&device_id, &pkt)
+        .ring_device(&device_id)
         .map_err(|e| e.to_string())
 }
 

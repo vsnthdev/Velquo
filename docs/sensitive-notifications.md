@@ -26,7 +26,7 @@ brew install --cask android-platform-tools
 2. Tap **Version** (if on OnePlus / OxygenOS) → tap **Build number** **7 times** until it says *"You are now in Developer mode!"*.
 3. Go back to **Settings** → **System & update** (or **Additional settings** / **System**) → **Developer options**.
 4. Turn on **USB debugging**.
-   - **Important for OnePlus / Oppo / Realme (OxygenOS / ColorOS):** Scroll down inside **Developer options** and also turn on **"Disable permission monitoring"** (otherwise OxygenOS blocks `appops` commands over ADB).
+   - **Important for OnePlus / Oppo / Realme (OxygenOS / ColorOS):** Scroll all the way to the very bottom of **Developer options** (under the **Apps** section) and turn on **"Disable system optimisation"** *(called **"Disable permission monitoring"** on older OxygenOS/ColorOS versions)*. Without this toggle enabled, ADB will fail with `SecurityException: uid 2000 does not have android.permission.MANAGE_APP_OPS_MODES`.
 
 ---
 
@@ -56,6 +56,6 @@ It should output: `RECEIVE_SENSITIVE_NOTIFICATIONS: allow`.
 
 1. Unplug your phone from your Mac.
 2. On your phone, go back to **Settings** → **Developer options**.
-3. Turn off **USB debugging** (or toggle off **Developer options** entirely).
+3. Turn off **"Disable system optimisation"** (if you enabled it in Step 2) and turn off **USB debugging** (or toggle off **Developer options** entirely).
 
 The `RECEIVE_SENSITIVE_NOTIFICATIONS` permission will remain active, and **Velquo** will now display full notification messages and auto-copy OTP codes on your Mac!
