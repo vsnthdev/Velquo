@@ -24,6 +24,9 @@ pub const PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE: &str = "kdeconnect.mousepad.keyboa
 pub const PACKET_TYPE_FINDMYPHONE_REQUEST: &str = "kdeconnect.findmyphone.request";
 pub const PACKET_TYPE_NOTIFICATION: &str = "kdeconnect.notification";
 pub const PACKET_TYPE_NOTIFICATION_REQUEST: &str = "kdeconnect.notification.request";
+pub const PACKET_TYPE_RUNCOMMAND: &str = "kdeconnect.runcommand";
+pub const PACKET_TYPE_RUNCOMMAND_OUTPUT: &str = "kdeconnect.runcommand.output";
+pub const PACKET_TYPE_RUNCOMMAND_REQUEST: &str = "kdeconnect.runcommand.request";
 pub const PACKET_TYPE_SHARE_REQUEST: &str = "kdeconnect.share.request";
 pub const PACKET_TYPE_SHARE_REQUEST_UPDATE: &str = "kdeconnect.share.request.update";
 
@@ -76,6 +79,7 @@ pub fn supported_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_MOUSEPAD_REQUEST.to_string(),
         PACKET_TYPE_FINDMYPHONE_REQUEST.to_string(),
         PACKET_TYPE_NOTIFICATION.to_string(),
+        PACKET_TYPE_RUNCOMMAND_REQUEST.to_string(),
     ]
 }
 
@@ -95,6 +99,8 @@ pub fn supported_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE.to_string(),
         PACKET_TYPE_FINDMYPHONE_REQUEST.to_string(),
         PACKET_TYPE_NOTIFICATION_REQUEST.to_string(),
+        PACKET_TYPE_RUNCOMMAND.to_string(),
+        PACKET_TYPE_RUNCOMMAND_OUTPUT.to_string(),
     ]
 }
 
@@ -390,5 +396,12 @@ impl NetworkPacket {
         let mut body = Map::new();
         body.insert("cancel".into(), json!(notification_id));
         Self::new(PACKET_TYPE_NOTIFICATION_REQUEST, body)
+    }
+
+    pub fn runcommand_list(commands_json: &str) -> Self {
+        let mut body = Map::new();
+        body.insert("commandList".into(), json!(commands_json));
+        body.insert("canAddCommand".into(), json!(true));
+        Self::new(PACKET_TYPE_RUNCOMMAND, body)
     }
 }

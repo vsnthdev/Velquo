@@ -33,6 +33,12 @@ export interface PhoneNotification {
   otpCode: string | null;
 }
 
+export interface RunCommandItem {
+  key: string;
+  name: string;
+  command: string;
+}
+
 export interface DeviceView {
   deviceId: string;
   deviceName: string;
@@ -61,6 +67,7 @@ export interface DeviceView {
   isRinging: boolean;
   saveLocation: string;
   notifications: PhoneNotification[];
+  runCommands: RunCommandItem[];
 }
 
 export interface TransferItem {

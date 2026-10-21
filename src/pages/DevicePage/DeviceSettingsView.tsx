@@ -1,6 +1,15 @@
-import { Trash } from "@phosphor-icons/react";
+import {
+  ArrowLeft,
+  Plus,
+  TerminalWindow,
+  Trash,
+  X,
+} from "@phosphor-icons/react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { open } from "@tauri-apps/plugin-dialog";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useState } from "react";
+import type { RunCommandItem } from "../../types";
 
 interface DeviceSettingsViewProps {
   fileSaveLocation: string;
@@ -13,8 +22,22 @@ interface DeviceSettingsViewProps {
   onToggleNotifications: () => void;
   autoCopyOtp: boolean;
   onToggleAutoCopyOtp: () => void;
+  runCommands: RunCommandItem[];
+  onAddRunCommand: (name: string, command: string) => Promise<void>;
+  onRemoveRunCommand: (key: string) => Promise<void>;
+  rightPaneContainer: HTMLElement | null;
+  openAddCommandSignal: number;
   onUnpair: () => void;
 }
+
+const SAMPLE_MAC_COMMANDS = [
+  { name: "Lock Screen", command: "pmset displaysleepnow" },
+  { name: "Sleep Mac", command: "pmset sleepnow" },
+  {
+    name: "Mute Volume",
+    command: 'osascript -e "set volume output muted true"',
+  },
+];
 
 export function DeviceSettingsView({
   fileSaveLocation,
@@ -27,8 +50,28 @@ export function DeviceSettingsView({
   onToggleNotifications,
   autoCopyOtp,
   onToggleAutoCopyOtp,
+  runCommands,
+  onAddRunCommand,
+  onRemoveRunCommand,
+  rightPaneContainer,
+  openAddCommandSignal,
   onUnpair,
 }: DeviceSettingsViewProps) {
+  const [isCommandsModalOpen, setIsCommandsModalOpen] =
+    useState<boolean>(false);
+  const [modalView, setModalView] = useState<"list" | "add">("list");
+  const [newCmdName, setNewCmdName] = useState<string>("");
+  const [newCmdString, setNewCmdString] = useState<string>("");
+  const [formError, setFormError] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (openAddCommandSignal > 0) {
+      setFormError(false);
+      setModalView("add");
+      setIsCommandsModalOpen(true);
+    }
+  }, [openAddCommandSignal]);
+
   const handleChooseSaveLocation = async () => {
     const selected = await open({
       directory: true,
@@ -38,6 +81,25 @@ export function DeviceSettingsView({
     });
     if (typeof selected === "string" && selected.trim()) {
       onChangeFileSaveLocation(selected);
+    }
+  };
+
+  const handleCreateCommand = async () => {
+    const trimmedName = newCmdName.trim();
+    const trimmedCmd = newCmdString.trim();
+    if (!trimmedName || !trimmedCmd) {
+      setFormError(true);
+      return;
+    }
+    try {
+      await onAddRunCommand(trimmedName, trimmedCmd);
+      setNewCmdName("");
+      setNewCmdString("");
+      setFormError(false);
+      setModalView("list");
+    } catch (err) {
+      console.error("Failed to add run command:", err);
+      setFormError(true);
     }
   };
 
@@ -52,10 +114,10 @@ export function DeviceSettingsView({
         stiffness: 460,
         damping: 34,
       }}
-      className="mt-6 flex flex-col gap-5"
+      className="mt-6 flex flex-col gap-3.5"
     >
       {/* File save location setting */}
-      <div className="flex flex-col gap-2">
+      <div className="mb-1 flex flex-col gap-2">
         <label className="text-[12.5px] font-medium text-zinc-500 dark:text-zinc-400">
           File save location
         </label>
@@ -232,6 +294,284 @@ export function DeviceSettingsView({
           />
         </button>
       </div>
+
+      {/* Configure commands button + Radix Dialog scoped to the right pane */}
+      <Dialog.Root
+        open={isCommandsModalOpen}
+        onOpenChange={(openState) => {
+          setIsCommandsModalOpen(openState);
+          if (!openState) {
+            setModalView("list");
+            setFormError(false);
+          }
+        }}
+      >
+        <Dialog.Trigger asChild>
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.008 }}
+            whileTap={{ scale: 0.99 }}
+            transition={{
+              type: "spring",
+              stiffness: 450,
+              damping: 28,
+            }}
+            className="mt-1 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/12 bg-black/[0.02] px-4 py-2.5 text-[13.5px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05]"
+          >
+            <TerminalWindow size={16} weight="regular" />
+            <span>Configure commands</span>
+            {runCommands.length > 0 && (
+              <span className="ml-0.5 rounded-md bg-black/[0.07] px-1.5 py-0.2 text-[11px] font-medium text-zinc-600 dark:bg-white/[0.10] dark:text-zinc-300">
+                {runCommands.length}
+              </span>
+            )}
+          </motion.button>
+        </Dialog.Trigger>
+
+        <AnimatePresence>
+          {isCommandsModalOpen && (
+            <Dialog.Portal forceMount container={rightPaneContainer}>
+              <Dialog.Overlay asChild forceMount>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className="absolute inset-0 z-40 bg-black/35 backdrop-blur-xs dark:bg-black/55"
+                />
+              </Dialog.Overlay>
+
+              <Dialog.Content asChild forceMount>
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 480,
+                    damping: 34,
+                  }}
+                  className="absolute top-1/2 left-1/2 z-50 flex max-h-[82%] w-[88%] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-black/12 bg-white p-5 shadow-2xl outline-none dark:border-white/15 dark:bg-zinc-900"
+                >
+                  {/* Modal Header */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      {modalView === "add" && (
+                        <motion.button
+                          type="button"
+                          whileHover={{ scale: 1.06 }}
+                          whileTap={{ scale: 0.94 }}
+                          onClick={() => {
+                            setFormError(false);
+                            setModalView("list");
+                          }}
+                          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-black/10 bg-black/[0.02] text-zinc-600 transition-colors hover:bg-black/[0.06] dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.08]"
+                          title="Back to commands list"
+                        >
+                          <ArrowLeft size={14} weight="bold" />
+                        </motion.button>
+                      )}
+
+                      <Dialog.Title className="text-[15.5px] font-semibold text-zinc-900 dark:text-zinc-100">
+                        {modalView === "list"
+                          ? "Configure commands"
+                          : "Add command"}
+                      </Dialog.Title>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {modalView === "list" && (
+                        <motion.button
+                          type="button"
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => {
+                            setFormError(false);
+                            setModalView("add");
+                          }}
+                          className="flex cursor-pointer items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[12px] font-medium text-white shadow-xs transition-colors hover:bg-blue-500"
+                        >
+                          <Plus size={13} weight="bold" />
+                          <span>Add</span>
+                        </motion.button>
+                      )}
+
+                      <Dialog.Close asChild>
+                        <motion.button
+                          type="button"
+                          whileHover={{ scale: 1.06 }}
+                          whileTap={{ scale: 0.94 }}
+                          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-black/[0.06] hover:text-zinc-700 dark:hover:bg-white/[0.08] dark:hover:text-zinc-200"
+                          aria-label="Close"
+                        >
+                          <X size={15} weight="bold" />
+                        </motion.button>
+                      </Dialog.Close>
+                    </div>
+                  </div>
+
+                  {/* Swappable Modal Inner Content: List View <-> Add New Command View */}
+                  <div className="mt-4 flex-1 overflow-y-auto">
+                    <AnimatePresence mode="wait" initial={false}>
+                      {modalView === "list" ? (
+                        <motion.div
+                          key="commands-list-view"
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -10 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 500,
+                            damping: 35,
+                          }}
+                          className="flex flex-col gap-2"
+                        >
+                          {runCommands.length > 0 ? (
+                            runCommands.map((item) => (
+                              <div
+                                key={item.key}
+                                className="flex items-center justify-between gap-3 rounded-xl border border-black/10 bg-black/[0.02] px-3.5 py-2.5 dark:border-white/10 dark:bg-white/[0.03]"
+                              >
+                                <div className="flex min-w-0 flex-1 flex-col">
+                                  <span className="truncate text-[13.5px] font-medium text-zinc-900 dark:text-zinc-100">
+                                    {item.name}
+                                  </span>
+                                  <span className="mt-0.5 truncate font-mono text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                                    {item.command}
+                                  </span>
+                                </div>
+
+                                <motion.button
+                                  type="button"
+                                  whileHover={{ scale: 1.08 }}
+                                  whileTap={{ scale: 0.92 }}
+                                  onClick={() => onRemoveRunCommand(item.key)}
+                                  className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-red-500/12 hover:text-red-500 dark:hover:bg-red-500/20 dark:hover:text-red-400"
+                                  title="Delete command"
+                                >
+                                  <Trash size={14} weight="regular" />
+                                </motion.button>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="flex flex-col items-center justify-center rounded-xl border border-black/8 bg-black/[0.015] px-4 py-8 text-center dark:border-white/8 dark:bg-white/[0.015]">
+                              <TerminalWindow
+                                size={24}
+                                weight="regular"
+                                className="text-zinc-400 dark:text-zinc-500"
+                              />
+                              <span className="mt-2 text-[13.5px] font-medium text-zinc-700 dark:text-zinc-300">
+                                No commands configured yet
+                              </span>
+                              <span className="mt-0.5 max-w-xs text-[12px] text-zinc-500 dark:text-zinc-400">
+                                Add shell commands to trigger them remotely from
+                                the KDE Connect app on your phone.
+                              </span>
+                            </div>
+                          )}
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key="commands-add-view"
+                          initial={{ opacity: 0, x: 10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 10 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 500,
+                            damping: 35,
+                          }}
+                          className="flex flex-col gap-3.5"
+                        >
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400">
+                              Command name
+                            </label>
+                            <input
+                              type="text"
+                              value={newCmdName}
+                              onChange={(e) => {
+                                setNewCmdName(e.target.value);
+                                if (formError) setFormError(false);
+                              }}
+                              placeholder="Lock Screen"
+                              autoFocus
+                              className={`select-text rounded-xl border bg-black/[0.02] px-3 py-2 text-[13px] text-zinc-900 placeholder:text-zinc-400 focus:outline-none dark:bg-white/[0.03] dark:text-zinc-100 dark:placeholder:text-zinc-500 ${
+                                formError && !newCmdName.trim()
+                                  ? "border-red-500/80 dark:border-red-400/80"
+                                  : "border-black/12 focus:border-blue-500/60 dark:border-white/12 dark:focus:border-blue-400/60"
+                              }`}
+                            />
+                          </div>
+
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400">
+                              Shell command
+                            </label>
+                            <input
+                              type="text"
+                              value={newCmdString}
+                              onChange={(e) => {
+                                setNewCmdString(e.target.value);
+                                if (formError) setFormError(false);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  handleCreateCommand();
+                                }
+                              }}
+                              placeholder="pmset displaysleepnow"
+                              className={`select-text rounded-xl border bg-black/[0.02] px-3 py-2 font-mono text-[12.5px] text-zinc-900 placeholder:text-zinc-400 focus:outline-none dark:bg-white/[0.03] dark:text-zinc-100 dark:placeholder:text-zinc-500 ${
+                                formError && !newCmdString.trim()
+                                  ? "border-red-500/80 dark:border-red-400/80"
+                                  : "border-black/12 focus:border-blue-500/60 dark:border-white/12 dark:focus:border-blue-400/60"
+                              }`}
+                            />
+                          </div>
+
+                          {/* Sample quick presets */}
+                          <div className="flex flex-col gap-1.5">
+                            <span className="text-[11.5px] font-medium text-zinc-400 dark:text-zinc-500">
+                              Presets
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {SAMPLE_MAC_COMMANDS.map((preset) => (
+                                <button
+                                  key={preset.name}
+                                  type="button"
+                                  onClick={() => {
+                                    setNewCmdName(preset.name);
+                                    setNewCmdString(preset.command);
+                                    setFormError(false);
+                                  }}
+                                  className="cursor-pointer rounded-lg border border-black/10 bg-black/[0.02] px-2.5 py-1 text-[11.5px] font-medium text-zinc-600 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-white/[0.06]"
+                                >
+                                  {preset.name}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <motion.button
+                            type="button"
+                            whileHover={{ scale: 1.01 }}
+                            whileTap={{ scale: 0.985 }}
+                            onClick={handleCreateCommand}
+                            className="mt-1 flex w-full cursor-pointer items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-medium text-white shadow-xs transition-colors hover:bg-blue-500"
+                          >
+                            Save command
+                          </motion.button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </motion.div>
+              </Dialog.Content>
+            </Dialog.Portal>
+          )}
+        </AnimatePresence>
+      </Dialog.Root>
 
       <motion.button
         type="button"

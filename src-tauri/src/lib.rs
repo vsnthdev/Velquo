@@ -337,6 +337,40 @@ fn set_ignore_whatsapp_conversations(
 }
 
 #[tauri::command]
+fn add_device_run_command(
+    device_id: String,
+    name: String,
+    command: String,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Adding run command '{}' ('{}') for device_id={}",
+        name,
+        command,
+        device_id
+    );
+    daemon
+        .add_device_run_command(&device_id, &name, &command)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn remove_device_run_command(
+    device_id: String,
+    key: String,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Removing run command key='{}' for device_id={}",
+        key,
+        device_id
+    );
+    daemon
+        .remove_device_run_command(&device_id, &key)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn clear_logs() {
     AppLogger::clear_entries();
     log::info!("[ui] Logs cleared");
@@ -425,6 +459,8 @@ pub fn run() {
             dismiss_notification,
             copy_text_to_clipboard,
             set_ignore_whatsapp_conversations,
+            add_device_run_command,
+            remove_device_run_command,
             clear_logs,
             quit_app,
         ])

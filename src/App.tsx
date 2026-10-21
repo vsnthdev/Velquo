@@ -34,6 +34,8 @@ export default function App() {
   );
   const [ignoreWhatsappConversations, setIgnoreWhatsappConversations] =
     useState<boolean>(true);
+  const [rightPaneEl, setRightPaneEl] = useState<HTMLDivElement | null>(null);
+  const [openAddCommandSignal, setOpenAddCommandSignal] = useState<number>(0);
 
   const dropZoneRef = useRef<HTMLDivElement | null>(null);
   const selectedDeviceRef = useRef<DeviceView | null>(null);
@@ -126,10 +128,31 @@ export default function App() {
       }
     });
 
+    let unlistenSetup: (() => void) | undefined;
+    listen<{ deviceId: string }>(
+      "velquo://open-runcommand-setup",
+      (event) => {
+        if (disposed) return;
+        setActiveView({
+          kind: "device",
+          deviceId: event.payload.deviceId,
+          subview: "settings",
+        });
+        setOpenAddCommandSignal((prev) => prev + 1);
+      }
+    ).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlistenSetup = fn;
+      }
+    });
+
     return () => {
       disposed = true;
       if (unlisten) unlisten();
       if (unlistenPing) unlistenPing();
+      if (unlistenSetup) unlistenSetup();
       if (pingTimer) clearTimeout(pingTimer);
     };
   }, []);
@@ -355,7 +378,10 @@ export default function App() {
       />
 
       {/* Right main content area */}
-      <div className="relative h-full flex-1 overflow-hidden bg-white dark:bg-zinc-900">
+      <div
+        ref={setRightPaneEl}
+        className="relative h-full flex-1 overflow-hidden bg-white dark:bg-zinc-900"
+      >
         {/* Subtle bottom gray blur glow in Dark Theme ONLY when no music is playing (anchored to viewport bottom so scrolling never clips it) */}
         <AnimatePresence>
           {!hasActiveMedia && (
@@ -462,6 +488,21 @@ export default function App() {
                   enabled: !selectedDevice.autoCopyOtp,
                 })
               }
+              onAddRunCommand={async (name, command) => {
+                await invoke("add_device_run_command", {
+                  deviceId: selectedDevice.deviceId,
+                  name,
+                  command,
+                });
+              }}
+              onRemoveRunCommand={async (key) => {
+                await invoke("remove_device_run_command", {
+                  deviceId: selectedDevice.deviceId,
+                  key,
+                });
+              }}
+              rightPaneContainer={rightPaneEl}
+              openAddCommandSignal={openAddCommandSignal}
               onUnpair={() => handleUnpairDevice(selectedDevice.deviceId)}
             />
           )}

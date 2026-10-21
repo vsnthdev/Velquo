@@ -28,6 +28,10 @@ interface DevicePageProps {
   onToggleNotifications: () => void;
   autoCopyOtp: boolean;
   onToggleAutoCopyOtp: () => void;
+  onAddRunCommand: (name: string, command: string) => Promise<void>;
+  onRemoveRunCommand: (key: string) => Promise<void>;
+  rightPaneContainer: HTMLElement | null;
+  openAddCommandSignal: number;
   onUnpair: () => void;
 }
 
@@ -52,6 +56,10 @@ export function DevicePage({
   onToggleNotifications,
   autoCopyOtp,
   onToggleAutoCopyOtp,
+  onAddRunCommand,
+  onRemoveRunCommand,
+  rightPaneContainer,
+  openAddCommandSignal,
   onUnpair,
 }: DevicePageProps) {
   const isSettingsOpen = subview === "settings";
@@ -163,6 +171,11 @@ export function DevicePage({
             onToggleNotifications={onToggleNotifications}
             autoCopyOtp={autoCopyOtp}
             onToggleAutoCopyOtp={onToggleAutoCopyOtp}
+            runCommands={device.runCommands || []}
+            onAddRunCommand={onAddRunCommand}
+            onRemoveRunCommand={onRemoveRunCommand}
+            rightPaneContainer={rightPaneContainer}
+            openAddCommandSignal={openAddCommandSignal}
             onUnpair={onUnpair}
           />
         ) : (

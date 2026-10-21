@@ -5,8 +5,8 @@
 - [ ] **Contacts Sync** — Sync phone vCards to resolve caller and SMS contact names/photos (`kdeconnect.contacts.*`)
 - [ ] **Remote File Browser (SFTP)** — Browse phone folders and storage over SFTP (`kdeconnect.sftp`)
 - [ ] **System Volume Control** — View and adjust phone audio streams and expose Mac volume (`kdeconnect.systemvolume`)
-- [ ] **Run Commands** — Trigger pre-configured shell commands between Mac and phone (`kdeconnect.runcommand`)
 - [ ] **Drawing Tablet Input** — Stylus pressure/tilt input support (`kdeconnect.digitizer`)
+- [x] **Run Commands** — Trigger pre-configured shell commands between Mac and phone (`kdeconnect.runcommand`)
 - [x] **Notifications Sync** — View and dismiss phone notifications on Mac (`kdeconnect.notification`)
 - [x] **OTP / 2FA Auto-Copy** — Extract and copy verification codes from incoming notifications
 - [x] **Find My Phone / Mac** — Ring the remote phone at full volume or ring this Mac (`kdeconnect.findmyphone.request`)
