@@ -7,6 +7,8 @@ interface DeviceSettingsViewProps {
   onChangeFileSaveLocation: (nextPath: string) => void;
   syncClipboard: boolean;
   onToggleSyncClipboard: () => void;
+  allowPresenter: boolean;
+  onTogglePresenter: () => void;
   onUnpair: () => void;
 }
 
@@ -15,6 +17,8 @@ export function DeviceSettingsView({
   onChangeFileSaveLocation,
   syncClipboard,
   onToggleSyncClipboard,
+  allowPresenter,
+  onTogglePresenter,
   onUnpair,
 }: DeviceSettingsViewProps) {
   const handleChooseSaveLocation = async () => {
@@ -101,6 +105,44 @@ export function DeviceSettingsView({
             }}
             animate={{
               x: syncClipboard ? 20 : 0,
+            }}
+            className="h-5 w-5 rounded-full bg-white shadow-sm"
+          />
+        </button>
+      </div>
+
+      {/* Presentation remote toggle */}
+      <div
+        onClick={onTogglePresenter}
+        className="flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
+      >
+        <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
+          Presentation remote
+        </span>
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={allowPresenter}
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePresenter();
+          }}
+          className={`relative flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors duration-200 ${
+            allowPresenter
+              ? "bg-blue-600 dark:bg-blue-500"
+              : "bg-zinc-300 dark:bg-zinc-700"
+          }`}
+        >
+          <motion.span
+            layout
+            transition={{
+              type: "spring",
+              stiffness: 560,
+              damping: 34,
+            }}
+            animate={{
+              x: allowPresenter ? 20 : 0,
             }}
             className="h-5 w-5 rounded-full bg-white shadow-sm"
           />

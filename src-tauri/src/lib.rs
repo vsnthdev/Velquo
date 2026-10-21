@@ -235,6 +235,22 @@ fn set_device_save_location(
 }
 
 #[tauri::command]
+fn set_device_presenter(
+    device_id: String,
+    enabled: bool,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Setting allow_presenter={} for device_id={}",
+        enabled,
+        device_id
+    );
+    daemon
+        .set_device_presenter(&device_id, enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn clear_logs() {
     AppLogger::clear_entries();
     log::info!("[ui] Logs cleared");
@@ -316,6 +332,7 @@ pub fn run() {
             send_url,
             set_device_clipboard_sync,
             set_device_save_location,
+            set_device_presenter,
             clear_logs,
             quit_app,
         ])

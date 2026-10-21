@@ -11,10 +11,12 @@ use crate::kdeconnect::macos_media::{
 use crate::kdeconnect::packet::{
     current_millis, current_secs, NetworkPacket, PACKET_TYPE_BATTERY, PACKET_TYPE_BATTERY_REQUEST,
     PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT, PACKET_TYPE_CONNECTIVITY_REPORT,
-    PACKET_TYPE_IDENTITY, PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_PAIR,
-    PACKET_TYPE_PING, PACKET_TYPE_SHARE_REQUEST, PACKET_TYPE_SHARE_REQUEST_UPDATE,
-    PACKET_TYPE_TELEPHONY, PROTOCOL_VERSION,
+    PACKET_TYPE_IDENTITY, PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_MPRIS,
+    PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING, PACKET_TYPE_PRESENTER,
+    PACKET_TYPE_SHARE_REQUEST, PACKET_TYPE_SHARE_REQUEST_UPDATE, PACKET_TYPE_TELEPHONY,
+    PROTOCOL_VERSION,
 };
+use crate::kdeconnect::presenter_input::{handle_mousepad_packet, handle_presenter_packet};
 use crate::kdeconnect::tls::{build_tls_acceptor, build_tls_connector};
 use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
@@ -118,6 +120,7 @@ pub struct DeviceView {
     pub storage_free_gb: Option<f64>,
     pub now_playing: Option<NowPlayingInfo>,
     pub sync_clipboard: bool,
+    pub allow_presenter: bool,
     pub save_location: String,
 }
 
@@ -153,6 +156,8 @@ pub struct TrustedDeviceRecord {
     pub cert_der: Vec<u8>,
     #[serde(default = "default_true")]
     pub sync_clipboard: bool,
+    #[serde(default = "default_true")]
+    pub allow_presenter: bool,
     #[serde(default)]
     pub save_location: Option<String>,
 }
@@ -240,6 +245,7 @@ impl KdeConnectDaemon {
                         storage_free_gb: None,
                         now_playing: None,
                         sync_clipboard: rec.sync_clipboard,
+                        allow_presenter: rec.allow_presenter,
                         save_location: device_save_loc,
                     },
                     peer_cert_der: Some(rec.cert_der.clone()),
@@ -1351,7 +1357,7 @@ impl KdeConnectDaemon {
 
         // Verify pinned certificate if this device is already trusted/paired
         let default_downloads_str = self.downloads_dir.to_string_lossy().to_string();
-        let (is_trusted, saved_sync_clipboard, saved_save_location) = {
+        let (is_trusted, saved_sync_clipboard, saved_allow_presenter, saved_save_location) = {
             let trusted = self.trusted_devices.lock().unwrap();
             if let Some(rec) = trusted.get(&device_id) {
                 if rec.cert_der != peer_cert_der {
@@ -1367,9 +1373,9 @@ impl KdeConnectDaemon {
                     .clone()
                     .filter(|s| !s.trim().is_empty())
                     .unwrap_or_else(|| default_downloads_str.clone());
-                (true, rec.sync_clipboard, loc)
+                (true, rec.sync_clipboard, rec.allow_presenter, loc)
             } else {
-                (false, true, default_downloads_str)
+                (false, true, true, default_downloads_str)
             }
         };
 
@@ -1475,6 +1481,7 @@ impl KdeConnectDaemon {
                         storage_free_gb: prev_storage,
                         now_playing: prev_now_playing,
                         sync_clipboard: saved_sync_clipboard,
+                        allow_presenter: saved_allow_presenter,
                         save_location: saved_save_location,
                     },
                     peer_cert_der: Some(peer_cert_der.clone()),
@@ -1817,6 +1824,16 @@ impl KdeConnectDaemon {
             PACKET_TYPE_CLIPBOARD | PACKET_TYPE_CLIPBOARD_CONNECT => {
                 self.handle_clipboard_packet(device_id, device_name, &packet);
             }
+            PACKET_TYPE_PRESENTER => {
+                if self.is_device_presenter_allowed(device_id) {
+                    handle_presenter_packet(&packet);
+                }
+            }
+            PACKET_TYPE_MOUSEPAD_REQUEST => {
+                if self.is_device_presenter_allowed(device_id) {
+                    handle_mousepad_packet(&packet);
+                }
+            }
             PACKET_TYPE_SHARE_REQUEST => {
                 self.handle_share_request(device_id, device_name, peer_ip, packet)
                     .await;
@@ -1993,6 +2010,7 @@ impl KdeConnectDaemon {
                         protocol_version: entry.view.protocol_version,
                         cert_der: peer_cert_der.to_vec(),
                         sync_clipboard: entry.view.sync_clipboard,
+                        allow_presenter: entry.view.allow_presenter,
                         save_location: Some(entry.view.save_location.clone()),
                     };
                     drop(devices);
@@ -2111,6 +2129,7 @@ impl KdeConnectDaemon {
                         protocol_version: entry.view.protocol_version,
                         cert_der: cert_der.clone(),
                         sync_clipboard: entry.view.sync_clipboard,
+                        allow_presenter: entry.view.allow_presenter,
                         save_location: Some(entry.view.save_location.clone()),
                     });
                 }
@@ -2143,6 +2162,54 @@ impl KdeConnectDaemon {
         let _ = self.send_packet_to_device(device_id, &NetworkPacket::mpris_request_player_list());
         self.send_host_mpris_to_device(device_id);
         self.send_host_clipboard_connect_to_device(device_id);
+        let allow_pres = self.is_device_presenter_allowed(device_id);
+        let _ = self.send_packet_to_device(
+            device_id,
+            &NetworkPacket::mousepad_keyboard_state(allow_pres),
+        );
+    }
+
+    pub fn is_device_presenter_allowed(&self, device_id: &str) -> bool {
+        let devices = self.devices.lock().unwrap();
+        devices
+            .get(device_id)
+            .map(|d| d.view.pair_state == PairState::Paired && d.view.allow_presenter)
+            .unwrap_or(false)
+    }
+
+    pub fn set_device_presenter(&self, device_id: &str, enabled: bool) -> Result<()> {
+        let mut is_online_and_paired = false;
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry.view.allow_presenter = enabled;
+                is_online_and_paired =
+                    entry.view.reachable && entry.view.pair_state == PairState::Paired;
+                log::info!(
+                    "[presenter-input] Set allow_presenter={} for '{}' ({})",
+                    enabled,
+                    entry.view.device_name,
+                    device_id
+                );
+            }
+        }
+
+        {
+            let mut trusted = self.trusted_devices.lock().unwrap();
+            if let Some(rec) = trusted.get_mut(device_id) {
+                rec.allow_presenter = enabled;
+            }
+        }
+        self.save_trusted_devices();
+        self.notify_ui();
+
+        if is_online_and_paired {
+            let _ = self.send_packet_to_device(
+                device_id,
+                &NetworkPacket::mousepad_keyboard_state(enabled),
+            );
+        }
+
+        Ok(())
     }
 
     pub fn has_online_clipboard_sync_device(&self) -> bool {

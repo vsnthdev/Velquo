@@ -8,11 +8,10 @@
 - [ ] **Contacts Sync** — Sync phone vCards to resolve caller and SMS contact names/photos (`kdeconnect.contacts.*`)
 - [ ] **Remote File Browser (SFTP)** — Browse phone folders and storage over SFTP (`kdeconnect.sftp`)
 - [ ] **System Volume Control** — View and adjust phone audio streams and expose Mac volume (`kdeconnect.systemvolume`)
-- [ ] **Remote Input (Touchpad & Keyboard)** — Use phone as Mac trackpad/keyboard and vice versa (`kdeconnect.mousepad.*`)
-- [ ] **Presentation Remote** — Control slides and laser pointer from phone (`kdeconnect.presenter`)
 - [ ] **Run Commands** — Trigger pre-configured shell commands between Mac and phone (`kdeconnect.runcommand`)
-- [ ] **Screen Lock** — Lock Mac or remote device screen and sync lock state (`kdeconnect.lock`)
 - [ ] **Drawing Tablet Input** — Stylus pressure/tilt input support (`kdeconnect.digitizer`)
+- [x] **Presentation Remote** — Control slides and laser pointer from phone (`kdeconnect.presenter`)
+- [x] **Remote Input (Touchpad & Keyboard)** — Use phone as Mac trackpad/keyboard (`kdeconnect.mousepad.*`)
 - [x] **Device Settings & Preferences** — Unpair, custom download folder, per-plugin toggles, and Launch at Login
 - [x] **Clipboard Sync** — Auto-sync copied text between Mac and phone (`kdeconnect.clipboard`)
 - [x] **Auto-Pause Media on Calls** — Pause Mac media playback automatically during phone calls

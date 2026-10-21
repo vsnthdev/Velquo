@@ -18,6 +18,9 @@ pub const PACKET_TYPE_MPRIS_REQUEST: &str = "kdeconnect.mpris.request";
 pub const PACKET_TYPE_TELEPHONY: &str = "kdeconnect.telephony";
 pub const PACKET_TYPE_CLIPBOARD: &str = "kdeconnect.clipboard";
 pub const PACKET_TYPE_CLIPBOARD_CONNECT: &str = "kdeconnect.clipboard.connect";
+pub const PACKET_TYPE_PRESENTER: &str = "kdeconnect.presenter";
+pub const PACKET_TYPE_MOUSEPAD_REQUEST: &str = "kdeconnect.mousepad.request";
+pub const PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE: &str = "kdeconnect.mousepad.keyboardstate";
 pub const PACKET_TYPE_SHARE_REQUEST: &str = "kdeconnect.share.request";
 pub const PACKET_TYPE_SHARE_REQUEST_UPDATE: &str = "kdeconnect.share.request.update";
 
@@ -66,6 +69,8 @@ pub fn supported_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_TELEPHONY.to_string(),
         PACKET_TYPE_CLIPBOARD.to_string(),
         PACKET_TYPE_CLIPBOARD_CONNECT.to_string(),
+        PACKET_TYPE_PRESENTER.to_string(),
+        PACKET_TYPE_MOUSEPAD_REQUEST.to_string(),
     ]
 }
 
@@ -82,6 +87,7 @@ pub fn supported_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_MPRIS_REQUEST.to_string(),
         PACKET_TYPE_CLIPBOARD.to_string(),
         PACKET_TYPE_CLIPBOARD_CONNECT.to_string(),
+        PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE.to_string(),
     ]
 }
 
@@ -355,5 +361,11 @@ impl NetworkPacket {
         body.insert("content".into(), json!(content));
         body.insert("timestamp".into(), json!(timestamp_ms));
         Self::new(PACKET_TYPE_CLIPBOARD_CONNECT, body)
+    }
+
+    pub fn mousepad_keyboard_state(state: bool) -> Self {
+        let mut body = Map::new();
+        body.insert("state".into(), json!(state));
+        Self::new(PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE, body)
     }
 }

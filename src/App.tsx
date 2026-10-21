@@ -435,6 +435,13 @@ export default function App() {
                   enabled: !selectedDevice.syncClipboard,
                 })
               }
+              allowPresenter={selectedDevice.allowPresenter}
+              onTogglePresenter={() =>
+                invoke("set_device_presenter", {
+                  deviceId: selectedDevice.deviceId,
+                  enabled: !selectedDevice.allowPresenter,
+                })
+              }
               onUnpair={() => handleUnpairDevice(selectedDevice.deviceId)}
             />
           )}
