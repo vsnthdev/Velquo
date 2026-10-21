@@ -22,6 +22,8 @@ pub const PACKET_TYPE_PRESENTER: &str = "kdeconnect.presenter";
 pub const PACKET_TYPE_MOUSEPAD_REQUEST: &str = "kdeconnect.mousepad.request";
 pub const PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE: &str = "kdeconnect.mousepad.keyboardstate";
 pub const PACKET_TYPE_FINDMYPHONE_REQUEST: &str = "kdeconnect.findmyphone.request";
+pub const PACKET_TYPE_NOTIFICATION: &str = "kdeconnect.notification";
+pub const PACKET_TYPE_NOTIFICATION_REQUEST: &str = "kdeconnect.notification.request";
 pub const PACKET_TYPE_SHARE_REQUEST: &str = "kdeconnect.share.request";
 pub const PACKET_TYPE_SHARE_REQUEST_UPDATE: &str = "kdeconnect.share.request.update";
 
@@ -73,6 +75,7 @@ pub fn supported_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_PRESENTER.to_string(),
         PACKET_TYPE_MOUSEPAD_REQUEST.to_string(),
         PACKET_TYPE_FINDMYPHONE_REQUEST.to_string(),
+        PACKET_TYPE_NOTIFICATION.to_string(),
     ]
 }
 
@@ -91,6 +94,7 @@ pub fn supported_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_CLIPBOARD_CONNECT.to_string(),
         PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE.to_string(),
         PACKET_TYPE_FINDMYPHONE_REQUEST.to_string(),
+        PACKET_TYPE_NOTIFICATION_REQUEST.to_string(),
     ]
 }
 
@@ -374,5 +378,17 @@ impl NetworkPacket {
 
     pub fn find_my_phone() -> Self {
         Self::new(PACKET_TYPE_FINDMYPHONE_REQUEST, Map::new())
+    }
+
+    pub fn notification_request() -> Self {
+        let mut body = Map::new();
+        body.insert("request".into(), json!(true));
+        Self::new(PACKET_TYPE_NOTIFICATION_REQUEST, body)
+    }
+
+    pub fn notification_cancel(notification_id: &str) -> Self {
+        let mut body = Map::new();
+        body.insert("cancel".into(), json!(notification_id));
+        Self::new(PACKET_TYPE_NOTIFICATION_REQUEST, body)
     }
 }

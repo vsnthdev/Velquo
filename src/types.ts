@@ -22,6 +22,17 @@ export interface SimSignalInfo {
   signalStrength: number;
 }
 
+export interface PhoneNotification {
+  id: string;
+  appName: string;
+  title: string;
+  text: string;
+  ticker: string;
+  isClearable: boolean;
+  timestampMs: number;
+  otpCode: string | null;
+}
+
 export interface DeviceView {
   deviceId: string;
   deviceName: string;
@@ -45,7 +56,9 @@ export interface DeviceView {
   nowPlaying: NowPlayingInfo | null;
   syncClipboard: boolean;
   allowPresenter: boolean;
+  syncNotifications: boolean;
   saveLocation: string;
+  notifications: PhoneNotification[];
 }
 
 export interface TransferItem {

@@ -12,9 +12,9 @@ use crate::kdeconnect::packet::{
     current_millis, current_secs, NetworkPacket, PACKET_TYPE_BATTERY, PACKET_TYPE_BATTERY_REQUEST,
     PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT, PACKET_TYPE_CONNECTIVITY_REPORT,
     PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY, PACKET_TYPE_MOUSEPAD_REQUEST,
-    PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
-    PACKET_TYPE_PRESENTER, PACKET_TYPE_SHARE_REQUEST, PACKET_TYPE_SHARE_REQUEST_UPDATE,
-    PACKET_TYPE_TELEPHONY, PROTOCOL_VERSION,
+    PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_NOTIFICATION, PACKET_TYPE_PAIR,
+    PACKET_TYPE_PING, PACKET_TYPE_PRESENTER, PACKET_TYPE_SHARE_REQUEST,
+    PACKET_TYPE_SHARE_REQUEST_UPDATE, PACKET_TYPE_TELEPHONY, PROTOCOL_VERSION,
 };
 use crate::kdeconnect::presenter_input::{handle_mousepad_packet, handle_presenter_packet};
 use crate::kdeconnect::tls::{build_tls_acceptor, build_tls_connector};
@@ -98,6 +98,19 @@ pub struct SimSignalInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PhoneNotification {
+    pub id: String,
+    pub app_name: String,
+    pub title: String,
+    pub text: String,
+    pub ticker: String,
+    pub is_clearable: bool,
+    pub timestamp_ms: i64,
+    pub otp_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceView {
     pub device_id: String,
     pub device_name: String,
@@ -121,7 +134,9 @@ pub struct DeviceView {
     pub now_playing: Option<NowPlayingInfo>,
     pub sync_clipboard: bool,
     pub allow_presenter: bool,
+    pub sync_notifications: bool,
     pub save_location: String,
+    pub notifications: Vec<PhoneNotification>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,6 +173,8 @@ pub struct TrustedDeviceRecord {
     pub sync_clipboard: bool,
     #[serde(default = "default_true")]
     pub allow_presenter: bool,
+    #[serde(default = "default_true")]
+    pub sync_notifications: bool,
     #[serde(default)]
     pub save_location: Option<String>,
 }
@@ -246,7 +263,9 @@ impl KdeConnectDaemon {
                         now_playing: None,
                         sync_clipboard: rec.sync_clipboard,
                         allow_presenter: rec.allow_presenter,
+                        sync_notifications: rec.sync_notifications,
                         save_location: device_save_loc,
+                        notifications: Vec::new(),
                     },
                     peer_cert_der: Some(rec.cert_der.clone()),
                     sender: None,
@@ -1357,7 +1376,13 @@ impl KdeConnectDaemon {
 
         // Verify pinned certificate if this device is already trusted/paired
         let default_downloads_str = self.downloads_dir.to_string_lossy().to_string();
-        let (is_trusted, saved_sync_clipboard, saved_allow_presenter, saved_save_location) = {
+        let (
+            is_trusted,
+            saved_sync_clipboard,
+            saved_allow_presenter,
+            saved_sync_notifications,
+            saved_save_location,
+        ) = {
             let trusted = self.trusted_devices.lock().unwrap();
             if let Some(rec) = trusted.get(&device_id) {
                 if rec.cert_der != peer_cert_der {
@@ -1373,9 +1398,15 @@ impl KdeConnectDaemon {
                     .clone()
                     .filter(|s| !s.trim().is_empty())
                     .unwrap_or_else(|| default_downloads_str.clone());
-                (true, rec.sync_clipboard, rec.allow_presenter, loc)
+                (
+                    true,
+                    rec.sync_clipboard,
+                    rec.allow_presenter,
+                    rec.sync_notifications,
+                    loc,
+                )
             } else {
-                (false, true, true, default_downloads_str)
+                (false, true, true, true, default_downloads_str)
             }
         };
 
@@ -1456,6 +1487,11 @@ impl KdeConnectDaemon {
                     HashMap::new(),
                 ));
 
+            let prev_notifications = devices
+                .get(&device_id)
+                .map(|d| d.view.notifications.clone())
+                .unwrap_or_default();
+
             devices.insert(
                 device_id.clone(),
                 DeviceEntry {
@@ -1482,7 +1518,9 @@ impl KdeConnectDaemon {
                         now_playing: prev_now_playing,
                         sync_clipboard: saved_sync_clipboard,
                         allow_presenter: saved_allow_presenter,
+                        sync_notifications: saved_sync_notifications,
                         save_location: saved_save_location,
+                        notifications: prev_notifications,
                     },
                     peer_cert_der: Some(peer_cert_der.clone()),
                     sender: Some(tx),
@@ -1631,6 +1669,7 @@ impl KdeConnectDaemon {
                 if entry.connection_generation == generation {
                     entry.view.reachable = false;
                     entry.view.now_playing = None;
+                    entry.view.notifications.clear();
                     entry.mpris_players.clear();
                     entry.mpris_player_order.clear();
                     entry.active_mpris_player = None;
@@ -1844,6 +1883,9 @@ impl KdeConnectDaemon {
                     .arg("/System/Library/Sounds/Submarine.aiff")
                     .spawn();
             }
+            PACKET_TYPE_NOTIFICATION => {
+                self.handle_notification_packet(device_id, device_name, &packet);
+            }
             PACKET_TYPE_SHARE_REQUEST => {
                 self.handle_share_request(device_id, device_name, peer_ip, packet)
                     .await;
@@ -2021,6 +2063,7 @@ impl KdeConnectDaemon {
                         cert_der: peer_cert_der.to_vec(),
                         sync_clipboard: entry.view.sync_clipboard,
                         allow_presenter: entry.view.allow_presenter,
+                        sync_notifications: entry.view.sync_notifications,
                         save_location: Some(entry.view.save_location.clone()),
                     };
                     drop(devices);
@@ -2061,6 +2104,7 @@ impl KdeConnectDaemon {
             entry.view.pair_state = PairState::NotPaired;
             entry.view.verification_key = None;
             entry.view.now_playing = None;
+            entry.view.notifications.clear();
             entry.view.battery_charge = None;
             entry.view.battery_charging = None;
             entry.view.sim_signals.clear();
@@ -2140,6 +2184,7 @@ impl KdeConnectDaemon {
                         cert_der: cert_der.clone(),
                         sync_clipboard: entry.view.sync_clipboard,
                         allow_presenter: entry.view.allow_presenter,
+                        sync_notifications: entry.view.sync_notifications,
                         save_location: Some(entry.view.save_location.clone()),
                     });
                 }
@@ -2177,6 +2222,310 @@ impl KdeConnectDaemon {
             device_id,
             &NetworkPacket::mousepad_keyboard_state(allow_pres),
         );
+        if self.is_device_notifications_allowed(device_id) {
+            let _ = self.send_packet_to_device(device_id, &NetworkPacket::notification_request());
+        }
+    }
+
+    pub fn is_device_notifications_allowed(&self, device_id: &str) -> bool {
+        let devices = self.devices.lock().unwrap();
+        devices
+            .get(device_id)
+            .map(|d| d.view.pair_state == PairState::Paired && d.view.sync_notifications)
+            .unwrap_or(false)
+    }
+
+    pub fn set_device_notifications_sync(&self, device_id: &str, enabled: bool) -> Result<()> {
+        let mut is_online_and_paired = false;
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry.view.sync_notifications = enabled;
+                if !enabled {
+                    entry.view.notifications.clear();
+                }
+                is_online_and_paired =
+                    entry.view.reachable && entry.view.pair_state == PairState::Paired;
+                log::info!(
+                    "[notifications] Set sync_notifications={} for '{}' ({})",
+                    enabled,
+                    entry.view.device_name,
+                    device_id
+                );
+            }
+        }
+
+        {
+            let mut trusted = self.trusted_devices.lock().unwrap();
+            if let Some(rec) = trusted.get_mut(device_id) {
+                rec.sync_notifications = enabled;
+            }
+        }
+        self.save_trusted_devices();
+        self.notify_ui();
+
+        if enabled && is_online_and_paired {
+            let _ = self.send_packet_to_device(device_id, &NetworkPacket::notification_request());
+        }
+
+        Ok(())
+    }
+
+    pub fn dismiss_device_notification(
+        &self,
+        device_id: &str,
+        notification_id: &str,
+    ) -> Result<()> {
+        let _ = self.send_packet_to_device(
+            device_id,
+            &NetworkPacket::notification_cancel(notification_id),
+        );
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry
+                    .view
+                    .notifications
+                    .retain(|n| n.id != notification_id);
+            }
+        }
+        self.notify_ui();
+        Ok(())
+    }
+
+    pub fn copy_text_to_clipboard(self: &Arc<Self>, text: &str) -> Result<()> {
+        let owned = text.to_string();
+        {
+            let mut state = self.clipboard_state.lock().unwrap();
+            state.last_content = owned.clone();
+            state.last_timestamp_ms = current_millis();
+        }
+        let daemon = Arc::clone(self);
+        tauri::async_runtime::spawn(async move {
+            if let Ok(Some(new_count)) =
+                tokio::task::spawn_blocking(move || write_macos_clipboard_text(&owned)).await
+            {
+                let mut state = daemon.clipboard_state.lock().unwrap();
+                state.last_change_count = new_count;
+            }
+        });
+        Ok(())
+    }
+
+    /// Extracts a 4..=8 digit OTP / 2FA verification code when the notification text contains
+    /// verification/OTP context keywords (`otp`, `code`, `verification`, `verify`, `passcode`, `2fa`, `pin`, etc.).
+    fn extract_otp_code(combined_text: &str) -> Option<String> {
+        let lower = combined_text.to_ascii_lowercase();
+        const KEYWORDS: [&str; 15] = [
+            "otp",
+            "code",
+            "verification",
+            "verify",
+            "passcode",
+            "2fa",
+            "security",
+            "one-time",
+            "one time",
+            "auth",
+            "pin",
+            "login",
+            "confirm",
+            "is your",
+            "use ",
+        ];
+        if !KEYWORDS.iter().any(|kw| lower.contains(kw)) {
+            return None;
+        }
+
+        for raw_token in combined_text.split(|c: char| {
+            c.is_whitespace()
+                || matches!(
+                    c,
+                    ',' | '.' | '!' | '?' | ';' | ':' | '(' | ')' | '[' | ']' | '"' | '\'' | '<' | '>'
+                )
+        }) {
+            let trimmed = raw_token.trim_matches('-');
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            // Support either pure digits (4..=8 chars) or hyphenated 6-digit codes like `123-456`
+            let digits_only: String = if trimmed.chars().all(|c| c.is_ascii_digit()) {
+                trimmed.to_string()
+            } else if trimmed.len() == 7
+                && trimmed.as_bytes()[3] == b'-'
+                && trimmed[..3].chars().all(|c| c.is_ascii_digit())
+                && trimmed[4..].chars().all(|c| c.is_ascii_digit())
+            {
+                format!("{}{}", &trimmed[..3], &trimmed[4..])
+            } else {
+                continue;
+            };
+
+            if (4..=8).contains(&digits_only.len()) {
+                return Some(digits_only);
+            }
+        }
+
+        None
+    }
+
+    fn handle_notification_packet(
+        self: &Arc<Self>,
+        device_id: &str,
+        device_name: &str,
+        packet: &NetworkPacket,
+    ) {
+        if !self.is_device_notifications_allowed(device_id) {
+            return;
+        }
+
+        if packet.get_bool("request").unwrap_or(false) {
+            return;
+        }
+
+        let Some(raw_id) = packet.get_str("id") else {
+            return;
+        };
+        let notif_id = raw_id.trim().to_string();
+        if notif_id.is_empty() {
+            return;
+        }
+
+        if packet.get_bool("isCancel").unwrap_or(false) {
+            let mut removed = false;
+            if let Ok(mut devices) = self.devices.lock() {
+                if let Some(entry) = devices.get_mut(device_id) {
+                    let before = entry.view.notifications.len();
+                    entry.view.notifications.retain(|n| {
+                        n.id != notif_id
+                            && !n.id.ends_with(&format!("::{}", notif_id))
+                            && !notif_id.ends_with(&format!("::{}", n.id))
+                    });
+                    removed = entry.view.notifications.len() != before;
+                }
+            }
+            if removed {
+                self.notify_ui();
+            }
+            return;
+        }
+
+        let app_name = packet
+            .get_str("appName")
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if app_name.eq_ignore_ascii_case("KDE Connect") {
+            return;
+        }
+
+        let title = packet.get_str("title").unwrap_or("").trim().to_string();
+        let text = packet.get_str("text").unwrap_or("").trim().to_string();
+        let ticker = packet.get_str("ticker").unwrap_or("").trim().to_string();
+
+        if title.is_empty() && text.is_empty() && ticker.is_empty() {
+            return;
+        }
+
+        let is_clearable = packet.get_bool("isClearable").unwrap_or(true);
+        let is_request_answer = packet.get_bool("requestAnswer").unwrap_or(false);
+        let is_silent = packet.get_bool("silent").unwrap_or(false);
+        let timestamp_ms = packet
+            .get_i64("time")
+            .filter(|&t| t > 0)
+            .unwrap_or_else(current_millis);
+
+        let combined = format!("{} {} {}", title, text, ticker);
+        let otp_code = Self::extract_otp_code(&combined);
+
+        let notif_item = PhoneNotification {
+            id: notif_id.clone(),
+            app_name: if app_name.is_empty() {
+                device_name.to_string()
+            } else {
+                app_name.clone()
+            },
+            title: title.clone(),
+            text: text.clone(),
+            ticker: ticker.clone(),
+            is_clearable,
+            timestamp_ms,
+            otp_code: otp_code.clone(),
+        };
+
+        let mut is_new_or_changed = false;
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                if let Some(existing) = entry
+                    .view
+                    .notifications
+                    .iter_mut()
+                    .find(|n| n.id == notif_id)
+                {
+                    if existing.title != notif_item.title
+                        || existing.text != notif_item.text
+                        || existing.ticker != notif_item.ticker
+                    {
+                        is_new_or_changed = true;
+                    }
+                    *existing = notif_item;
+                } else {
+                    is_new_or_changed = true;
+                    entry.view.notifications.insert(0, notif_item);
+                }
+
+                entry
+                    .view
+                    .notifications
+                    .sort_by(|a, b| b.timestamp_ms.cmp(&a.timestamp_ms));
+                if entry.view.notifications.len() > 25 {
+                    entry.view.notifications.truncate(25);
+                }
+            }
+        }
+
+        self.notify_ui();
+
+        // For live, non-silent notifications, show a native macOS notification and auto-copy OTP if detected
+        if is_new_or_changed && !is_request_answer && !is_silent {
+            let notif_heading = if !app_name.is_empty() {
+                format!("{} • {}", app_name, device_name)
+            } else {
+                device_name.to_string()
+            };
+            let notif_body = if !title.is_empty() && !text.is_empty() && title != app_name {
+                format!("{}: {}", title, text)
+            } else if !text.is_empty() {
+                text.clone()
+            } else if !ticker.is_empty() {
+                ticker.clone()
+            } else {
+                title.clone()
+            };
+
+            Self::show_macos_notification(&notif_heading, &notif_body);
+
+            if let Some(code) = otp_code {
+                log::info!(
+                    "[otp] Extracted OTP code '{}' from '{}' notification on '{}', auto-copying to Mac clipboard",
+                    code,
+                    app_name,
+                    device_name
+                );
+                let _ = self.copy_text_to_clipboard(&code);
+                if let Ok(guard) = self.app_handle.lock() {
+                    if let Some(app) = guard.as_ref() {
+                        let _ = app.emit(
+                            "velquo://ping",
+                            serde_json::json!({
+                                "deviceId": device_id,
+                                "deviceName": format!("OTP Copied • {}", code),
+                                "message": format!("Verification code from {} is ready to paste (⌘V)", if app_name.is_empty() { device_name } else { &app_name }),
+                            }),
+                        );
+                    }
+                }
+            }
+        }
     }
 
     pub fn is_device_presenter_allowed(&self, device_id: &str) -> bool {

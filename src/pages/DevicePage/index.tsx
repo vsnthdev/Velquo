@@ -24,6 +24,8 @@ interface DevicePageProps {
   onToggleSyncClipboard: () => void;
   allowPresenter: boolean;
   onTogglePresenter: () => void;
+  syncNotifications: boolean;
+  onToggleNotifications: () => void;
   onUnpair: () => void;
 }
 
@@ -44,6 +46,8 @@ export function DevicePage({
   onToggleSyncClipboard,
   allowPresenter,
   onTogglePresenter,
+  syncNotifications,
+  onToggleNotifications,
   onUnpair,
 }: DevicePageProps) {
   const isSettingsOpen = subview === "settings";
@@ -151,6 +155,8 @@ export function DevicePage({
             onToggleSyncClipboard={onToggleSyncClipboard}
             allowPresenter={allowPresenter}
             onTogglePresenter={onTogglePresenter}
+            syncNotifications={syncNotifications}
+            onToggleNotifications={onToggleNotifications}
             onUnpair={onUnpair}
           />
         ) : (

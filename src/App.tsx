@@ -442,6 +442,13 @@ export default function App() {
                   enabled: !selectedDevice.allowPresenter,
                 })
               }
+              syncNotifications={selectedDevice.syncNotifications}
+              onToggleNotifications={() =>
+                invoke("set_device_notifications_sync", {
+                  deviceId: selectedDevice.deviceId,
+                  enabled: !selectedDevice.syncNotifications,
+                })
+              }
               onUnpair={() => handleUnpairDevice(selectedDevice.deviceId)}
             />
           )}

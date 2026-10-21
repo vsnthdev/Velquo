@@ -1,6 +1,8 @@
 import {
   BellRinging,
+  Check,
   CheckCircle,
+  Copy,
   Link,
   MusicNotes,
   PaperPlaneRight,
@@ -9,6 +11,7 @@ import {
   SkipBack,
   SkipForward,
   UploadSimple,
+  X,
 } from "@phosphor-icons/react";
 import * as Popover from "@radix-ui/react-popover";
 import { invoke } from "@tauri-apps/api/core";
@@ -49,6 +52,7 @@ export function DeviceControlView({
   const [shareLinkTouchedInvalid, setShareLinkTouchedInvalid] =
     useState<boolean>(false);
   const [nowTickMs, setNowTickMs] = useState<number>(() => Date.now());
+  const [copiedNotifId, setCopiedNotifId] = useState<string | null>(null);
 
   const seekBarRef = useRef<HTMLDivElement | null>(null);
   const isAnimatingSeekRef = useRef<boolean>(false);
@@ -847,6 +851,131 @@ export function DeviceControlView({
           </motion.button>
         </div>
       </div>
+
+      {/* Notifications Section */}
+      {device.syncNotifications && (
+        <div
+          className={`mt-6 flex flex-col gap-2.5 transition-opacity duration-200 ${
+            !device.reachable ? "pointer-events-none opacity-45 grayscale" : ""
+          }`}
+        >
+          <span className="text-[12.5px] font-medium text-zinc-500 dark:text-zinc-400">
+            Notifications
+          </span>
+
+          {device.notifications && device.notifications.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <AnimatePresence initial={false}>
+                {device.notifications.map((notif) => {
+                  const displayBody =
+                    notif.text ||
+                    (notif.ticker !== notif.title ? notif.ticker : "");
+                  const isCopied = copiedNotifId === notif.id;
+
+                  return (
+                    <motion.div
+                      key={notif.id}
+                      layout
+                      initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, height: 0, scale: 0.97 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 460,
+                        damping: 34,
+                      }}
+                      className="flex items-start justify-between gap-3 rounded-xl border border-black/10 bg-black/[0.02] px-3.5 py-2.5 dark:border-white/10 dark:bg-white/[0.02]"
+                    >
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-md bg-black/[0.06] px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-600 dark:bg-white/[0.08] dark:text-zinc-300">
+                            {notif.appName}
+                          </span>
+                          {notif.title && notif.title !== notif.appName && (
+                            <span className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
+                              {notif.title}
+                            </span>
+                          )}
+                        </div>
+
+                        {displayBody && (
+                          <p className="mt-1 line-clamp-2 text-[12.5px] text-zinc-600 dark:text-zinc-400">
+                            {displayBody}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {notif.otpCode && (
+                          <motion.button
+                            type="button"
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.96 }}
+                            onClick={() => {
+                              if (!notif.otpCode) return;
+                              invoke("copy_text_to_clipboard", {
+                                text: notif.otpCode,
+                              }).catch(() => {});
+                              setCopiedNotifId(notif.id);
+                              setTimeout(() => {
+                                setCopiedNotifId((prev) =>
+                                  prev === notif.id ? null : prev
+                                );
+                              }, 1800);
+                            }}
+                            className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11.5px] font-medium transition-colors ${
+                              isCopied
+                                ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                : "border-blue-500/25 bg-blue-500/10 text-blue-600 hover:bg-blue-500/18 dark:text-blue-400"
+                            }`}
+                            title="Copy verification code"
+                          >
+                            {isCopied ? (
+                              <>
+                                <Check size={12.5} weight="bold" />
+                                <span>Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy size={12.5} weight="regular" />
+                                <span className="font-mono">
+                                  {notif.otpCode}
+                                </span>
+                              </>
+                            )}
+                          </motion.button>
+                        )}
+
+                        {notif.isClearable && (
+                          <motion.button
+                            type="button"
+                            whileHover={{ scale: 1.08 }}
+                            whileTap={{ scale: 0.92 }}
+                            onClick={() =>
+                              invoke("dismiss_notification", {
+                                deviceId: device.deviceId,
+                                notificationId: notif.id,
+                              }).catch(() => {})
+                            }
+                            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-black/[0.06] hover:text-zinc-700 dark:hover:bg-white/[0.08] dark:hover:text-zinc-200"
+                            title="Dismiss notification"
+                          >
+                            <X size={13} weight="bold" />
+                          </motion.button>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center rounded-xl border border-black/8 bg-black/[0.015] px-4 py-4 text-[12.5px] text-zinc-400 dark:border-white/8 dark:bg-white/[0.015] dark:text-zinc-500">
+              No active notifications on {device.deviceName}
+            </div>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }

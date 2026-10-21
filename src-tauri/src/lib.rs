@@ -266,6 +266,48 @@ fn set_device_presenter(
 }
 
 #[tauri::command]
+fn set_device_notifications_sync(
+    device_id: String,
+    enabled: bool,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Setting sync_notifications={} for device_id={}",
+        enabled,
+        device_id
+    );
+    daemon
+        .set_device_notifications_sync(&device_id, enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn dismiss_notification(
+    device_id: String,
+    notification_id: String,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Dismissing notification_id='{}' on device_id={}",
+        notification_id,
+        device_id
+    );
+    daemon
+        .dismiss_device_notification(&device_id, &notification_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn copy_text_to_clipboard(
+    text: String,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    daemon
+        .copy_text_to_clipboard(&text)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn clear_logs() {
     AppLogger::clear_entries();
     log::info!("[ui] Logs cleared");
@@ -349,6 +391,9 @@ pub fn run() {
             set_device_clipboard_sync,
             set_device_save_location,
             set_device_presenter,
+            set_device_notifications_sync,
+            dismiss_notification,
+            copy_text_to_clipboard,
             clear_logs,
             quit_app,
         ])
