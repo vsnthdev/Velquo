@@ -135,6 +135,7 @@ pub struct DeviceView {
     pub sync_clipboard: bool,
     pub allow_presenter: bool,
     pub sync_notifications: bool,
+    pub auto_copy_otp: bool,
     pub save_location: String,
     pub notifications: Vec<PhoneNotification>,
 }
@@ -175,6 +176,8 @@ pub struct TrustedDeviceRecord {
     pub allow_presenter: bool,
     #[serde(default = "default_true")]
     pub sync_notifications: bool,
+    #[serde(default = "default_true")]
+    pub auto_copy_otp: bool,
     #[serde(default)]
     pub save_location: Option<String>,
 }
@@ -264,6 +267,7 @@ impl KdeConnectDaemon {
                         sync_clipboard: rec.sync_clipboard,
                         allow_presenter: rec.allow_presenter,
                         sync_notifications: rec.sync_notifications,
+                        auto_copy_otp: rec.auto_copy_otp,
                         save_location: device_save_loc,
                         notifications: Vec::new(),
                     },
@@ -1381,6 +1385,7 @@ impl KdeConnectDaemon {
             saved_sync_clipboard,
             saved_allow_presenter,
             saved_sync_notifications,
+            saved_auto_copy_otp,
             saved_save_location,
         ) = {
             let trusted = self.trusted_devices.lock().unwrap();
@@ -1403,10 +1408,11 @@ impl KdeConnectDaemon {
                     rec.sync_clipboard,
                     rec.allow_presenter,
                     rec.sync_notifications,
+                    rec.auto_copy_otp,
                     loc,
                 )
             } else {
-                (false, true, true, true, default_downloads_str)
+                (false, true, true, true, true, default_downloads_str)
             }
         };
 
@@ -1519,6 +1525,7 @@ impl KdeConnectDaemon {
                         sync_clipboard: saved_sync_clipboard,
                         allow_presenter: saved_allow_presenter,
                         sync_notifications: saved_sync_notifications,
+                        auto_copy_otp: saved_auto_copy_otp,
                         save_location: saved_save_location,
                         notifications: prev_notifications,
                     },
@@ -2064,6 +2071,7 @@ impl KdeConnectDaemon {
                         sync_clipboard: entry.view.sync_clipboard,
                         allow_presenter: entry.view.allow_presenter,
                         sync_notifications: entry.view.sync_notifications,
+                        auto_copy_otp: entry.view.auto_copy_otp,
                         save_location: Some(entry.view.save_location.clone()),
                     };
                     drop(devices);
@@ -2185,6 +2193,7 @@ impl KdeConnectDaemon {
                         sync_clipboard: entry.view.sync_clipboard,
                         allow_presenter: entry.view.allow_presenter,
                         sync_notifications: entry.view.sync_notifications,
+                        auto_copy_otp: entry.view.auto_copy_otp,
                         save_location: Some(entry.view.save_location.clone()),
                     });
                 }
@@ -2233,6 +2242,38 @@ impl KdeConnectDaemon {
             .get(device_id)
             .map(|d| d.view.pair_state == PairState::Paired && d.view.sync_notifications)
             .unwrap_or(false)
+    }
+
+    pub fn is_device_auto_copy_otp_allowed(&self, device_id: &str) -> bool {
+        let devices = self.devices.lock().unwrap();
+        devices
+            .get(device_id)
+            .map(|d| d.view.pair_state == PairState::Paired && d.view.auto_copy_otp)
+            .unwrap_or(false)
+    }
+
+    pub fn set_device_auto_copy_otp(&self, device_id: &str, enabled: bool) -> Result<()> {
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry.view.auto_copy_otp = enabled;
+                log::info!(
+                    "[otp] Set auto_copy_otp={} for '{}' ({})",
+                    enabled,
+                    entry.view.device_name,
+                    device_id
+                );
+            }
+        }
+
+        {
+            let mut trusted = self.trusted_devices.lock().unwrap();
+            if let Some(rec) = trusted.get_mut(device_id) {
+                rec.auto_copy_otp = enabled;
+            }
+        }
+        self.save_trusted_devices();
+        self.notify_ui();
+        Ok(())
     }
 
     pub fn set_device_notifications_sync(&self, device_id: &str, enabled: bool) -> Result<()> {
@@ -2505,23 +2546,25 @@ impl KdeConnectDaemon {
             Self::show_macos_notification(&notif_heading, &notif_body);
 
             if let Some(code) = otp_code {
-                log::info!(
-                    "[otp] Extracted OTP code '{}' from '{}' notification on '{}', auto-copying to Mac clipboard",
-                    code,
-                    app_name,
-                    device_name
-                );
-                let _ = self.copy_text_to_clipboard(&code);
-                if let Ok(guard) = self.app_handle.lock() {
-                    if let Some(app) = guard.as_ref() {
-                        let _ = app.emit(
-                            "velquo://ping",
-                            serde_json::json!({
-                                "deviceId": device_id,
-                                "deviceName": format!("OTP Copied • {}", code),
-                                "message": format!("Verification code from {} is ready to paste (⌘V)", if app_name.is_empty() { device_name } else { &app_name }),
-                            }),
-                        );
+                if self.is_device_auto_copy_otp_allowed(device_id) {
+                    log::info!(
+                        "[otp] Extracted OTP code '{}' from '{}' notification on '{}', auto-copying to Mac clipboard",
+                        code,
+                        app_name,
+                        device_name
+                    );
+                    let _ = self.copy_text_to_clipboard(&code);
+                    if let Ok(guard) = self.app_handle.lock() {
+                        if let Some(app) = guard.as_ref() {
+                            let _ = app.emit(
+                                "velquo://ping",
+                                serde_json::json!({
+                                    "deviceId": device_id,
+                                    "deviceName": format!("OTP Copied • {}", code),
+                                    "message": format!("Verification code from {} is ready to paste (⌘V)", if app_name.is_empty() { device_name } else { &app_name }),
+                                }),
+                            );
+                        }
                     }
                 }
             }

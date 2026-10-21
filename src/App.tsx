@@ -449,6 +449,13 @@ export default function App() {
                   enabled: !selectedDevice.syncNotifications,
                 })
               }
+              autoCopyOtp={selectedDevice.autoCopyOtp}
+              onToggleAutoCopyOtp={() =>
+                invoke("set_device_auto_copy_otp", {
+                  deviceId: selectedDevice.deviceId,
+                  enabled: !selectedDevice.autoCopyOtp,
+                })
+              }
               onUnpair={() => handleUnpairDevice(selectedDevice.deviceId)}
             />
           )}

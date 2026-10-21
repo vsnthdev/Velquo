@@ -18,15 +18,16 @@ export function AppSettingsPage() {
 
     isEnabled()
       .then((enabled) => {
-        setLaunchOnStartup(enabled);
+        setLaunchOnStartup(enabled === true);
       })
-      .catch((err) => {
-        console.error("Failed to query autostart state:", err);
+      .catch(() => {
+        setLaunchOnStartup(false);
       });
   }, []);
 
   const handleToggleLaunchOnStartup = async () => {
-    const next = !launchOnStartup;
+    const prev = launchOnStartup;
+    const next = !prev;
     setLaunchOnStartup(next);
     try {
       if (next) {
@@ -35,14 +36,10 @@ export function AppSettingsPage() {
         await disable();
       }
       const actual = await isEnabled();
-      setLaunchOnStartup(actual);
+      setLaunchOnStartup(actual === true);
     } catch (err) {
       console.error("Failed to update autostart state:", err);
-      try {
-        setLaunchOnStartup(await isEnabled());
-      } catch {
-        setLaunchOnStartup(!next);
-      }
+      setLaunchOnStartup(prev);
     }
   };
 

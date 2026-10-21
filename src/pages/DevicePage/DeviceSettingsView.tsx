@@ -11,6 +11,8 @@ interface DeviceSettingsViewProps {
   onTogglePresenter: () => void;
   syncNotifications: boolean;
   onToggleNotifications: () => void;
+  autoCopyOtp: boolean;
+  onToggleAutoCopyOtp: () => void;
   onUnpair: () => void;
 }
 
@@ -23,6 +25,8 @@ export function DeviceSettingsView({
   onTogglePresenter,
   syncNotifications,
   onToggleNotifications,
+  autoCopyOtp,
+  onToggleAutoCopyOtp,
   onUnpair,
 }: DeviceSettingsViewProps) {
   const handleChooseSaveLocation = async () => {
@@ -185,6 +189,44 @@ export function DeviceSettingsView({
             }}
             animate={{
               x: syncNotifications ? 20 : 0,
+            }}
+            className="h-5 w-5 rounded-full bg-white shadow-sm"
+          />
+        </button>
+      </div>
+
+      {/* Auto-copy OTPs toggle */}
+      <div
+        onClick={onToggleAutoCopyOtp}
+        className="flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
+      >
+        <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
+          Auto-copy OTPs
+        </span>
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={autoCopyOtp}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleAutoCopyOtp();
+          }}
+          className={`relative flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors duration-200 ${
+            autoCopyOtp
+              ? "bg-blue-600 dark:bg-blue-500"
+              : "bg-zinc-300 dark:bg-zinc-700"
+          }`}
+        >
+          <motion.span
+            layout
+            transition={{
+              type: "spring",
+              stiffness: 560,
+              damping: 34,
+            }}
+            animate={{
+              x: autoCopyOtp ? 20 : 0,
             }}
             className="h-5 w-5 rounded-full bg-white shadow-sm"
           />

@@ -57,6 +57,7 @@ export interface DeviceView {
   syncClipboard: boolean;
   allowPresenter: boolean;
   syncNotifications: boolean;
+  autoCopyOtp: boolean;
   saveLocation: string;
   notifications: PhoneNotification[];
 }

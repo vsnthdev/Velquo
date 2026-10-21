@@ -282,6 +282,22 @@ fn set_device_notifications_sync(
 }
 
 #[tauri::command]
+fn set_device_auto_copy_otp(
+    device_id: String,
+    enabled: bool,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Setting auto_copy_otp={} for device_id={}",
+        enabled,
+        device_id
+    );
+    daemon
+        .set_device_auto_copy_otp(&device_id, enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn dismiss_notification(
     device_id: String,
     notification_id: String,
@@ -392,6 +408,7 @@ pub fn run() {
             set_device_save_location,
             set_device_presenter,
             set_device_notifications_sync,
+            set_device_auto_copy_otp,
             dismiss_notification,
             copy_text_to_clipboard,
             clear_logs,

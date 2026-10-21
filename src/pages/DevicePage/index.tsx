@@ -26,6 +26,8 @@ interface DevicePageProps {
   onTogglePresenter: () => void;
   syncNotifications: boolean;
   onToggleNotifications: () => void;
+  autoCopyOtp: boolean;
+  onToggleAutoCopyOtp: () => void;
   onUnpair: () => void;
 }
 
@@ -48,6 +50,8 @@ export function DevicePage({
   onTogglePresenter,
   syncNotifications,
   onToggleNotifications,
+  autoCopyOtp,
+  onToggleAutoCopyOtp,
   onUnpair,
 }: DevicePageProps) {
   const isSettingsOpen = subview === "settings";
@@ -157,6 +161,8 @@ export function DevicePage({
             onTogglePresenter={onTogglePresenter}
             syncNotifications={syncNotifications}
             onToggleNotifications={onToggleNotifications}
+            autoCopyOtp={autoCopyOtp}
+            onToggleAutoCopyOtp={onToggleAutoCopyOtp}
             onUnpair={onUnpair}
           />
         ) : (
