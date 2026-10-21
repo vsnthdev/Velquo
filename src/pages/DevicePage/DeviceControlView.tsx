@@ -1,4 +1,5 @@
 import {
+  BellRinging,
   CheckCircle,
   Link,
   MusicNotes,
@@ -821,6 +822,29 @@ export function DeviceControlView({
               )}
             </AnimatePresence>
           </Popover.Root>
+
+          <motion.button
+            type="button"
+            onClick={() => {
+              if (!device.reachable || device.pairState !== "Paired") return;
+              invoke("ring_device", { deviceId: device.deviceId }).catch(
+                (err) => {
+                  console.error("Failed to ring device:", err);
+                }
+              );
+            }}
+            whileHover={device.reachable ? { scale: 1.015 } : undefined}
+            whileTap={device.reachable ? { scale: 0.985 } : undefined}
+            transition={{
+              type: "spring",
+              stiffness: 450,
+              damping: 28,
+            }}
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/12 bg-black/[0.02] px-4 py-2.5 text-[13.5px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05]"
+          >
+            <BellRinging size={16} weight="regular" />
+            <span>Ring phone</span>
+          </motion.button>
         </div>
       </div>
     </motion.div>

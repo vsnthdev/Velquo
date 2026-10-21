@@ -106,6 +106,21 @@ fn send_ping(
 }
 
 #[tauri::command]
+fn ring_device(
+    device_id: String,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Sending Find My Phone (ring) request to device_id={}",
+        device_id
+    );
+    let pkt = NetworkPacket::find_my_phone();
+    daemon
+        .send_packet_to_device(&device_id, &pkt)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn send_media_action(
     device_id: String,
     player: String,
@@ -325,6 +340,7 @@ pub fn run() {
             reject_pairing,
             unpair_device,
             send_ping,
+            ring_device,
             send_media_action,
             seek_media,
             send_file,

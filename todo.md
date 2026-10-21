@@ -2,7 +2,6 @@
 
 - [ ] **Notifications Sync** — View, dismiss, and inline-reply to phone notifications on Mac (`kdeconnect.notification`)
 - [ ] **OTP / 2FA Auto-Copy** — Extract and copy verification codes from incoming notifications
-- [ ] **Find My Phone / Mac** — Ring the remote phone at full volume or ring this Mac (`kdeconnect.findmyphone.request`)
 - [ ] **Telephony & Call Alerts** — Show incoming/missed call banners with Mute Call button (`kdeconnect.telephony`)
 - [ ] **SMS & MMS Messaging** — View threads, send/reply to SMS, and download MMS attachments (`kdeconnect.sms.*`)
 - [ ] **Contacts Sync** — Sync phone vCards to resolve caller and SMS contact names/photos (`kdeconnect.contacts.*`)
@@ -10,6 +9,7 @@
 - [ ] **System Volume Control** — View and adjust phone audio streams and expose Mac volume (`kdeconnect.systemvolume`)
 - [ ] **Run Commands** — Trigger pre-configured shell commands between Mac and phone (`kdeconnect.runcommand`)
 - [ ] **Drawing Tablet Input** — Stylus pressure/tilt input support (`kdeconnect.digitizer`)
+- [x] **Find My Phone / Mac** — Ring the remote phone at full volume or ring this Mac (`kdeconnect.findmyphone.request`)
 - [x] **Presentation Remote** — Control slides and laser pointer from phone (`kdeconnect.presenter`)
 - [x] **Remote Input (Touchpad & Keyboard)** — Use phone as Mac trackpad/keyboard (`kdeconnect.mousepad.*`)
 - [x] **Device Settings & Preferences** — Unpair, custom download folder, per-plugin toggles, and Launch at Login

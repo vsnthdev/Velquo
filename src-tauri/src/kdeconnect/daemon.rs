@@ -11,10 +11,10 @@ use crate::kdeconnect::macos_media::{
 use crate::kdeconnect::packet::{
     current_millis, current_secs, NetworkPacket, PACKET_TYPE_BATTERY, PACKET_TYPE_BATTERY_REQUEST,
     PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT, PACKET_TYPE_CONNECTIVITY_REPORT,
-    PACKET_TYPE_IDENTITY, PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_MPRIS,
-    PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING, PACKET_TYPE_PRESENTER,
-    PACKET_TYPE_SHARE_REQUEST, PACKET_TYPE_SHARE_REQUEST_UPDATE, PACKET_TYPE_TELEPHONY,
-    PROTOCOL_VERSION,
+    PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY, PACKET_TYPE_MOUSEPAD_REQUEST,
+    PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_PAIR, PACKET_TYPE_PING,
+    PACKET_TYPE_PRESENTER, PACKET_TYPE_SHARE_REQUEST, PACKET_TYPE_SHARE_REQUEST_UPDATE,
+    PACKET_TYPE_TELEPHONY, PROTOCOL_VERSION,
 };
 use crate::kdeconnect::presenter_input::{handle_mousepad_packet, handle_presenter_packet};
 use crate::kdeconnect::tls::{build_tls_acceptor, build_tls_connector};
@@ -1833,6 +1833,16 @@ impl KdeConnectDaemon {
                 if self.is_device_presenter_allowed(device_id) {
                     handle_mousepad_packet(&packet);
                 }
+            }
+            PACKET_TYPE_FINDMYPHONE_REQUEST => {
+                log::info!(
+                    "[findmyphone] Received Find My Mac request from '{}'",
+                    device_name
+                );
+                Self::show_macos_notification(device_name, "Find My Mac triggered!");
+                let _ = std::process::Command::new("/usr/bin/afplay")
+                    .arg("/System/Library/Sounds/Submarine.aiff")
+                    .spawn();
             }
             PACKET_TYPE_SHARE_REQUEST => {
                 self.handle_share_request(device_id, device_name, peer_ip, packet)
