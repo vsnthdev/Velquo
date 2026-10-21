@@ -1,5 +1,6 @@
 import { GithubLogo } from "@phosphor-icons/react";
 import { getVersion } from "@tauri-apps/api/app";
+import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
@@ -14,7 +15,36 @@ export function AppSettingsPage() {
         if (v) setAppVersion(v);
       })
       .catch(() => {});
+
+    isEnabled()
+      .then((enabled) => {
+        setLaunchOnStartup(enabled);
+      })
+      .catch((err) => {
+        console.error("Failed to query autostart state:", err);
+      });
   }, []);
+
+  const handleToggleLaunchOnStartup = async () => {
+    const next = !launchOnStartup;
+    setLaunchOnStartup(next);
+    try {
+      if (next) {
+        await enable();
+      } else {
+        await disable();
+      }
+      const actual = await isEnabled();
+      setLaunchOnStartup(actual);
+    } catch (err) {
+      console.error("Failed to update autostart state:", err);
+      try {
+        setLaunchOnStartup(await isEnabled());
+      } catch {
+        setLaunchOnStartup(!next);
+      }
+    }
+  };
 
   const handleOpenGitHub = async () => {
     try {
@@ -40,7 +70,7 @@ export function AppSettingsPage() {
 
       {/* Launch on startup toggle */}
       <div
-        onClick={() => setLaunchOnStartup((prev) => !prev)}
+        onClick={handleToggleLaunchOnStartup}
         className="mt-3 flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
       >
         <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
@@ -53,7 +83,7 @@ export function AppSettingsPage() {
           aria-checked={launchOnStartup}
           onClick={(e) => {
             e.stopPropagation();
-            setLaunchOnStartup((prev) => !prev);
+            handleToggleLaunchOnStartup();
           }}
           className={`relative flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors duration-200 ${
             launchOnStartup
