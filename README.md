@@ -27,3 +27,17 @@
 4. **Link Sharing** — Send links between your Mac and phone to open them instantly in the default browser
 5. **Auto-Pause on Calls** — Automatically pauses Mac media playback when your phone rings or is on a call, and resumes when the call ends
 6. **Native Apple Silicon** — Lightweight, fast macOS app built natively for M-series Macs with menu bar and Dock support
+
+## 🛠️ Build from Source
+
+To package **Velquo** as a standalone macOS `.app` bundle and `.dmg` installer on an Apple Silicon Mac:
+
+```bash
+bun install
+bun run bundle
+```
+
+The built artifacts are output to:
+- **App Bundle:** `src-tauri/target/release/bundle/macos/Velquo.app`
+- **DMG Installer:** `src-tauri/target/release/bundle/dmg/Velquo_0.1.0_aarch64.dmg`
+
