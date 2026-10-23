@@ -706,8 +706,8 @@ pub fn run() {
         .setup(move |app| {
             #[cfg(target_os = "macos")]
             {
-                // Window starts open, so show in macOS Dock (Regular activation policy)
-                let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+                // Start silently in the macOS menu bar without opening the window or showing in Dock
+                let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
 
             AppLogger::set_app_handle(app.handle().clone());
@@ -724,8 +724,7 @@ pub fn run() {
                 let _ = window.set_maximizable(false);
                 let _ = window.set_minimizable(true);
                 let _ = window.set_closable(true);
-                let _ = window.show();
-                let _ = window.set_focus();
+                let _ = window.hide();
             }
 
             let initial_trusted = daemon_for_setup.get_trusted_devices_menu_list();

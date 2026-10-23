@@ -27,7 +27,7 @@
         "hiddenTitle": true,
         "transparent": true,
         "alwaysOnTop": false,
-        "visible": true
+        "visible": false
       }
     ],
     "security": {
