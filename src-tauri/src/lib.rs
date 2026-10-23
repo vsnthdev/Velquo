@@ -390,6 +390,7 @@ pub fn open_main_window(app: &AppHandle) {
         {
             let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
             let _ = app.show();
+            macos_notify::refresh_macos_dock_icon(app);
         }
         let _ = window.unminimize();
         let _ = window.show();

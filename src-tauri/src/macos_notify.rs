@@ -128,9 +128,38 @@ impl VelquoNotificationDelegate {
 }
 
 fn load_velquo_app_nsimage() -> Option<Retained<NSImage>> {
-    let icon_bytes = include_bytes!("../icons/128x128@2x.png");
+    let icon_bytes = include_bytes!("../icons/icon.icns");
     let ns_data = NSData::with_bytes(icon_bytes);
-    NSImage::initWithData(NSImage::alloc(), &ns_data)
+    NSImage::initWithData(NSImage::alloc(), &ns_data).or_else(|| {
+        let fallback_bytes = include_bytes!("../icons/128x128@2x.png");
+        let fallback_data = NSData::with_bytes(fallback_bytes);
+        NSImage::initWithData(NSImage::alloc(), &fallback_data)
+    })
+}
+
+pub fn apply_macos_dock_icon_on_main_thread() {
+    unsafe {
+        let mtm = MainThreadMarker::new_unchecked();
+        if let Some(app_img) = load_velquo_app_nsimage() {
+            let ns_app = NSApplication::sharedApplication(mtm);
+            ns_app.setApplicationIconImage(Some(&app_img));
+        }
+    }
+}
+
+pub fn refresh_macos_dock_icon(app: &AppHandle) {
+    let _ = app.run_on_main_thread(|| {
+        apply_macos_dock_icon_on_main_thread();
+    });
+    // Also re-apply shortly after in case macOS finishes its asynchronous
+    // Accessory -> Regular Dock tile transform on the next runloop tick.
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        let _ = app_clone.run_on_main_thread(|| {
+            apply_macos_dock_icon_on_main_thread();
+        });
+    });
 }
 
 pub fn init_macos_notifications(app: AppHandle, daemon: Arc<KdeConnectDaemon>) {
