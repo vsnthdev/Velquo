@@ -148,11 +148,38 @@ export default function App() {
       }
     });
 
+    let unlistenTrayNav: (() => void) | undefined;
+    listen<{ view: string; deviceId?: string }>(
+      "velquo://tray-navigate",
+      (event) => {
+        if (disposed) return;
+        if (event.payload.view === "pair-device") {
+          setActiveView({ kind: "pair-device" });
+        } else if (
+          event.payload.view === "device" &&
+          event.payload.deviceId
+        ) {
+          setActiveView({
+            kind: "device",
+            deviceId: event.payload.deviceId,
+            subview: "control",
+          });
+        }
+      }
+    ).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlistenTrayNav = fn;
+      }
+    });
+
     return () => {
       disposed = true;
       if (unlisten) unlisten();
       if (unlistenPing) unlistenPing();
       if (unlistenSetup) unlistenSetup();
+      if (unlistenTrayNav) unlistenTrayNav();
       if (pingTimer) clearTimeout(pingTimer);
     };
   }, []);

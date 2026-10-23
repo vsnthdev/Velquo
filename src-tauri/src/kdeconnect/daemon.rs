@@ -368,6 +368,33 @@ impl KdeConnectDaemon {
                 }
             }
         }
+        let trusted_list = self.get_trusted_devices_menu_list();
+        if let Ok(guard) = self.app_handle.lock() {
+            if let Some(app) = guard.as_ref() {
+                crate::refresh_tray_menu(app, trusted_list);
+            }
+        }
+    }
+
+    pub fn get_trusted_devices_menu_list(&self) -> Vec<(String, String, String)> {
+        let mut list: Vec<(String, String, String)> = self
+            .trusted_devices
+            .lock()
+            .map(|guard| {
+                guard
+                    .values()
+                    .map(|rec| {
+                        (
+                            rec.device_id.clone(),
+                            rec.device_name.clone(),
+                            rec.device_type.clone(),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        list.sort_by(|a, b| a.1.cmp(&b.1));
+        list
     }
 
     fn app_settings_file(config_dir: &Path) -> PathBuf {

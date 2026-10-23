@@ -46,6 +46,10 @@ hostname = "0.4"
 open = "5"
 base64 = "0.22"
 libc = "0.2"
+resvg = { version = "0.45", default-features = false }
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSAppearance", "NSImage", "NSMenu", "NSMenuItem", "NSStatusBarButton", "NSStatusItem", "NSView"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSString"] }
 
 [profile.release]
 strip = "none"
