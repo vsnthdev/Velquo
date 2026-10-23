@@ -4900,4 +4900,17 @@ impl KdeConnectDaemon {
 
         Ok(saved.to_string_lossy().to_string())
     }
+
+    pub async fn sftp_delete_entry(
+        &self,
+        device_id: &str,
+        remote_path: &str,
+        is_dir: bool,
+    ) -> Result<()> {
+        self.sftp_manager
+            .delete_entry(device_id, remote_path, is_dir, &self.config_dir, || {
+                self.send_packet_to_device(device_id, &NetworkPacket::sftp_start_browsing())
+            })
+            .await
+    }
 }

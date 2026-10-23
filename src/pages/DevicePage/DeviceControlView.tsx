@@ -27,6 +27,7 @@ import {
   Play,
   SkipBack,
   SkipForward,
+  Trash,
   UploadSimple,
   WarningCircle,
   X,
@@ -139,6 +140,9 @@ export function DeviceControlView({
   const [downloadErrors, setDownloadErrors] = useState<Map<string, string>>(
     () => new Map(),
   );
+  const [deletingPaths, setDeletingPaths] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [nowTickMs, setNowTickMs] = useState<number>(() => Date.now());
   const [copiedNotifId, setCopiedNotifId] = useState<string | null>(null);
   const [activeHighlightNotifId, setActiveHighlightNotifId] = useState<
@@ -175,6 +179,7 @@ export function DeviceControlView({
     setDownloadingPaths(new Set());
     setDownloadedPaths(new Map());
     setDownloadErrors(new Map());
+    setDeletingPaths(new Set());
   }, [device.deviceId]);
 
   const loadSftpDirectory = useCallback(
@@ -304,6 +309,57 @@ export function DeviceControlView({
       });
     } finally {
       setDownloadingPaths((prev) => {
+        const next = new Set(prev);
+        next.delete(entry.path);
+        return next;
+      });
+    }
+  };
+
+  const handleSftpDelete = async (entry: SftpFileEntry) => {
+    if (deletingPaths.has(entry.path) || downloadingPaths.has(entry.path)) {
+      return;
+    }
+
+    setDeletingPaths((prev) => {
+      const next = new Set(prev);
+      next.add(entry.path);
+      return next;
+    });
+    setDownloadErrors((prev) => {
+      if (!prev.has(entry.path)) return prev;
+      const next = new Map(prev);
+      next.delete(entry.path);
+      return next;
+    });
+
+    try {
+      await invoke("sftp_delete_entry", {
+        deviceId: device.deviceId,
+        remotePath: entry.path,
+        isDir: entry.isDir,
+      });
+      setSftpData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          entries: prev.entries.filter((item) => item.path !== entry.path),
+        };
+      });
+      setDownloadedPaths((prev) => {
+        if (!prev.has(entry.path)) return prev;
+        const next = new Map(prev);
+        next.delete(entry.path);
+        return next;
+      });
+    } catch (err) {
+      setDownloadErrors((prev) => {
+        const next = new Map(prev);
+        next.set(entry.path, typeof err === "string" ? err : String(err));
+        return next;
+      });
+    } finally {
+      setDeletingPaths((prev) => {
         const next = new Set(prev);
         next.delete(entry.path);
         return next;
@@ -1743,6 +1799,7 @@ export function DeviceControlView({
                             const isDownloading = downloadingPaths.has(
                               entry.path,
                             );
+                            const isDeleting = deletingPaths.has(entry.path);
                             const savedLocalPath = downloadedPaths.get(
                               entry.path,
                             );
@@ -1750,41 +1807,97 @@ export function DeviceControlView({
                             const formattedDate = formatShortDate(
                               entry.modifiedSecs,
                             );
+                            const isRootStorageEntry =
+                              sftpData.currentPath === "/" &&
+                              sftpData.roots.some((r) => r.path === entry.path);
 
                             if (entry.isDir) {
                               return (
-                                <button
+                                <div
                                   key={entry.path}
-                                  type="button"
-                                  onClick={() => loadSftpDirectory(entry.path)}
-                                  className="group flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
+                                  className="group flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
                                 >
-                                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                                  <button
+                                    type="button"
+                                    disabled={isDeleting}
+                                    onClick={() =>
+                                      loadSftpDirectory(entry.path)
+                                    }
+                                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
+                                  >
                                     {renderFileEntryIcon(entry)}
                                     <div className="flex min-w-0 flex-1 flex-col">
                                       <span className="truncate text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
                                         {entry.name}
                                       </span>
-                                      {formattedDate && (
-                                        <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                                          {formattedDate}
+                                      {(dlError || formattedDate) && (
+                                        <span
+                                          className={`truncate text-[11px] ${
+                                            dlError
+                                              ? "text-red-500 dark:text-red-400"
+                                              : "text-zinc-400 dark:text-zinc-500"
+                                          }`}
+                                        >
+                                          {dlError
+                                            ? `Delete failed: ${dlError}`
+                                            : formattedDate}
                                         </span>
                                       )}
                                     </div>
+                                  </button>
+
+                                  <div className="flex shrink-0 items-center gap-1.5">
+                                    {!isRootStorageEntry &&
+                                      (isDeleting ? (
+                                        <div
+                                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-500/10 text-red-600 dark:bg-red-500/15 dark:text-red-400"
+                                          title="Deleting folder..."
+                                        >
+                                          <CircleNotch
+                                            size={15}
+                                            weight="bold"
+                                            className="animate-spin"
+                                          />
+                                        </div>
+                                      ) : (
+                                        <motion.button
+                                          type="button"
+                                          whileHover={{ scale: 1.06 }}
+                                          whileTap={{ scale: 0.94 }}
+                                          onClick={() =>
+                                            handleSftpDelete(entry)
+                                          }
+                                          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-black/10 bg-black/[0.02] text-zinc-500 transition-colors hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400 dark:hover:border-red-400/30 dark:hover:bg-red-500/15 dark:hover:text-red-400"
+                                          title="Delete folder"
+                                        >
+                                          <Trash size={14} weight="regular" />
+                                        </motion.button>
+                                      ))}
+
+                                    <button
+                                      type="button"
+                                      disabled={isDeleting}
+                                      onClick={() =>
+                                        loadSftpDirectory(entry.path)
+                                      }
+                                      className="flex h-7 w-5 cursor-pointer items-center justify-center"
+                                      aria-label={`Open ${entry.name}`}
+                                    >
+                                      <CaretRight
+                                        size={14}
+                                        weight="bold"
+                                        className="shrink-0 text-zinc-300 transition-transform group-hover:translate-x-0.5 group-hover:text-zinc-500 dark:text-zinc-600 dark:group-hover:text-zinc-400"
+                                      />
+                                    </button>
                                   </div>
-                                  <CaretRight
-                                    size={14}
-                                    weight="bold"
-                                    className="shrink-0 text-zinc-300 transition-transform group-hover:translate-x-0.5 group-hover:text-zinc-500 dark:text-zinc-600 dark:group-hover:text-zinc-400"
-                                  />
-                                </button>
+                                </div>
                               );
                             }
 
                             return (
                               <div
                                 key={entry.path}
-                                className="flex items-center justify-between gap-3 rounded-xl px-2.5 py-2 transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+                                className="flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
                               >
                                 <div className="flex min-w-0 flex-1 items-center gap-2.5">
                                   {renderFileEntryIcon(entry)}
@@ -1800,7 +1913,7 @@ export function DeviceControlView({
                                       }`}
                                     >
                                       {dlError
-                                        ? `Download failed: ${dlError}`
+                                        ? dlError
                                         : `${formatFileSize(entry.size)}${
                                             formattedDate
                                               ? ` · ${formattedDate}`
@@ -1810,47 +1923,91 @@ export function DeviceControlView({
                                   </div>
                                 </div>
 
-                                {isDownloading ? (
-                                  <div
-                                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400"
-                                    title="Downloading..."
-                                  >
-                                    <CircleNotch
-                                      size={15}
-                                      weight="bold"
-                                      className="animate-spin"
-                                    />
-                                  </div>
-                                ) : savedLocalPath ? (
-                                  <motion.button
-                                    type="button"
-                                    whileHover={{ scale: 1.06 }}
-                                    whileTap={{ scale: 0.94 }}
-                                    onClick={() => {
-                                      revealItemInDir(savedLocalPath).catch(
-                                        () => {},
-                                      );
-                                    }}
-                                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-600 transition-colors hover:bg-emerald-500/20 dark:bg-emerald-500/15 dark:text-emerald-400 dark:hover:bg-emerald-500/25"
-                                    title="Saved — click to reveal in Finder"
-                                  >
-                                    <Check size={15} weight="bold" />
-                                  </motion.button>
-                                ) : (
-                                  <motion.button
-                                    type="button"
-                                    whileHover={{ scale: 1.06 }}
-                                    whileTap={{ scale: 0.94 }}
-                                    onClick={() => handleSftpDownload(entry)}
-                                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-black/10 bg-black/[0.02] text-zinc-600 transition-colors hover:border-black/20 hover:bg-black/[0.06] hover:text-zinc-900 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-white/[0.08] dark:hover:text-zinc-100"
-                                    title="Download file"
-                                  >
-                                    <DownloadSimple
-                                      size={15}
-                                      weight="regular"
-                                    />
-                                  </motion.button>
-                                )}
+                                <div className="flex shrink-0 items-center gap-1.5">
+                                  {isDownloading ? (
+                                    <div
+                                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400"
+                                      title="Downloading..."
+                                    >
+                                      <CircleNotch
+                                        size={15}
+                                        weight="bold"
+                                        className="animate-spin"
+                                      />
+                                    </div>
+                                  ) : savedLocalPath ? (
+                                    <motion.button
+                                      type="button"
+                                      whileHover={{ scale: 1.06 }}
+                                      whileTap={{ scale: 0.94 }}
+                                      onClick={() => {
+                                        revealItemInDir(savedLocalPath).catch(
+                                          () => {},
+                                        );
+                                      }}
+                                      className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-600 transition-colors hover:bg-emerald-500/20 dark:bg-emerald-500/15 dark:text-emerald-400 dark:hover:bg-emerald-500/25"
+                                      title="Saved — click to reveal in Finder"
+                                    >
+                                      <Check size={15} weight="bold" />
+                                    </motion.button>
+                                  ) : (
+                                    <motion.button
+                                      type="button"
+                                      disabled={isDeleting}
+                                      whileHover={
+                                        !isDeleting
+                                          ? { scale: 1.06 }
+                                          : undefined
+                                      }
+                                      whileTap={
+                                        !isDeleting
+                                          ? { scale: 0.94 }
+                                          : undefined
+                                      }
+                                      onClick={() => handleSftpDownload(entry)}
+                                      className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-black/10 bg-black/[0.02] text-zinc-600 transition-colors hover:border-black/20 hover:bg-black/[0.06] hover:text-zinc-900 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-white/[0.08] dark:hover:text-zinc-100"
+                                      title="Download file"
+                                    >
+                                      <DownloadSimple
+                                        size={15}
+                                        weight="regular"
+                                      />
+                                    </motion.button>
+                                  )}
+
+                                  {isDeleting ? (
+                                    <div
+                                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-red-500/10 text-red-600 dark:bg-red-500/15 dark:text-red-400"
+                                      title="Deleting file..."
+                                    >
+                                      <CircleNotch
+                                        size={15}
+                                        weight="bold"
+                                        className="animate-spin"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <motion.button
+                                      type="button"
+                                      disabled={isDownloading}
+                                      whileHover={
+                                        !isDownloading
+                                          ? { scale: 1.06 }
+                                          : undefined
+                                      }
+                                      whileTap={
+                                        !isDownloading
+                                          ? { scale: 0.94 }
+                                          : undefined
+                                      }
+                                      onClick={() => handleSftpDelete(entry)}
+                                      className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-black/10 bg-black/[0.02] text-zinc-500 transition-colors hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400 dark:hover:border-red-400/30 dark:hover:bg-red-500/15 dark:hover:text-red-400"
+                                      title="Delete file"
+                                    >
+                                      <Trash size={14} weight="regular" />
+                                    </motion.button>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}

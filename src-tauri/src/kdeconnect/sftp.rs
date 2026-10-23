@@ -11,7 +11,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::oneshot;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -490,6 +490,67 @@ impl SftpManager {
 
         Err(anyhow!("Failed to download file from device"))
     }
+
+    pub async fn delete_entry<F>(
+        &self,
+        device_id: &str,
+        remote_path: &str,
+        is_dir: bool,
+        config_dir: &Path,
+        send_start_browsing: F,
+    ) -> Result<()>
+    where
+        F: Fn() -> Result<()>,
+    {
+        let trimmed = remote_path.trim();
+        if trimmed.is_empty() || trimmed == "/" {
+            return Err(anyhow!("Cannot delete root storage directory"));
+        }
+
+        for attempt in 0..2 {
+            let force_reconnect = attempt > 0;
+            let session_res = self
+                .ensure_connected(device_id, config_dir, force_reconnect, &send_start_browsing)
+                .await?;
+
+            let (info, sftp) = match session_res {
+                Ok(pair) => pair,
+                Err(unconfigured_msg) => {
+                    return Err(anyhow!(unconfigured_msg));
+                }
+            };
+
+            if info.roots.iter().any(|r| r.path == trimmed) {
+                return Err(anyhow!("Cannot delete a top-level storage location"));
+            }
+
+            let res = if is_dir {
+                delete_sftp_directory_recursive(&sftp, trimmed).await
+            } else {
+                sftp.remove_file(trimmed)
+                    .await
+                    .with_context(|| format!("Failed to delete file '{}'", trimmed))
+            };
+
+            match res {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    log::warn!(
+                        "[sftp] delete_entry('{}', is_dir={}) failed on attempt {}: {}",
+                        trimmed,
+                        is_dir,
+                        attempt + 1,
+                        e
+                    );
+                    if attempt == 1 {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        Err(anyhow!("Failed to delete item on device"))
+    }
 }
 
 async fn connect_ssh_sftp(
@@ -639,12 +700,70 @@ async fn connect_ssh_sftp(
         .await
         .context("Failed to request SFTP subsystem on phone")?;
 
-    let sftp = SftpSession::new(channel.into_stream())
+    let normalized_stream = wrap_sftp_stream_with_status_normalizer(channel.into_stream());
+    let sftp = SftpSession::new(normalized_stream)
         .await
         .context("Failed to initialize SFTP protocol session")?;
-    sftp.set_timeout(20);
+    sftp.set_timeout(10);
 
     Ok((handle, sftp))
+}
+
+/// Wraps an SFTP transport stream to normalize SFTP v4–v6 status codes (`>= 9`, such as
+/// Apache MINA SSHD's `18 = SSH_FX_DIR_NOT_EMPTY` or `10 = SSH_FX_NO_SUCH_PATH`) into
+/// SFTP v3 status codes (`0..=8`) so `russh-sftp` never drops a status reply packet.
+fn wrap_sftp_stream_with_status_normalizer<S>(remote_stream: S) -> tokio::io::DuplexStream
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let (client_side, proxy_side) = tokio::io::duplex(256 * 1024);
+    let (mut remote_rd, mut remote_wr) = tokio::io::split(remote_stream);
+    let (mut proxy_rd, mut proxy_wr) = tokio::io::split(proxy_side);
+
+    // Client -> Phone SFTP server (raw pass-through)
+    tokio::spawn(async move {
+        let _ = tokio::io::copy(&mut proxy_rd, &mut remote_wr).await;
+        let _ = remote_wr.shutdown().await;
+    });
+
+    // Phone SFTP server -> Client (rewrites SSH_FXP_STATUS codes > 8 to SFTP v3 codes)
+    tokio::spawn(async move {
+        const SSH_FXP_STATUS: u8 = 101;
+        let mut frame = Vec::with_capacity(16 * 1024);
+
+        while let Ok(len) = remote_rd.read_u32().await {
+            if len > 16 * 1024 * 1024 {
+                break;
+            }
+            frame.resize(len as usize, 0);
+            if remote_rd.read_exact(&mut frame).await.is_err() {
+                break;
+            }
+
+            // SSH_FXP_STATUS layout inside frame: [type: u8 (1)][req_id: u32 (4)][status_code: u32 (4)]...
+            if frame.len() >= 9 && frame[0] == SSH_FXP_STATUS {
+                let raw_code = u32::from_be_bytes([frame[5], frame[6], frame[7], frame[8]]);
+                if raw_code > 8 {
+                    let mapped_code: u32 = match raw_code {
+                        10 => 2, // SSH_FX_NO_SUCH_PATH -> SSH_FX_NO_SUCH_FILE (2)
+                        12 => 3, // SSH_FX_WRITE_PROTECT -> SSH_FX_PERMISSION_DENIED (3)
+                        _ => 4,  // e.g. 18 (SSH_FX_DIR_NOT_EMPTY) -> SSH_FX_FAILURE (4)
+                    };
+                    frame[5..9].copy_from_slice(&mapped_code.to_be_bytes());
+                }
+            }
+
+            if proxy_wr.write_u32(len).await.is_err() {
+                break;
+            }
+            if proxy_wr.write_all(&frame).await.is_err() {
+                break;
+            }
+        }
+        let _ = proxy_wr.shutdown().await;
+    });
+
+    client_side
 }
 
 async fn read_sftp_directory(sftp: &SftpSession, dir_path: &str) -> Result<Vec<SftpFileEntry>> {
@@ -710,5 +829,70 @@ async fn stream_sftp_file_to_disk(
         .await
         .context("Failed while streaming file over SFTP")?;
     local_file.flush().await?;
+    Ok(())
+}
+
+async fn delete_sftp_directory_recursive(sftp: &Arc<SftpSession>, root_dir: &str) -> Result<()> {
+    // Iterative post-order traversal: always empty files and subdirectories first before calling remove_dir
+    let mut stack: Vec<(String, bool)> = vec![(root_dir.to_string(), false)];
+
+    while let Some((dir_path, children_processed)) = stack.pop() {
+        if children_processed {
+            sftp.remove_dir(&dir_path)
+                .await
+                .with_context(|| format!("Failed to remove directory '{}'", dir_path))?;
+            continue;
+        }
+
+        stack.push((dir_path.clone(), true));
+
+        let read_dir = sftp
+            .read_dir(&dir_path)
+            .await
+            .with_context(|| format!("Failed to read directory '{}' for deletion", dir_path))?;
+
+        let mut files_to_delete = Vec::new();
+        for entry in read_dir {
+            let name = entry.file_name();
+            if name.is_empty() || name == "." || name == ".." {
+                continue;
+            }
+            let child_path = if dir_path == "/" {
+                format!("/{}", name)
+            } else {
+                format!("{}/{}", dir_path.trim_end_matches('/'), name)
+            };
+
+            let meta = entry.metadata();
+            let child_is_dir = meta
+                .permissions
+                .map(|p| (p & 0xF000) == 0x4000)
+                .unwrap_or_else(|| meta.is_dir());
+
+            if child_is_dir {
+                stack.push((child_path, false));
+            } else {
+                files_to_delete.push(child_path);
+            }
+        }
+
+        // Pipeline file deletions in concurrent batches of 8 over the multiplexed SFTP session
+        for chunk in files_to_delete.chunks(8) {
+            let mut join_set = tokio::task::JoinSet::new();
+            for file_path in chunk.iter().cloned() {
+                let sftp_clone = Arc::clone(sftp);
+                join_set.spawn(async move {
+                    sftp_clone
+                        .remove_file(&file_path)
+                        .await
+                        .with_context(|| format!("Failed to delete file '{}'", file_path))
+                });
+            }
+            while let Some(joined) = join_set.join_next().await {
+                joined.context("File deletion task panicked")??;
+            }
+        }
+    }
+
     Ok(())
 }

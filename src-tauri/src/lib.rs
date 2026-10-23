@@ -432,6 +432,25 @@ async fn sftp_download_file(
 }
 
 #[tauri::command]
+async fn sftp_delete_entry(
+    device_id: String,
+    remote_path: String,
+    is_dir: bool,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[sftp] Deleting remote entry '{}' (is_dir={}) on device_id={}",
+        remote_path,
+        is_dir,
+        device_id
+    );
+    daemon
+        .sftp_delete_entry(&device_id, &remote_path, is_dir)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn clear_logs() {
     AppLogger::clear_entries();
     log::info!("[ui] Logs cleared");
@@ -777,6 +796,7 @@ pub fn run() {
             send_remote_key,
             sftp_browse,
             sftp_download_file,
+            sftp_delete_entry,
             clear_logs,
             quit_app,
             restart_app,
