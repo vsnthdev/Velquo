@@ -2,7 +2,6 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Velquo",
   "mainBinaryName": "Velquo",
-  "version": "0.1.0",
   "identifier": "dev.vsnth.velquo",
   "build": {
     "beforeDevCommand": "bun run dev",

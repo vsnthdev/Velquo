@@ -4,6 +4,7 @@ import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
+import pkg from "../../package.json";
 
 interface AppSettingsPageProps {
   ignoreWhatsappConversations: boolean;
@@ -15,7 +16,9 @@ export function AppSettingsPage({
   onToggleIgnoreWhatsappConversations,
 }: AppSettingsPageProps) {
   const [launchOnStartup, setLaunchOnStartup] = useState<boolean>(false);
-  const [appVersion, setAppVersion] = useState<string>("0.1.0");
+  const [appVersion, setAppVersion] = useState<string>(pkg.version);
+  const repoUrl = pkg.homepage;
+  const repoDisplay = repoUrl.replace(/^https?:\/\//, "");
 
   useEffect(() => {
     getVersion()
@@ -53,7 +56,7 @@ export function AppSettingsPage({
 
   const handleOpenGitHub = async () => {
     try {
-      await openUrl("https://github.com/vsnthdev/Velquo");
+      await openUrl(repoUrl);
     } catch (err) {
       console.error("Failed to open GitHub URL:", err);
     }
@@ -284,7 +287,7 @@ export function AppSettingsPage({
             className="flex cursor-pointer items-center gap-2 rounded-xl border border-black/12 bg-black/[0.03] px-3.5 py-2 text-[12.5px] font-medium text-zinc-700 transition-colors hover:border-black/20 hover:bg-black/[0.06] hover:text-zinc-950 dark:border-white/12 dark:bg-white/[0.04] dark:text-zinc-200 dark:hover:border-white/20 dark:hover:bg-white/[0.08] dark:hover:text-white"
           >
             <GithubLogo size={16} weight="regular" />
-            <span>github.com/vsnthdev/Velquo</span>
+            <span>{repoDisplay}</span>
           </motion.button>
         </div>
       </div>
