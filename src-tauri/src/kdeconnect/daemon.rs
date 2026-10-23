@@ -457,19 +457,26 @@ impl KdeConnectDaemon {
         }
     }
 
-    /// Displays a native macOS system notification with sound (works in both dev binary and bundled .app)
-    pub fn show_macos_notification(title: &str, body: &str) {
-        let escaped_title = title.replace('\\', "\\\\").replace('"', "\\\"");
-        let escaped_body = body.replace('\\', "\\\\").replace('"', "\\\"");
-        let script = format!(
-            "display notification \"{}\" with title \"{}\" sound name \"Glass\"",
-            escaped_body, escaped_title
-        );
-        std::thread::spawn(move || {
-            let _ = std::process::Command::new("/usr/bin/osascript")
-                .args(["-e", &script])
-                .output();
-        });
+    /// Displays a native macOS system notification with the Velquo icon, click-to-focus support,
+    /// and an optional native "Dismiss" action button.
+    pub fn show_macos_notification(
+        title: &str,
+        body: &str,
+        device_id: Option<&str>,
+        notification_id: Option<&str>,
+        dismissable: bool,
+    ) {
+        #[cfg(target_os = "macos")]
+        {
+            crate::macos_notify::show_macos_notification(
+                title,
+                None,
+                body,
+                device_id,
+                notification_id,
+                dismissable,
+            );
+        }
     }
 
     pub fn notify_ui(&self) {
@@ -1875,7 +1882,7 @@ impl KdeConnectDaemon {
             PACKET_TYPE_PING => {
                 let msg = packet.get_str("message").unwrap_or("Ping!");
                 log::info!("[ping] Received Ping from '{}': \"{}\"", device_name, msg);
-                Self::show_macos_notification(device_name, msg);
+                Self::show_macos_notification(device_name, msg, Some(device_id), None, false);
                 if let Ok(guard) = self.app_handle.lock() {
                     if let Some(app) = guard.as_ref() {
                         let _ = app.emit(
@@ -2026,7 +2033,13 @@ impl KdeConnectDaemon {
                     "[findmyphone] Received Find My Mac request from '{}'",
                     device_name
                 );
-                Self::show_macos_notification(device_name, "Find My Mac triggered!");
+                Self::show_macos_notification(
+                    device_name,
+                    "Find My Mac triggered!",
+                    Some(device_id),
+                    None,
+                    false,
+                );
                 let _ = std::process::Command::new("/usr/bin/afplay")
                     .arg("/System/Library/Sounds/Submarine.aiff")
                     .spawn();
@@ -3117,7 +3130,13 @@ impl KdeConnectDaemon {
                 title.clone()
             };
 
-            Self::show_macos_notification(&notif_heading, &notif_body);
+            Self::show_macos_notification(
+                &notif_heading,
+                &notif_body,
+                Some(device_id),
+                Some(&raw_id_original),
+                true,
+            );
 
             if let Some(code) = otp_code {
                 if self.is_device_auto_copy_otp_allowed(device_id) {

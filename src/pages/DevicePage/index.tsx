@@ -32,6 +32,11 @@ interface DevicePageProps {
   onRemoveRunCommand: (key: string) => Promise<void>;
   rightPaneContainer: HTMLElement | null;
   openAddCommandSignal: number;
+  highlightedNotification: {
+    deviceId: string;
+    notificationId: string;
+    seq: number;
+  } | null;
   onUnpair: () => void;
 }
 
@@ -60,6 +65,7 @@ export function DevicePage({
   onRemoveRunCommand,
   rightPaneContainer,
   openAddCommandSignal,
+  highlightedNotification,
   onUnpair,
 }: DevicePageProps) {
   const isSettingsOpen = subview === "settings";
@@ -188,6 +194,7 @@ export function DevicePage({
             isDraggingOver={isDraggingOver}
             justDroppedCount={justDroppedCount}
             onFilesPicked={onFilesPicked}
+            highlightedNotification={highlightedNotification}
           />
         )}
       </AnimatePresence>

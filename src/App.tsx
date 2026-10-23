@@ -36,6 +36,11 @@ export default function App() {
     useState<boolean>(true);
   const [rightPaneEl, setRightPaneEl] = useState<HTMLDivElement | null>(null);
   const [openAddCommandSignal, setOpenAddCommandSignal] = useState<number>(0);
+  const [highlightedNotification, setHighlightedNotification] = useState<{
+    deviceId: string;
+    notificationId: string;
+    seq: number;
+  } | null>(null);
 
   const dropZoneRef = useRef<HTMLDivElement | null>(null);
   const selectedDeviceRef = useRef<DeviceView | null>(null);
@@ -174,12 +179,41 @@ export default function App() {
       }
     });
 
+    let unlistenFocusNotif: (() => void) | undefined;
+    listen<{ deviceId: string; notificationId?: string | null }>(
+      "velquo://focus-notification",
+      (event) => {
+        if (disposed) return;
+        const { deviceId, notificationId } = event.payload;
+        if (!deviceId) return;
+        setActiveView({
+          kind: "device",
+          deviceId,
+          subview: "control",
+        });
+        if (notificationId) {
+          setHighlightedNotification((prev) => ({
+            deviceId,
+            notificationId,
+            seq: (prev?.seq ?? 0) + 1,
+          }));
+        }
+      }
+    ).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlistenFocusNotif = fn;
+      }
+    });
+
     return () => {
       disposed = true;
       if (unlisten) unlisten();
       if (unlistenPing) unlistenPing();
       if (unlistenSetup) unlistenSetup();
       if (unlistenTrayNav) unlistenTrayNav();
+      if (unlistenFocusNotif) unlistenFocusNotif();
       if (pingTimer) clearTimeout(pingTimer);
     };
   }, []);
@@ -530,6 +564,11 @@ export default function App() {
               }}
               rightPaneContainer={rightPaneEl}
               openAddCommandSignal={openAddCommandSignal}
+              highlightedNotification={
+                highlightedNotification?.deviceId === selectedDevice.deviceId
+                  ? highlightedNotification
+                  : null
+              }
               onUnpair={() => handleUnpairDevice(selectedDevice.deviceId)}
             />
           )}

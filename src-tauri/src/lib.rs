@@ -1,5 +1,7 @@
 pub mod kdeconnect;
 pub mod logger;
+#[cfg(target_os = "macos")]
+pub mod macos_notify;
 
 use crate::kdeconnect::daemon::{DeviceView, HostInfo, KdeConnectDaemon, TransferItem};
 use crate::kdeconnect::packet::NetworkPacket;
@@ -382,7 +384,7 @@ fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
-fn open_main_window(app: &AppHandle) {
+pub fn open_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "macos")]
         {
@@ -712,6 +714,11 @@ pub fn run() {
 
             AppLogger::set_app_handle(app.handle().clone());
             daemon_for_setup.set_app_handle(app.handle().clone());
+            #[cfg(target_os = "macos")]
+            macos_notify::init_macos_notifications(
+                app.handle().clone(),
+                daemon_for_setup.clone(),
+            );
             daemon_for_setup.start();
 
             if let Some(window) = app.get_webview_window("main") {

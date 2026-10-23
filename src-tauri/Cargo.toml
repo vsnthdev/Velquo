@@ -48,8 +48,8 @@ base64 = "0.22"
 libc = "0.2"
 resvg = { version = "0.45", default-features = false }
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSAppearance", "NSImage", "NSMenu", "NSMenuItem", "NSStatusBarButton", "NSStatusItem", "NSView"] }
-objc2-foundation = { version = "0.3", features = ["NSArray", "NSString"] }
+objc2-app-kit = { version = "0.3", features = ["NSAppearance", "NSApplication", "NSImage", "NSMenu", "NSMenuItem", "NSStatusBarButton", "NSStatusItem", "NSView"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSData", "NSDictionary", "NSObject", "NSString", "NSUserNotification"] }
 
 [profile.release]
 strip = "none"

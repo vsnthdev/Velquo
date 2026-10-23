@@ -37,6 +37,11 @@ interface DeviceControlViewProps {
   isDraggingOver: boolean;
   justDroppedCount: number;
   onFilesPicked: (count: number) => void;
+  highlightedNotification: {
+    deviceId: string;
+    notificationId: string;
+    seq: number;
+  } | null;
 }
 
 export function DeviceControlView({
@@ -47,6 +52,7 @@ export function DeviceControlView({
   isDraggingOver,
   justDroppedCount,
   onFilesPicked,
+  highlightedNotification,
 }: DeviceControlViewProps) {
   const [displaySecs, setDisplaySecs] = useState<number>(0);
   const [isShareLinkOpen, setIsShareLinkOpen] = useState<boolean>(false);
@@ -55,6 +61,10 @@ export function DeviceControlView({
     useState<boolean>(false);
   const [nowTickMs, setNowTickMs] = useState<number>(() => Date.now());
   const [copiedNotifId, setCopiedNotifId] = useState<string | null>(null);
+  const [activeHighlightNotifId, setActiveHighlightNotifId] = useState<
+    string | null
+  >(null);
+  const notifRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const seekBarRef = useRef<HTMLDivElement | null>(null);
   const isAnimatingSeekRef = useRef<boolean>(false);
@@ -75,6 +85,35 @@ export function DeviceControlView({
     setIsShareLinkOpen(false);
     setShareLinkTouchedInvalid(false);
   }, [device.deviceId]);
+
+  useEffect(() => {
+    if (
+      !highlightedNotification ||
+      highlightedNotification.deviceId !== device.deviceId ||
+      !highlightedNotification.notificationId
+    ) {
+      return;
+    }
+
+    const targetId = highlightedNotification.notificationId;
+    setActiveHighlightNotifId(targetId);
+
+    const scrollTimer = setTimeout(() => {
+      const el = notifRefs.current.get(targetId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 120);
+
+    const clearTimer = setTimeout(() => {
+      setActiveHighlightNotifId((prev) => (prev === targetId ? null : prev));
+    }, 3200);
+
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(clearTimer);
+    };
+  }, [highlightedNotification, device.deviceId]);
 
   // 60fps requestAnimationFrame loop updating the MotionValue directly (never interrupting a seek spring)
   useEffect(() => {
@@ -933,10 +972,18 @@ export function DeviceControlView({
                     .toLowerCase()
                     .includes("sensitive notification content hidden");
                   const isCopied = copiedNotifId === notif.id;
+                  const isHighlighted = activeHighlightNotifId === notif.id;
 
                   return (
                     <motion.div
                       key={notif.id}
+                      ref={(el) => {
+                        if (el) {
+                          notifRefs.current.set(notif.id, el);
+                        } else {
+                          notifRefs.current.delete(notif.id);
+                        }
+                      }}
                       layout
                       initial={{ opacity: 0, y: 6, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -946,7 +993,11 @@ export function DeviceControlView({
                         stiffness: 460,
                         damping: 34,
                       }}
-                      className="flex items-start justify-between gap-3 rounded-xl border border-black/10 bg-black/[0.02] px-3.5 py-2.5 dark:border-white/10 dark:bg-white/[0.02]"
+                      className={`flex items-start justify-between gap-3 rounded-xl border px-3.5 py-2.5 transition-all duration-300 ${
+                        isHighlighted
+                          ? "border-blue-500/60 bg-blue-500/[0.08] ring-2 ring-blue-500/25 dark:border-blue-400/60 dark:bg-blue-500/[0.12] dark:ring-blue-400/25"
+                          : "border-black/10 bg-black/[0.02] dark:border-white/10 dark:bg-white/[0.02]"
+                      }`}
                     >
                       <div className="flex min-w-0 flex-1 flex-col">
                         <div className="flex items-center gap-2">
