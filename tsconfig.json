@@ -4,6 +4,7 @@
     "useDefineForClassFields": true,
     "module": "ESNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["bun", "vite/client"],
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
@@ -16,5 +17,5 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src", "scripts"]
 }
