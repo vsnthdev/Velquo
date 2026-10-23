@@ -1012,7 +1012,8 @@ impl KdeConnectDaemon {
             interfaces.len()
         );
 
-        // Broadcast from each local interface IP to both subnet broadcast and 255.255.255.255
+        // Broadcast once from each local interface IP to its subnet broadcast address
+        let mut sent_any = false;
         for (source_ip, subnet_bcast) in &interfaces {
             if let Ok(sock) = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)) {
                 let _ = sock.set_broadcast(true);
@@ -1020,25 +1021,26 @@ impl KdeConnectDaemon {
                 if sock.bind(&bind_addr.into()).is_ok() {
                     let std_sock: std::net::UdpSocket = sock.into();
                     let dest_subnet = SocketAddrV4::new(*subnet_bcast, UDP_PORT);
-                    let dest_global = SocketAddrV4::new(Ipv4Addr::BROADCAST, UDP_PORT);
-                    let _ = std_sock.send_to(&bytes, dest_subnet);
-                    let _ = std_sock.send_to(&bytes, dest_global);
-                    log::debug!(
-                        "[udp] Sent discovery broadcast from {} -> {} and 255.255.255.255:{}",
-                        source_ip,
-                        dest_subnet,
-                        UDP_PORT
-                    );
+                    if std_sock.send_to(&bytes, dest_subnet).is_ok() {
+                        sent_any = true;
+                        log::debug!(
+                            "[udp] Sent discovery broadcast from {} -> {}",
+                            source_ip,
+                            dest_subnet
+                        );
+                    }
                 }
             }
         }
 
-        // Also send on main bound UDP socket as fallback
-        let maybe_sock = self.udp_socket.lock().unwrap().clone();
-        if let Some(sock) = maybe_sock {
-            let _ = sock
-                .send_to(&bytes, SocketAddrV4::new(Ipv4Addr::BROADCAST, UDP_PORT))
-                .await;
+        // Fallback to global broadcast only if no subnet broadcast succeeded
+        if !sent_any {
+            let maybe_sock = self.udp_socket.lock().unwrap().clone();
+            if let Some(sock) = maybe_sock {
+                let _ = sock
+                    .send_to(&bytes, SocketAddrV4::new(Ipv4Addr::BROADCAST, UDP_PORT))
+                    .await;
+            }
         }
     }
 
@@ -1356,6 +1358,25 @@ impl KdeConnectDaemon {
         let peer_proto = initial_packet
             .get_i64("protocolVersion")
             .unwrap_or(PROTOCOL_VERSION as i64) as i32;
+
+        // Deduplicate burst inbound TCP connections from the same device within 800ms
+        let now_ms = current_millis();
+        {
+            let mut attempts = self.last_discovery_attempt_ms.lock().unwrap();
+            let key = format!("inbound:{}", peer_device_id);
+            if let Some(last) = attempts.get(&key) {
+                if now_ms - *last < 800 {
+                    log::debug!(
+                        "[tcp-in] Dropping duplicate burst inbound TCP connection from {} (deviceId={}, {}ms since previous)",
+                        peer_addr,
+                        peer_device_id,
+                        now_ms - *last
+                    );
+                    return Ok(());
+                }
+            }
+            attempts.insert(key, now_ms);
+        }
 
         log::info!(
             "[tcp-in] Received plaintext connection packet from {} (deviceId={}, proto=v{}), starting TLS Client handshake...",
