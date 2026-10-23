@@ -5,8 +5,9 @@ use crate::kdeconnect::clipboard::{
     get_macos_pasteboard_change_count, read_macos_clipboard_text, write_macos_clipboard_text,
 };
 use crate::kdeconnect::macos_media::{
-    get_mac_player_list, handle_incoming_mpris_request, pause_mac_media_for_call,
-    query_mac_player_status, resume_mac_media_after_call, DEFAULT_MAC_PLAYER,
+    get_cached_mac_album_art, get_mac_player_list, handle_incoming_mpris_request,
+    pause_mac_media_for_call, query_mac_player_status, resume_mac_media_after_call,
+    DEFAULT_MAC_PLAYER,
 };
 use crate::kdeconnect::packet::{
     current_millis, current_secs, NetworkPacket, PACKET_TYPE_BATTERY, PACKET_TYPE_BATTERY_REQUEST,
@@ -656,8 +657,6 @@ impl KdeConnectDaemon {
                 .map(|(ip, _)| ip)
                 .collect();
             let mut last_host_battery: Option<(i32, bool)> = Self::read_macos_battery_status();
-            let mut last_mac_players: Vec<String> = Vec::new();
-            let mut last_mac_media_sig: Option<(String, String, String, bool)> = None;
             let mut interval = tokio::time::interval(Duration::from_secs(5));
             interval.tick().await; // consume immediate tick
             let mut tick_count: u64 = 0;
@@ -677,47 +676,6 @@ impl KdeConnectDaemon {
                             );
                             last_host_battery = Some(current_bat);
                             daemon_bcast.broadcast_host_battery(current_bat.0, current_bat.1);
-                        }
-                    }
-                }
-
-                // If at least one paired device is online, push Mac media changes (playerList or track/play state)
-                if daemon_bcast.has_online_paired_device() {
-                    if let Ok((players, snap)) = tokio::task::spawn_blocking(|| {
-                        let p = get_mac_player_list();
-                        let s = query_mac_player_status(DEFAULT_MAC_PLAYER);
-                        (p, s)
-                    })
-                    .await
-                    {
-                        if players != last_mac_players {
-                            last_mac_players = players.clone();
-                            let mut body = serde_json::Map::new();
-                            body.insert("playerList".into(), serde_json::json!(players));
-                            body.insert("supportAlbumArtPayload".into(), serde_json::json!(false));
-                            let pkt = NetworkPacket::new(PACKET_TYPE_MPRIS, body);
-                            daemon_bcast.broadcast_to_paired_devices(&pkt);
-                        }
-
-                        let sig = (
-                            snap.title.clone(),
-                            snap.artist.clone(),
-                            snap.album.clone(),
-                            snap.is_playing,
-                        );
-                        if last_mac_media_sig.as_ref() != Some(&sig) {
-                            last_mac_media_sig = Some(sig);
-                            let pkt = snap.to_mpris_packet(true, true);
-                            daemon_bcast.broadcast_to_paired_devices(&pkt);
-                            for p in &last_mac_players {
-                                if p != DEFAULT_MAC_PLAYER {
-                                    let mut specific = snap.clone();
-                                    specific.player = p.clone();
-                                    daemon_bcast.broadcast_to_paired_devices(
-                                        &specific.to_mpris_packet(true, true),
-                                    );
-                                }
-                            }
                         }
                     }
                 }
@@ -792,6 +750,112 @@ impl KdeConnectDaemon {
                         );
                         let pkt = NetworkPacket::clipboard(&text);
                         daemon_clip.broadcast_clipboard_to_synced_devices(&pkt);
+                    }
+                }
+            }
+        });
+
+        // 5. Proactive macOS Control Center Now Playing broadcaster to paired Android devices
+        let daemon_mpris = Arc::clone(&self);
+        tokio::spawn(async move {
+            let mut mpris_interval = tokio::time::interval(Duration::from_millis(2000));
+            mpris_interval.tick().await;
+
+            let mut last_sig: Option<(
+                String,
+                String,
+                String,
+                String,
+                String,
+                bool,
+                i64,
+                Vec<String>,
+            )> = None;
+
+            loop {
+                mpris_interval.tick().await;
+
+                let online_paired_ids: Vec<String> = {
+                    let devices = daemon_mpris.devices.lock().unwrap();
+                    devices
+                        .values()
+                        .filter(|d| d.view.reachable && d.view.pair_state == PairState::Paired)
+                        .map(|d| d.view.device_id.clone())
+                        .collect()
+                };
+
+                if online_paired_ids.is_empty() {
+                    last_sig = None;
+                    continue;
+                }
+
+                let Ok((players, snap_opt)) = tokio::task::spawn_blocking(|| {
+                    let p = get_mac_player_list();
+                    let s = query_mac_player_status("");
+                    (p, s)
+                })
+                .await
+                else {
+                    continue;
+                };
+
+                let current_sig = match &snap_opt {
+                    Some(snap) => (
+                        snap.player.clone(),
+                        snap.title.clone(),
+                        snap.artist.clone(),
+                        snap.album.clone(),
+                        snap.album_art_url.clone(),
+                        snap.is_playing,
+                        snap.length_ms,
+                        players.clone(),
+                    ),
+                    None => (
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        false,
+                        0,
+                        players.clone(),
+                    ),
+                };
+
+                let list_changed = last_sig
+                    .as_ref()
+                    .map(|prev| prev.7 != current_sig.7)
+                    .unwrap_or(true);
+                let meta_changed = last_sig.as_ref() != Some(&current_sig);
+
+                if !meta_changed {
+                    continue;
+                }
+
+                last_sig = Some(current_sig);
+
+                if list_changed {
+                    let mut body = serde_json::Map::new();
+                    body.insert("playerList".into(), serde_json::json!(players));
+                    body.insert("supportAlbumArtPayload".into(), serde_json::json!(true));
+                    let list_pkt = NetworkPacket::new(PACKET_TYPE_MPRIS, body);
+                    for id in &online_paired_ids {
+                        let _ = daemon_mpris.send_packet_to_device(id, &list_pkt);
+                    }
+                }
+
+                if let Some(snap) = snap_opt {
+                    log::info!(
+                        "[mpris-host] Broadcasting Mac Control Center Now Playing to paired devices: player='{}' title='{}' artist='{}' isPlaying={} art='{}'",
+                        snap.player,
+                        snap.title,
+                        snap.artist,
+                        snap.is_playing,
+                        snap.album_art_url
+                    );
+                    let pkt = snap.to_mpris_packet(true, true);
+                    for id in &online_paired_ids {
+                        let _ = daemon_mpris.send_packet_to_device(id, &pkt);
                     }
                 }
             }
@@ -1996,6 +2060,18 @@ impl KdeConnectDaemon {
                 let dev_name = device_name.to_string();
                 let pkt_clone = packet.clone();
                 tokio::spawn(async move {
+                    if let Some(requested_art_url) = pkt_clone.get_str("albumArtUrl") {
+                        let player = pkt_clone
+                            .get_str("player")
+                            .unwrap_or(DEFAULT_MAC_PLAYER)
+                            .to_string();
+                        let art_url = requested_art_url.to_string();
+                        daemon
+                            .serve_mac_album_art_to_device(&dev_id, &dev_name, &player, &art_url)
+                            .await;
+                        return;
+                    }
+
                     if let Ok(responses) =
                         tokio::task::spawn_blocking(move || handle_incoming_mpris_request(&pkt_clone))
                             .await
@@ -3436,25 +3512,121 @@ impl KdeConnectDaemon {
             return;
         };
         tauri::async_runtime::spawn(async move {
-            if let Ok((players, snap)) = tokio::task::spawn_blocking(|| {
+            if let Ok((players, snap_opt)) = tokio::task::spawn_blocking(|| {
                 let p = get_mac_player_list();
-                let s = query_mac_player_status(DEFAULT_MAC_PLAYER);
+                let s = query_mac_player_status("");
                 (p, s)
             })
             .await
             {
                 let mut body = serde_json::Map::new();
                 body.insert("playerList".into(), serde_json::json!(players));
-                body.insert("supportAlbumArtPayload".into(), serde_json::json!(false));
+                body.insert("supportAlbumArtPayload".into(), serde_json::json!(true));
                 let list_pkt = NetworkPacket::new(PACKET_TYPE_MPRIS, body);
                 if let Ok(bytes) = list_pkt.serialize_line() {
                     let _ = sender.send(bytes);
                 }
-                if let Ok(bytes) = snap.to_mpris_packet(true, true).serialize_line() {
-                    let _ = sender.send(bytes);
+                if let Some(snap) = snap_opt {
+                    if let Ok(bytes) = snap.to_mpris_packet(true, true).serialize_line() {
+                        let _ = sender.send(bytes);
+                    }
                 }
             }
         });
+    }
+
+    pub async fn serve_mac_album_art_to_device(
+        self: &Arc<Self>,
+        device_id: &str,
+        device_name: &str,
+        player: &str,
+        album_art_url: &str,
+    ) {
+        let url_owned = album_art_url.to_string();
+        let maybe_bytes =
+            tokio::task::spawn_blocking(move || get_cached_mac_album_art(&url_owned))
+                .await
+                .ok()
+                .flatten();
+
+        let Some(art_bytes) = maybe_bytes else {
+            log::debug!(
+                "[mpris-host] No cached Mac album art found for '{}' requested by '{}'",
+                album_art_url,
+                device_name
+            );
+            return;
+        };
+
+        let mut payload_listener = None;
+        let mut payload_port = MIN_PAYLOAD_PORT;
+        for port in MIN_PAYLOAD_PORT..=MAX_PAYLOAD_PORT {
+            if let Ok(listener) =
+                TcpListener::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)).await
+            {
+                payload_port = port;
+                payload_listener = Some(listener);
+                break;
+            }
+        }
+
+        let Some(listener) = payload_listener else {
+            log::warn!(
+                "[mpris-host] No free payload port ({}..={}) to stream Mac album art",
+                MIN_PAYLOAD_PORT,
+                MAX_PAYLOAD_PORT
+            );
+            return;
+        };
+
+        let mut body = serde_json::Map::new();
+        body.insert("transferringAlbumArt".into(), serde_json::json!(true));
+        body.insert("player".into(), serde_json::json!(player));
+        body.insert("albumArtUrl".into(), serde_json::json!(album_art_url));
+
+        let mut transfer_info = serde_json::Map::new();
+        transfer_info.insert("port".into(), serde_json::json!(payload_port));
+
+        let mut pkt = NetworkPacket::new(PACKET_TYPE_MPRIS, body);
+        pkt.payload_size = Some(art_bytes.len() as i64);
+        pkt.payload_transfer_info = Some(transfer_info);
+
+        if let Err(e) = self.send_packet_to_device(device_id, &pkt) {
+            log::warn!(
+                "[mpris-host] Failed to send transferringAlbumArt packet to '{}': {}",
+                device_name,
+                e
+            );
+            return;
+        }
+
+        log::info!(
+            "[mpris-host] Streaming Mac album art ({} bytes) for '{}' on port {} to '{}'",
+            art_bytes.len(),
+            player,
+            payload_port,
+            device_name
+        );
+
+        if let Ok(Ok((tcp_stream, _peer_addr))) =
+            tokio::time::timeout(Duration::from_secs(10), listener.accept()).await
+        {
+            if let Ok(Ok(mut tls_stream)) = tokio::time::timeout(
+                Duration::from_secs(8),
+                self.tls_acceptor.accept(tcp_stream),
+            )
+            .await
+            {
+                let _ = tls_stream.write_all(&art_bytes).await;
+                let _ = tls_stream.flush().await;
+                let _ = tls_stream.shutdown().await;
+                log::info!(
+                    "[mpris-host] Finished streaming Mac album art ({} bytes) to '{}'",
+                    art_bytes.len(),
+                    device_name
+                );
+            }
+        }
     }
 
     /// Reads the host MacBook's battery percentage (0..=100) and charging status via `pmset -g batt`.
