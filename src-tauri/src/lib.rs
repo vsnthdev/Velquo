@@ -473,6 +473,80 @@ fn focus_main_window(app: AppHandle) {
     open_main_window(&app);
 }
 
+#[tauri::command]
+async fn open_file_browser_window(
+    device_id: String,
+    device_name: String,
+    app: AppHandle,
+) -> Result<(), String> {
+    let sanitized_id: String = device_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    let label = format!("sftp-{}", sanitized_id);
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        let _ = app.show();
+        macos_notify::refresh_macos_dock_icon(&app);
+    }
+
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.unminimize();
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        log::info!(
+            "[sftp-window] Focused existing file browser window '{}'",
+            label
+        );
+        return Ok(());
+    }
+
+    let url = format!("index.html?window=file-browser&deviceId={}", device_id);
+    let builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        &label,
+        tauri::WebviewUrl::App(url.into()),
+    )
+    .title(format!("{} — Files", device_name))
+    .inner_size(620.0, 500.0)
+    .min_inner_size(460.0, 340.0)
+    .resizable(true)
+    .maximizable(true)
+    .minimizable(true)
+    .closable(true)
+    .decorations(true)
+    .center();
+
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true);
+
+    let window = builder.build().map_err(|e| e.to_string())?;
+    let _ = window.show();
+    let _ = window.set_focus();
+    log::info!(
+        "[sftp-window] Spawned resizable file browser window '{}' for '{}'",
+        label,
+        device_name
+    );
+    Ok(())
+}
+
+fn has_any_visible_window(app: &AppHandle, excluding_label: Option<&str>) -> bool {
+    for (label, win) in app.webview_windows() {
+        if excluding_label == Some(label.as_str()) {
+            continue;
+        }
+        if win.is_visible().unwrap_or(false) {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn open_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "macos")]
@@ -797,6 +871,7 @@ pub fn run() {
             sftp_browse,
             sftp_download_file,
             sftp_delete_entry,
+            open_file_browser_window,
             clear_logs,
             quit_app,
             restart_app,
@@ -876,19 +951,28 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Clicking the red close button (✕) hides the window, removes the Dock icon, and keeps the menu bar icon active
+            // Clicking the red close button (✕) on main hides the window; closing the last visible window hides the Dock icon
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     log::info!(
-                        "[window] Close button clicked — hiding window and Dock icon (daemon stays active in menu bar)"
+                        "[window] Close button clicked on main — hiding window (daemon stays active in menu bar)"
                     );
                     let _ = window.hide();
                     api.prevent_close();
                     #[cfg(target_os = "macos")]
                     {
-                        let _ = window
-                            .app_handle()
-                            .set_activation_policy(tauri::ActivationPolicy::Accessory);
+                        let app = window.app_handle();
+                        if !has_any_visible_window(app, Some("main")) {
+                            let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                        }
+                    }
+                }
+            } else if let tauri::WindowEvent::Destroyed = event {
+                #[cfg(target_os = "macos")]
+                {
+                    let app = window.app_handle();
+                    if !has_any_visible_window(app, Some(window.label())) {
+                        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                     }
                 }
             } else if let tauri::WindowEvent::ThemeChanged(_) = event {
