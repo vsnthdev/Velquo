@@ -384,6 +384,17 @@ fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
+#[tauri::command]
+fn restart_app(app: AppHandle) {
+    log::info!("[updater] Restarting application to apply update");
+    app.restart();
+}
+
+#[tauri::command]
+fn focus_main_window(app: AppHandle) {
+    open_main_window(&app);
+}
+
 pub fn open_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "macos")]
@@ -677,6 +688,7 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(daemon)
         .invoke_handler(tauri::generate_handler![
             get_app_snapshot,
@@ -705,6 +717,8 @@ pub fn run() {
             remove_device_run_command,
             clear_logs,
             quit_app,
+            restart_app,
+            focus_main_window,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]

@@ -12,6 +12,7 @@
     "core:tray:default",
     "autostart:default",
     "dialog:default",
-    "opener:default"
+    "opener:default",
+    "updater:default"
   ]
 }

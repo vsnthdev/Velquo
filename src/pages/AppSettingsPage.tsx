@@ -1,4 +1,4 @@
-import { GithubLogo } from "@phosphor-icons/react";
+import { ArrowsClockwise, Check, GithubLogo } from "@phosphor-icons/react";
 import { getVersion } from "@tauri-apps/api/app";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -9,14 +9,19 @@ import pkg from "../../package.json";
 interface AppSettingsPageProps {
   ignoreWhatsappConversations: boolean;
   onToggleIgnoreWhatsappConversations: () => void;
+  onCheckForUpdates: () => Promise<"update-found" | "up-to-date" | "error">;
 }
 
 export function AppSettingsPage({
   ignoreWhatsappConversations,
   onToggleIgnoreWhatsappConversations,
+  onCheckForUpdates,
 }: AppSettingsPageProps) {
   const [launchOnStartup, setLaunchOnStartup] = useState<boolean>(false);
   const [appVersion, setAppVersion] = useState<string>(pkg.version);
+  const [checkStatus, setCheckStatus] = useState<
+    "idle" | "checking" | "up-to-date" | "error"
+  >("idle");
   const repoUrl = pkg.homepage;
   const repoDisplay = repoUrl.replace(/^https?:\/\//, "");
 
@@ -59,6 +64,32 @@ export function AppSettingsPage({
       await openUrl(repoUrl);
     } catch (err) {
       console.error("Failed to open GitHub URL:", err);
+    }
+  };
+
+  const handleManualUpdateCheck = async () => {
+    if (checkStatus === "checking") return;
+    setCheckStatus("checking");
+    try {
+      const res = await onCheckForUpdates();
+      if (res === "up-to-date") {
+        setCheckStatus("up-to-date");
+        setTimeout(() => {
+          setCheckStatus((prev) => (prev === "up-to-date" ? "idle" : prev));
+        }, 2500);
+      } else if (res === "error") {
+        setCheckStatus("error");
+        setTimeout(() => {
+          setCheckStatus((prev) => (prev === "error" ? "idle" : prev));
+        }, 2500);
+      } else {
+        setCheckStatus("idle");
+      }
+    } catch {
+      setCheckStatus("error");
+      setTimeout(() => {
+        setCheckStatus((prev) => (prev === "error" ? "idle" : prev));
+      }, 2500);
     }
   };
 
@@ -112,6 +143,50 @@ export function AppSettingsPage({
             className="h-5 w-5 rounded-full bg-white shadow-sm"
           />
         </button>
+      </div>
+
+      {/* Check for updates row */}
+      <div className="mt-3 flex items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20">
+        <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
+          Check for updates
+        </span>
+
+        <motion.button
+          type="button"
+          disabled={checkStatus === "checking"}
+          whileHover={checkStatus === "checking" ? undefined : { scale: 1.02 }}
+          whileTap={checkStatus === "checking" ? undefined : { scale: 0.97 }}
+          onClick={handleManualUpdateCheck}
+          className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1 text-[12px] font-medium transition-colors ${
+            checkStatus === "up-to-date"
+              ? "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
+              : checkStatus === "error"
+                ? "border-amber-500/30 bg-amber-500/12 text-amber-700 dark:text-amber-300"
+                : "border-black/12 bg-black/[0.04] text-zinc-800 hover:border-black/20 hover:bg-black/[0.07] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.09]"
+          }`}
+        >
+          {checkStatus === "up-to-date" ? (
+            <>
+              <Check size={13} weight="bold" />
+              <span>Up to date</span>
+            </>
+          ) : (
+            <>
+              <ArrowsClockwise
+                size={13}
+                weight="bold"
+                className={checkStatus === "checking" ? "animate-spin" : ""}
+              />
+              <span>
+                {checkStatus === "checking"
+                  ? "Checking..."
+                  : checkStatus === "error"
+                    ? "Up to date"
+                    : "Check now"}
+              </span>
+            </>
+          )}
+        </motion.button>
       </div>
 
       {/* Ignore WhatsApp conversations toggle */}

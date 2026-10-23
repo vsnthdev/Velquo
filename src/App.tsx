@@ -2,10 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import { AnimatePresence, motion } from "motion/react";
-import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import { PingToast } from "./components/PingToast";
 import { Sidebar } from "./components/Sidebar";
+import { UpdateModal } from "./components/UpdateModal";
 import { AppSettingsPage } from "./pages/AppSettingsPage";
 import { DevicePage } from "./pages/DevicePage";
 import { PairDevicePage } from "./pages/PairDevicePage";
@@ -41,12 +43,60 @@ export default function App() {
     notificationId: string;
     seq: number;
   } | null>(null);
+  const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
 
   const dropZoneRef = useRef<HTMLDivElement | null>(null);
   const selectedDeviceRef = useRef<DeviceView | null>(null);
   const activeViewRef = useRef<ActiveView>(activeView);
   activeViewRef.current = activeView;
   const prevPairedIdsRef = useRef<Set<string>>(new Set());
+
+  const runUpdateCheck = useCallback(
+    async (
+      force: boolean
+    ): Promise<"update-found" | "up-to-date" | "error"> => {
+      try {
+        const update = await check({ timeout: 20000 });
+        if (!update) {
+          return "up-to-date";
+        }
+
+        const skippedVersion = localStorage.getItem(
+          "velquo.skippedUpdateVersion"
+        );
+        if (!force && skippedVersion === update.version) {
+          return "up-to-date";
+        }
+
+        setAvailableUpdate(update);
+        setIsUpdateModalOpen(true);
+        invoke("focus_main_window").catch(() => {});
+        return "update-found";
+      } catch (err) {
+        console.debug("[updater] Update check finished:", err);
+        return "error";
+      }
+    },
+    []
+  );
+
+  // Automatic background update check shortly after launch and every 8 hours
+  useEffect(() => {
+    const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
+    const initialTimer = setTimeout(() => {
+      runUpdateCheck(false);
+    }, 10000);
+
+    const intervalTimer = setInterval(() => {
+      runUpdateCheck(false);
+    }, EIGHT_HOURS_MS);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(intervalTimer);
+    };
+  }, [runUpdateCheck]);
 
   useEffect(() => {
     let disposed = false;
@@ -582,6 +632,7 @@ export default function App() {
                   enabled: !ignoreWhatsappConversations,
                 })
               }
+              onCheckForUpdates={() => runUpdateCheck(true)}
             />
           )}
 
@@ -593,6 +644,17 @@ export default function App() {
           )}
         </AnimatePresence>
         </main>
+
+        <UpdateModal
+          update={availableUpdate}
+          open={isUpdateModalOpen}
+          onOpenChange={setIsUpdateModalOpen}
+          onSkipVersion={(version) => {
+            localStorage.setItem("velquo.skippedUpdateVersion", version);
+            setIsUpdateModalOpen(false);
+          }}
+          rightPaneContainer={rightPaneEl}
+        />
       </div>
     </div>
   );
