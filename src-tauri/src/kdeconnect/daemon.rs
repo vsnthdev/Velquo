@@ -2171,26 +2171,32 @@ impl KdeConnectDaemon {
 
         match event {
             "ringing" | "talking" if !is_cancel => {
-                {
+                let already_paused_for_this_call = {
                     let mut active = self.active_call_events.lock().unwrap();
                     active.insert(format!("{}:{}", device_id, event));
                     let mut seq = self.call_state_seq.lock().unwrap();
                     *seq = seq.wrapping_add(1);
-                }
+                    let paused = self.call_paused_sources.lock().unwrap();
+                    !paused.is_empty()
+                };
 
-                let daemon = Arc::clone(self);
-                tokio::spawn(async move {
-                    if let Ok(newly_paused) =
-                        tokio::task::spawn_blocking(pause_mac_media_for_call).await
-                    {
-                        if !newly_paused.is_empty() {
-                            let mut paused = daemon.call_paused_sources.lock().unwrap();
-                            for src in newly_paused {
-                                paused.insert(src);
+                // Only run `pause_mac_media_for_call` if we haven't already paused Mac media for this call
+                // (prevents a `ringing` -> `talking` transition from sending a second toggle key!)
+                if !already_paused_for_this_call {
+                    let daemon = Arc::clone(self);
+                    tokio::spawn(async move {
+                        if let Ok(newly_paused) =
+                            tokio::task::spawn_blocking(pause_mac_media_for_call).await
+                        {
+                            if !newly_paused.is_empty() {
+                                let mut paused = daemon.call_paused_sources.lock().unwrap();
+                                for src in newly_paused {
+                                    paused.insert(src);
+                                }
                             }
                         }
-                    }
-                });
+                    });
+                }
             }
             "ringing" | "talking" if is_cancel => {
                 let (all_calls_ended, snapshot_seq) = {

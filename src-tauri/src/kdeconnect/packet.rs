@@ -144,7 +144,17 @@ impl NetworkPacket {
     }
 
     pub fn get_bool(&self, key: &str) -> Option<bool> {
-        self.body.get(key).and_then(|v| v.as_bool())
+        self.body.get(key).and_then(|v| {
+            v.as_bool()
+                .or_else(|| v.as_i64().map(|n| n != 0))
+                .or_else(|| {
+                    v.as_str().and_then(|s| match s.trim().to_ascii_lowercase().as_str() {
+                        "true" | "1" | "yes" => Some(true),
+                        "false" | "0" | "no" => Some(false),
+                        _ => None,
+                    })
+                })
+        })
     }
 
     pub fn get_string_list(&self, key: &str) -> Vec<String> {
