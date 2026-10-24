@@ -1,0 +1,11 @@
+{
+    "version": "0.3.0",
+    "notes": "First version to be released into GitHub.",
+    "pub_date": "2026-10-24T04:16:15Z",
+    "platforms": {
+        "darwin-aarch64": {
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRak9iRWxRUWppdTlzNTlFZ1ZtVitZVkppZ2FucFRlNkJCNCt3RzRtSWg1eTBQSUhpL3hUNE5VY3BvQ2I5Vlp4aGU5UzVBY0xYWGlVREFyaEVLb2owbGdBTWFTcGpHZmdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyODE1MzExCWZpbGU6VmVscXVvLmFwcC50YXIuZ3oJdmVyc2lvbjowLjMuMApZV1M2SXB6SE1DZnpsWVVodmJZTElVVGhxWmNXM2NhSXF4T1pQL1AwRHl4ZXZiMmRidHRBUHJrd1R6aytnVzE4MUFaclBWMmppZE5YYVZoWUR6cHNDdz09Cg==",
+            "url": "https://github.com/vsnthdev/Velquo/releases/download/v0.3.0/Velquo.app.tar.gz"
+        }
+    }
+}
