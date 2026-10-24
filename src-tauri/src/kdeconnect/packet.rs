@@ -20,6 +20,7 @@ pub const PACKET_TYPE_CLIPBOARD: &str = "kdeconnect.clipboard";
 pub const PACKET_TYPE_CLIPBOARD_CONNECT: &str = "kdeconnect.clipboard.connect";
 pub const PACKET_TYPE_PRESENTER: &str = "kdeconnect.presenter";
 pub const PACKET_TYPE_MOUSEPAD_REQUEST: &str = "kdeconnect.mousepad.request";
+pub const PACKET_TYPE_MOUSEPAD_ECHO: &str = "kdeconnect.mousepad.echo";
 pub const PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE: &str = "kdeconnect.mousepad.keyboardstate";
 pub const PACKET_TYPE_FINDMYPHONE_REQUEST: &str = "kdeconnect.findmyphone.request";
 pub const PACKET_TYPE_NOTIFICATION: &str = "kdeconnect.notification";
@@ -77,6 +78,8 @@ pub fn supported_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_CLIPBOARD_CONNECT.to_string(),
         PACKET_TYPE_PRESENTER.to_string(),
         PACKET_TYPE_MOUSEPAD_REQUEST.to_string(),
+        PACKET_TYPE_MOUSEPAD_ECHO.to_string(),
+        PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE.to_string(),
         PACKET_TYPE_FINDMYPHONE_REQUEST.to_string(),
         PACKET_TYPE_NOTIFICATION.to_string(),
         PACKET_TYPE_RUNCOMMAND_REQUEST.to_string(),
@@ -96,6 +99,8 @@ pub fn supported_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_MPRIS_REQUEST.to_string(),
         PACKET_TYPE_CLIPBOARD.to_string(),
         PACKET_TYPE_CLIPBOARD_CONNECT.to_string(),
+        PACKET_TYPE_MOUSEPAD_REQUEST.to_string(),
+        PACKET_TYPE_MOUSEPAD_ECHO.to_string(),
         PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE.to_string(),
         PACKET_TYPE_FINDMYPHONE_REQUEST.to_string(),
         PACKET_TYPE_NOTIFICATION_REQUEST.to_string(),
@@ -390,6 +395,36 @@ impl NetworkPacket {
         let mut body = Map::new();
         body.insert("state".into(), json!(state));
         Self::new(PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE, body)
+    }
+
+    pub fn remote_keyboard_keypress(
+        key: &str,
+        special_key: i32,
+        shift: bool,
+        ctrl: bool,
+        alt: bool,
+        super_key: bool,
+        send_ack: bool,
+    ) -> Self {
+        let mut body = Map::new();
+        body.insert("key".into(), json!(key));
+        if special_key > 0 {
+            body.insert("specialKey".into(), json!(special_key));
+        }
+        if shift {
+            body.insert("shift".into(), json!(true));
+        }
+        if ctrl {
+            body.insert("ctrl".into(), json!(true));
+        }
+        if alt {
+            body.insert("alt".into(), json!(true));
+        }
+        if super_key {
+            body.insert("super".into(), json!(true));
+        }
+        body.insert("sendAck".into(), json!(send_ack));
+        Self::new(PACKET_TYPE_MOUSEPAD_REQUEST, body)
     }
 
     pub fn find_my_phone() -> Self {

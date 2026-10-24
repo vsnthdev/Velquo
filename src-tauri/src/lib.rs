@@ -373,6 +373,33 @@ fn remove_device_run_command(
 }
 
 #[tauri::command]
+fn send_remote_key(
+    device_id: String,
+    key: String,
+    special_key: i32,
+    shift: bool,
+    ctrl: bool,
+    alt: bool,
+    super_key: bool,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    daemon
+        .send_packet_to_device(
+            &device_id,
+            &NetworkPacket::remote_keyboard_keypress(
+                &key,
+                special_key,
+                shift,
+                ctrl,
+                alt,
+                super_key,
+                false,
+            ),
+        )
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn clear_logs() {
     AppLogger::clear_entries();
     log::info!("[ui] Logs cleared");
@@ -715,6 +742,7 @@ pub fn run() {
             set_ignore_whatsapp_conversations,
             add_device_run_command,
             remove_device_run_command,
+            send_remote_key,
             clear_logs,
             quit_app,
             restart_app,

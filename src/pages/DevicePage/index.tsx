@@ -195,6 +195,7 @@ export function DevicePage({
             justDroppedCount={justDroppedCount}
             onFilesPicked={onFilesPicked}
             highlightedNotification={highlightedNotification}
+            rightPaneContainer={rightPaneContainer}
           />
         )}
       </AnimatePresence>

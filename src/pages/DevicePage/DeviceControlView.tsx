@@ -4,6 +4,7 @@ import {
   Check,
   CheckCircle,
   Copy,
+  Keyboard,
   Link,
   MusicNotes,
   PaperPlaneRight,
@@ -14,6 +15,7 @@ import {
   UploadSimple,
   X,
 } from "@phosphor-icons/react";
+import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -25,9 +27,43 @@ import {
   useMotionValue,
   useTransform,
 } from "motion/react";
-import { type MouseEvent, type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type MouseEvent,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { DeviceView, TransferItem } from "../../types";
 import { formatDurationMs, isValidHttpUrl } from "../../utils/format";
+
+const SPECIAL_KEY_MAP: Record<string, number> = {
+  Backspace: 1,
+  Tab: 2,
+  ArrowLeft: 4,
+  ArrowUp: 5,
+  ArrowRight: 6,
+  ArrowDown: 7,
+  PageUp: 8,
+  PageDown: 9,
+  Home: 10,
+  End: 11,
+  Enter: 12,
+  Delete: 13,
+  Escape: 14,
+  F1: 21,
+  F2: 22,
+  F3: 23,
+  F4: 24,
+  F5: 25,
+  F6: 26,
+  F7: 27,
+  F8: 28,
+  F9: 29,
+  F10: 30,
+  F11: 31,
+  F12: 32,
+};
 
 interface DeviceControlViewProps {
   device: DeviceView;
@@ -42,6 +78,7 @@ interface DeviceControlViewProps {
     notificationId: string;
     seq: number;
   } | null;
+  rightPaneContainer: HTMLElement | null;
 }
 
 export function DeviceControlView({
@@ -53,18 +90,21 @@ export function DeviceControlView({
   justDroppedCount,
   onFilesPicked,
   highlightedNotification,
+  rightPaneContainer,
 }: DeviceControlViewProps) {
   const [displaySecs, setDisplaySecs] = useState<number>(0);
   const [isShareLinkOpen, setIsShareLinkOpen] = useState<boolean>(false);
   const [shareLinkInput, setShareLinkInput] = useState<string>("");
   const [shareLinkTouchedInvalid, setShareLinkTouchedInvalid] =
     useState<boolean>(false);
+  const [isRemoteInputOpen, setIsRemoteInputOpen] = useState<boolean>(false);
   const [nowTickMs, setNowTickMs] = useState<number>(() => Date.now());
   const [copiedNotifId, setCopiedNotifId] = useState<string | null>(null);
   const [activeHighlightNotifId, setActiveHighlightNotifId] = useState<
     string | null
   >(null);
   const notifRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const remoteInputZoneRef = useRef<HTMLDivElement | null>(null);
 
   const seekBarRef = useRef<HTMLDivElement | null>(null);
   const isAnimatingSeekRef = useRef<boolean>(false);
@@ -84,7 +124,88 @@ export function DeviceControlView({
   useEffect(() => {
     setIsShareLinkOpen(false);
     setShareLinkTouchedInvalid(false);
+    setIsRemoteInputOpen(false);
   }, [device.deviceId]);
+
+  useEffect(() => {
+    if (!isRemoteInputOpen || !device.reachable || device.pairState !== "Paired") {
+      return;
+    }
+
+    const handleWindowKeyDown = (e: globalThis.KeyboardEvent) => {
+      // Allow Cmd+V / Ctrl+V to trigger the native paste event
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
+        return;
+      }
+
+      // Prevent Enter, Space, Escape, Tab, Arrow keys, etc. from triggering buttons or closing the dialog
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (
+        e.key === "Shift" ||
+        e.key === "Control" ||
+        e.key === "Alt" ||
+        e.key === "Meta" ||
+        e.key === "CapsLock"
+      ) {
+        return;
+      }
+
+      const specialCode = SPECIAL_KEY_MAP[e.key] ?? 0;
+      if (specialCode > 0) {
+        invoke("send_remote_key", {
+          deviceId: device.deviceId,
+          key: "",
+          specialKey: specialCode,
+          shift: e.shiftKey,
+          ctrl: e.ctrlKey,
+          alt: e.altKey,
+          superKey: e.metaKey,
+        }).catch(() => {});
+        return;
+      }
+
+      if (e.key.length === 1) {
+        invoke("send_remote_key", {
+          deviceId: device.deviceId,
+          key: e.key,
+          specialKey: 0,
+          shift: e.shiftKey && (e.ctrlKey || e.altKey || e.metaKey),
+          ctrl: e.ctrlKey,
+          alt: e.altKey,
+          superKey: e.metaKey,
+        }).catch(() => {});
+      }
+    };
+
+    const handleWindowPaste = (e: globalThis.ClipboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const pasted = e.clipboardData?.getData("text");
+      if (!pasted) return;
+      invoke("send_remote_key", {
+        deviceId: device.deviceId,
+        key: pasted,
+        specialKey: 0,
+        shift: false,
+        ctrl: false,
+        alt: false,
+        superKey: false,
+      }).catch(() => {});
+    };
+
+    window.addEventListener("keydown", handleWindowKeyDown, { capture: true });
+    window.addEventListener("paste", handleWindowPaste, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", handleWindowKeyDown, {
+        capture: true,
+      });
+      window.removeEventListener("paste", handleWindowPaste, {
+        capture: true,
+      });
+    };
+  }, [isRemoteInputOpen, device.reachable, device.pairState, device.deviceId]);
 
   useEffect(() => {
     if (
@@ -947,6 +1068,118 @@ export function DeviceControlView({
             </motion.span>
             <span>{device.isRinging ? "Ringing" : "Ring phone"}</span>
           </motion.button>
+
+          {/* 3rd Quick Action: Remote input Radix Dialog */}
+          <Dialog.Root open={device.reachable && isRemoteInputOpen}>
+            <Dialog.Trigger asChild>
+              <motion.button
+                type="button"
+                onClick={() => {
+                  if (device.reachable && device.pairState === "Paired") {
+                    setIsRemoteInputOpen(true);
+                  }
+                }}
+                whileHover={device.reachable ? { scale: 1.015 } : undefined}
+                whileTap={device.reachable ? { scale: 0.985 } : undefined}
+                transition={{
+                  type: "spring",
+                  stiffness: 450,
+                  damping: 28,
+                }}
+                className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/12 bg-black/[0.02] px-4 py-2.5 text-[13.5px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.05] data-[state=open]:border-black/25 data-[state=open]:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05] dark:data-[state=open]:border-white/25 dark:data-[state=open]:bg-white/[0.07]"
+              >
+                <Keyboard size={16} weight="regular" />
+                <span>Remote input</span>
+              </motion.button>
+            </Dialog.Trigger>
+
+            <AnimatePresence>
+              {device.reachable && isRemoteInputOpen && (
+                <Dialog.Portal forceMount container={rightPaneContainer}>
+                  <Dialog.Overlay asChild forceMount>
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                      className="absolute inset-0 z-40 bg-black/35 backdrop-blur-xs dark:bg-black/55"
+                    />
+                  </Dialog.Overlay>
+
+                  <Dialog.Content
+                    asChild
+                    forceMount
+                    onOpenAutoFocus={(e) => {
+                      e.preventDefault();
+                      remoteInputZoneRef.current?.focus();
+                    }}
+                    onEscapeKeyDown={(e) => {
+                      e.preventDefault();
+                    }}
+                    onPointerDownOutside={(e) => {
+                      e.preventDefault();
+                    }}
+                    onInteractOutside={(e) => {
+                      e.preventDefault();
+                    }}
+                  >
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 480,
+                        damping: 34,
+                      }}
+                      className="absolute top-1/2 left-1/2 z-50 flex w-[88%] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-black/12 bg-white p-5 shadow-2xl outline-none dark:border-white/15 dark:bg-zinc-900"
+                    >
+                      {/* Modal Header */}
+                      <div className="flex items-center justify-between gap-3">
+                        <Dialog.Title className="text-[15.5px] font-semibold text-zinc-900 dark:text-zinc-100">
+                          Remote input
+                        </Dialog.Title>
+
+                        <motion.button
+                          type="button"
+                          tabIndex={-1}
+                          whileHover={{ scale: 1.06 }}
+                          whileTap={{ scale: 0.94 }}
+                          onClick={() => setIsRemoteInputOpen(false)}
+                          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-black/[0.06] hover:text-zinc-700 dark:hover:bg-white/[0.08] dark:hover:text-zinc-200"
+                          aria-label="Close"
+                        >
+                          <X size={15} weight="bold" />
+                        </motion.button>
+                      </div>
+
+                      <Dialog.Description className="sr-only">
+                        Capturing keyboard input for {device.deviceName}
+                      </Dialog.Description>
+
+                      {/* Dotted Keystroke Capture Zone matching the File Drop Zone */}
+                      <div
+                        ref={remoteInputZoneRef}
+                        tabIndex={0}
+                        className="mt-4 flex flex-col items-center justify-center rounded-2xl border-2 border-dotted border-black/20 bg-black/[0.02] px-6 py-9 text-center outline-none dark:border-white/20 dark:bg-white/[0.03]"
+                      >
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-black/[0.05] text-zinc-700 dark:bg-white/[0.08] dark:text-zinc-200">
+                          <Keyboard size={22} weight="regular" />
+                        </div>
+                        <p className="mt-3 text-[13.5px] font-medium text-zinc-700 dark:text-zinc-200">
+                          Capturing keystrokes for {device.deviceName}
+                        </p>
+                        <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+                          Switch to KDE Connect Remote Keyboard on your phone
+                          and start typing
+                        </p>
+                      </div>
+                    </motion.div>
+                  </Dialog.Content>
+                </Dialog.Portal>
+              )}
+            </AnimatePresence>
+          </Dialog.Root>
         </div>
       </div>
 
