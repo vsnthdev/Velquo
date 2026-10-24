@@ -635,6 +635,22 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
         return responses;
     };
 
+    let req_now_playing_flag = packet.get_bool("requestNowPlaying").unwrap_or(false);
+    let req_volume_flag = packet.get_bool("requestVolume").unwrap_or(false);
+    let has_action = packet.body.contains_key("action");
+    let has_set_pos = packet.body.contains_key("SetPosition");
+    let has_seek = packet.body.contains_key("Seek");
+
+    // Fast path for `setVolume`-only packets: apply volume in <0.1ms via CoreAudio without
+    // spawning any subprocesses or echoing a redundant volume packet back while dragging!
+    if let Some(vol) = packet.get_i64("setVolume") {
+        let clamped = vol.clamp(0, 100) as i32;
+        set_mac_player_volume(player, clamped);
+        if !req_now_playing_flag && !req_volume_flag && !has_action && !has_set_pos && !has_seek {
+            return responses;
+        }
+    }
+
     let known_players = get_mac_player_list();
     if !known_players.iter().any(|p| p == player) {
         let mut body = Map::new();
@@ -694,21 +710,8 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
         did_mutate = true;
     }
 
-    // 4. Volume control (`setVolume` 0..=100)
-    if let Some(vol) = packet.get_i64("setVolume") {
-        let clamped = vol.clamp(0, 100) as i32;
-        log::info!(
-            "[mpris-host] Setting volume to {}% on Mac player '{}'",
-            clamped,
-            player
-        );
-        set_mac_player_volume(player, clamped);
-        did_mutate = true;
-    }
-
-    let req_now_playing = packet.get_bool("requestNowPlaying").unwrap_or(false) || did_mutate;
-    let req_volume = packet.get_bool("requestVolume").unwrap_or(false)
-        || packet.body.contains_key("setVolume");
+    let req_now_playing = req_now_playing_flag || did_mutate;
+    let req_volume = req_volume_flag;
 
     if req_now_playing || req_volume {
         if let Some(mut snap) = query_mac_player_status(player) {
@@ -884,14 +887,130 @@ fn seek_mac_player_offset_us(player: &str, offset_us: i64) {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn get_default_output_audio_device_id() -> Option<u32> {
+    const K_AUDIO_OBJECT_SYSTEM_OBJECT: u32 = 1;
+    const K_AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE: u32 = u32::from_be_bytes(*b"dOut");
+    const K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL: u32 = u32::from_be_bytes(*b"glob");
+    const K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN: u32 = 0;
+
+    unsafe {
+        let mut default_device_id: u32 = 0;
+        let mut data_size = std::mem::size_of::<u32>() as u32;
+        let default_dev_addr = AudioObjectPropertyAddress {
+            m_selector: K_AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE,
+            m_scope: K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL,
+            m_element: K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN,
+        };
+
+        let status = AudioObjectGetPropertyData(
+            K_AUDIO_OBJECT_SYSTEM_OBJECT,
+            &default_dev_addr,
+            0,
+            std::ptr::null(),
+            &mut data_size,
+            &mut default_device_id as *mut u32 as *mut c_void,
+        );
+        if status == 0 && default_device_id != 0 {
+            Some(default_device_id)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn set_mac_player_volume(_player: &str, volume: i32) {
-    let script = format!(r#"set volume output volume {}"#, volume);
+    const K_AUDIO_HARDWARE_SERVICE_DEVICE_PROPERTY_VIRTUAL_MAIN_VOLUME: u32 =
+        u32::from_be_bytes(*b"vmvc");
+    const K_AUDIO_DEVICE_PROPERTY_MUTE: u32 = u32::from_be_bytes(*b"mute");
+    const K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT: u32 = u32::from_be_bytes(*b"outp");
+    const K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN: u32 = 0;
+
+    let clamped = volume.clamp(0, 100);
+    let scalar: f32 = (clamped as f32) / 100.0;
+
+    if let Some(dev_id) = get_default_output_audio_device_id() {
+        unsafe {
+            let vol_addr = AudioObjectPropertyAddress {
+                m_selector: K_AUDIO_HARDWARE_SERVICE_DEVICE_PROPERTY_VIRTUAL_MAIN_VOLUME,
+                m_scope: K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT,
+                m_element: K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN,
+            };
+            let mute_addr = AudioObjectPropertyAddress {
+                m_selector: K_AUDIO_DEVICE_PROPERTY_MUTE,
+                m_scope: K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT,
+                m_element: K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN,
+            };
+
+            let mut mute_val: u32 = if clamped == 0 { 1 } else { 0 };
+            let _ = AudioObjectSetPropertyData(
+                dev_id,
+                &mute_addr,
+                0,
+                std::ptr::null(),
+                std::mem::size_of::<u32>() as u32,
+                &mut mute_val as *mut u32 as *const c_void,
+            );
+
+            let status = AudioObjectSetPropertyData(
+                dev_id,
+                &vol_addr,
+                0,
+                std::ptr::null(),
+                std::mem::size_of::<f32>() as u32,
+                &scalar as *const f32 as *const c_void,
+            );
+            if status == 0 {
+                return;
+            }
+        }
+    }
+
+    let script = format!(r#"set volume output volume {}"#, clamped);
     let _ = run_osascript(&script);
 }
 
+#[cfg(not(target_os = "macos"))]
+fn set_mac_player_volume(_player: &str, _volume: i32) {}
+
+#[cfg(target_os = "macos")]
 fn get_macos_system_volume() -> Option<i32> {
+    const K_AUDIO_HARDWARE_SERVICE_DEVICE_PROPERTY_VIRTUAL_MAIN_VOLUME: u32 =
+        u32::from_be_bytes(*b"vmvc");
+    const K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT: u32 = u32::from_be_bytes(*b"outp");
+    const K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN: u32 = 0;
+
+    if let Some(dev_id) = get_default_output_audio_device_id() {
+        unsafe {
+            let mut scalar: f32 = 0.0;
+            let mut data_size = std::mem::size_of::<f32>() as u32;
+            let vol_addr = AudioObjectPropertyAddress {
+                m_selector: K_AUDIO_HARDWARE_SERVICE_DEVICE_PROPERTY_VIRTUAL_MAIN_VOLUME,
+                m_scope: K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT,
+                m_element: K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN,
+            };
+            let status = AudioObjectGetPropertyData(
+                dev_id,
+                &vol_addr,
+                0,
+                std::ptr::null(),
+                &mut data_size,
+                &mut scalar as *mut f32 as *mut c_void,
+            );
+            if status == 0 {
+                return Some(((scalar * 100.0).round() as i32).clamp(0, 100));
+            }
+        }
+    }
+
     let out = run_osascript("output volume of (get volume settings)")?;
     out.trim().parse::<i32>().ok()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn get_macos_system_volume() -> Option<i32> {
+    Some(50)
 }
 
 fn run_osascript(script: &str) -> Option<String> {
@@ -929,6 +1048,7 @@ struct AudioObjectPropertyAddress {
 
 #[cfg(target_os = "macos")]
 #[link(name = "CoreAudio", kind = "framework")]
+#[link(name = "AudioToolbox", kind = "framework")]
 #[link(name = "ApplicationServices", kind = "framework")]
 #[link(name = "CoreGraphics", kind = "framework")]
 #[link(name = "AppKit", kind = "framework")]
@@ -940,6 +1060,14 @@ extern "C" {
         in_qualifier_data: *const c_void,
         io_data_size: *mut u32,
         out_data: *mut c_void,
+    ) -> i32;
+    fn AudioObjectSetPropertyData(
+        in_object_id: u32,
+        in_address: *const AudioObjectPropertyAddress,
+        in_qualifier_data_size: u32,
+        in_qualifier_data: *const c_void,
+        in_data_size: u32,
+        in_data: *const c_void,
     ) -> i32;
     fn objc_getClass(name: *const libc::c_char) -> *mut c_void;
     fn sel_registerName(name: *const libc::c_char) -> *const c_void;
