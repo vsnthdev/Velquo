@@ -620,6 +620,15 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
         body.insert("playerList".into(), json!(player_list));
         body.insert("supportAlbumArtPayload".into(), json!(true));
         responses.push(NetworkPacket::new(PACKET_TYPE_MPRIS, body));
+
+        // Immediately send the current track metadata alongside `playerList` so that even if
+        // Mac media is currently paused when the phone connects, Android's MprisPlugin populates
+        // the player title, artist, and album art right away without waiting for Play.
+        if packet.get_str("player").is_none() {
+            if let Some(snap) = query_mac_player_status("") {
+                responses.push(snap.to_mpris_packet(true, true));
+            }
+        }
     }
 
     let Some(player) = packet.get_str("player") else {
@@ -636,6 +645,7 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
     }
 
     let mut did_mutate = false;
+    let mut expected_playing_override: Option<bool> = None;
 
     // 1. Playback actions: PlayPause, Play, Pause, Stop, Next, Previous
     if let Some(action) = packet.get_str("action") {
@@ -644,7 +654,19 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
             action,
             player
         );
+        match action {
+            "Play" => expected_playing_override = Some(true),
+            "Pause" | "Stop" => expected_playing_override = Some(false),
+            "PlayPause" => {
+                if let Some(pre) = query_mac_player_status(player) {
+                    expected_playing_override = Some(!pre.is_playing);
+                }
+            }
+            _ => {}
+        }
         execute_mac_player_action(player, action);
+        // Allow browser/player Web MediaSession IPC to settle before reading updated state
+        std::thread::sleep(std::time::Duration::from_millis(160));
         did_mutate = true;
     }
 
@@ -656,6 +678,7 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
             player
         );
         set_mac_player_position_ms(player, pos_ms.max(0));
+        std::thread::sleep(std::time::Duration::from_millis(100));
         did_mutate = true;
     }
 
@@ -667,6 +690,7 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
             player
         );
         seek_mac_player_offset_us(player, offset_us);
+        std::thread::sleep(std::time::Duration::from_millis(100));
         did_mutate = true;
     }
 
@@ -689,6 +713,9 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
     if req_now_playing || req_volume {
         if let Some(mut snap) = query_mac_player_status(player) {
             snap.player = player.to_string();
+            if let Some(override_playing) = expected_playing_override {
+                snap.is_playing = override_playing;
+            }
             responses.push(snap.to_mpris_packet(req_now_playing, req_volume));
         }
     }

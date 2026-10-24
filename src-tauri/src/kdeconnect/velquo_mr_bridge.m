@@ -90,6 +90,9 @@ void velquo_mr_get(void) {
 
         NSNumber *rateNum = info[@"kMRMediaRemoteNowPlayingInfoPlaybackRate"];
         double playbackRate = [rateNum isKindOfClass:[NSNumber class]] ? [rateNum doubleValue] : (isPlaying ? 1.0 : 0.0);
+        if ([rateNum isKindOfClass:[NSNumber class]]) {
+            isPlaying = (playbackRate > 0.001) ? YES : NO;
+        }
 
         NSDate *timestampDate = info[@"kMRMediaRemoteNowPlayingInfoTimestamp"];
         if (![timestampDate isKindOfClass:[NSDate class]]) {

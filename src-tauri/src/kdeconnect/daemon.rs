@@ -3512,23 +3512,28 @@ impl KdeConnectDaemon {
             return;
         };
         tauri::async_runtime::spawn(async move {
-            if let Ok((players, snap_opt)) = tokio::task::spawn_blocking(|| {
-                let p = get_mac_player_list();
-                let s = query_mac_player_status("");
-                (p, s)
-            })
-            .await
-            {
-                let mut body = serde_json::Map::new();
-                body.insert("playerList".into(), serde_json::json!(players));
-                body.insert("supportAlbumArtPayload".into(), serde_json::json!(true));
-                let list_pkt = NetworkPacket::new(PACKET_TYPE_MPRIS, body);
-                if let Ok(bytes) = list_pkt.serialize_line() {
-                    let _ = sender.send(bytes);
+            for delay_ms in [0u64, 900u64] {
+                if delay_ms > 0 {
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                 }
-                if let Some(snap) = snap_opt {
-                    if let Ok(bytes) = snap.to_mpris_packet(true, true).serialize_line() {
+                if let Ok((players, snap_opt)) = tokio::task::spawn_blocking(|| {
+                    let p = get_mac_player_list();
+                    let s = query_mac_player_status("");
+                    (p, s)
+                })
+                .await
+                {
+                    let mut body = serde_json::Map::new();
+                    body.insert("playerList".into(), serde_json::json!(players));
+                    body.insert("supportAlbumArtPayload".into(), serde_json::json!(true));
+                    let list_pkt = NetworkPacket::new(PACKET_TYPE_MPRIS, body);
+                    if let Ok(bytes) = list_pkt.serialize_line() {
                         let _ = sender.send(bytes);
+                    }
+                    if let Some(snap) = snap_opt {
+                        if let Ok(bytes) = snap.to_mpris_packet(true, true).serialize_line() {
+                            let _ = sender.send(bytes);
+                        }
                     }
                 }
             }
