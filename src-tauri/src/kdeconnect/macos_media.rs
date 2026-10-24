@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 pub const DEFAULT_MAC_PLAYER: &str = "macOS Media";
 pub const PLAYER_SPOTIFY: &str = "Spotify";
@@ -42,6 +43,24 @@ struct CachedAlbumArt {
 static ALBUM_ART_CACHE: OnceLock<Mutex<HashMap<String, Vec<u8>>>> = OnceLock::new();
 static LAST_TRACK_ART: OnceLock<Mutex<Option<CachedAlbumArt>>> = OnceLock::new();
 static MR_DYLIB_PATH: OnceLock<PathBuf> = OnceLock::new();
+static PENDING_PLAYBACK_OVERRIDE: OnceLock<Mutex<Option<(bool, Instant)>>> = OnceLock::new();
+
+pub type MacMediaBroadcastSig = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    bool,
+    i64,
+    Vec<String>,
+);
+
+static LAST_BROADCAST_SIG: OnceLock<Mutex<Option<MacMediaBroadcastSig>>> = OnceLock::new();
+
+pub fn last_broadcast_sig_store() -> &'static Mutex<Option<MacMediaBroadcastSig>> {
+    LAST_BROADCAST_SIG.get_or_init(|| Mutex::new(None))
+}
 
 fn album_art_store() -> &'static Mutex<HashMap<String, Vec<u8>>> {
     ALBUM_ART_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -49,6 +68,33 @@ fn album_art_store() -> &'static Mutex<HashMap<String, Vec<u8>>> {
 
 fn last_track_art_store() -> &'static Mutex<Option<CachedAlbumArt>> {
     LAST_TRACK_ART.get_or_init(|| Mutex::new(None))
+}
+
+fn pending_playback_override_store() -> &'static Mutex<Option<(bool, Instant)>> {
+    PENDING_PLAYBACK_OVERRIDE.get_or_init(|| Mutex::new(None))
+}
+
+fn set_pending_playback_override(target_playing: bool) {
+    if let Ok(mut guard) = pending_playback_override_store().lock() {
+        *guard = Some((target_playing, Instant::now() + Duration::from_millis(1600)));
+    }
+}
+
+fn apply_pending_playback_override(reported_playing: bool) -> bool {
+    if let Ok(mut guard) = pending_playback_override_store().lock() {
+        if let Some((target_playing, expires_at)) = *guard {
+            if Instant::now() < expires_at {
+                if reported_playing == target_playing {
+                    // MediaRemote caught up to our toggled state!
+                    *guard = None;
+                }
+                return target_playing;
+            } else {
+                *guard = None;
+            }
+        }
+    }
+    reported_playing
 }
 
 #[cfg(target_os = "macos")]
@@ -74,9 +120,19 @@ fn ensure_mr_bridge_dylib() -> Option<PathBuf> {
     };
 
     if needs_write {
-        if let Err(e) = fs::write(&dylib_path, EMBEDDED_DYLIB) {
+        let tmp_path = dir.join(format!("libvelquo_mr_bridge.{}.tmp", std::process::id()));
+        if let Err(e) = fs::write(&tmp_path, EMBEDDED_DYLIB) {
             log::warn!(
-                "[mpris-host] Failed to write libvelquo_mr_bridge.dylib to {:?}: {}",
+                "[mpris-host] Failed to write temp dylib {:?}: {}",
+                tmp_path,
+                e
+            );
+            return None;
+        }
+        if let Err(e) = fs::rename(&tmp_path, &dylib_path) {
+            let _ = fs::remove_file(&tmp_path);
+            log::warn!(
+                "[mpris-host] Failed to rename temp dylib to {:?}: {}",
                 dylib_path,
                 e
             );
@@ -492,7 +548,8 @@ pub fn query_mac_player_status(requested_player: &str) -> Option<MacPlayerSnapsh
 
     // 1. Primary source: macOS Control Center Now Playing (via MediaRemote bridge)
     if let Some(cc) = query_control_center_now_playing(false) {
-        if !cc.title.is_empty() || !cc.artist.is_empty() || cc.is_playing {
+        let effective_playing = apply_pending_playback_override(cc.is_playing);
+        if !cc.title.is_empty() || !cc.artist.is_empty() || effective_playing {
             let player_name = if !cc.app_name.trim().is_empty() {
                 cc.app_name.trim().to_string()
             } else if !requested_player.is_empty() {
@@ -517,7 +574,7 @@ pub fn query_mac_player_status(requested_player: &str) -> Option<MacPlayerSnapsh
                 artist: cc.artist,
                 album: cc.album,
                 album_art_url,
-                is_playing: cc.is_playing,
+                is_playing: effective_playing,
                 position_ms,
                 length_ms,
                 volume: sys_vol,
@@ -651,17 +708,23 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
         }
     }
 
-    let known_players = get_mac_player_list();
-    if !known_players.iter().any(|p| p == player) {
-        let mut body = Map::new();
-        body.insert("playerList".into(), json!(known_players));
-        body.insert("supportAlbumArtPayload".into(), json!(true));
-        responses.push(NetworkPacket::new(PACKET_TYPE_MPRIS, body));
-        return responses;
-    }
-
     let mut did_mutate = false;
-    let mut expected_playing_override: Option<bool> = None;
+    let mut pre_action_snap = query_mac_player_status(player);
+    let has_matched_player = pre_action_snap
+        .as_ref()
+        .map(|s| s.player == player || s.app_name == player)
+        .unwrap_or(false);
+
+    if !has_matched_player {
+        let known_players = get_mac_player_list();
+        if !known_players.iter().any(|p| p == player) {
+            let mut body = Map::new();
+            body.insert("playerList".into(), json!(known_players));
+            body.insert("supportAlbumArtPayload".into(), json!(true));
+            responses.push(NetworkPacket::new(PACKET_TYPE_MPRIS, body));
+            return responses;
+        }
+    }
 
     // 1. Playback actions: PlayPause, Play, Pause, Stop, Next, Previous
     if let Some(action) = packet.get_str("action") {
@@ -670,19 +733,23 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
             action,
             player
         );
-        match action {
-            "Play" => expected_playing_override = Some(true),
-            "Pause" | "Stop" => expected_playing_override = Some(false),
-            "PlayPause" => {
-                if let Some(pre) = query_mac_player_status(player) {
-                    expected_playing_override = Some(!pre.is_playing);
-                }
+        let target_playing = match action {
+            "Play" => Some(true),
+            "Pause" | "Stop" => Some(false),
+            "PlayPause" => pre_action_snap.as_ref().map(|pre| !pre.is_playing),
+            _ => None,
+        };
+        if let Some(target) = target_playing {
+            set_pending_playback_override(target);
+            if let Some(ref mut s) = pre_action_snap {
+                s.is_playing = target;
             }
-            _ => {}
         }
         execute_mac_player_action(player, action);
-        // Allow browser/player Web MediaSession IPC to settle before reading updated state
-        std::thread::sleep(std::time::Duration::from_millis(160));
+        if matches!(action, "Next" | "Previous") {
+            std::thread::sleep(std::time::Duration::from_millis(180));
+            pre_action_snap = query_mac_player_status(player);
+        }
         did_mutate = true;
     }
 
@@ -693,8 +760,11 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
             pos_ms,
             player
         );
-        set_mac_player_position_ms(player, pos_ms.max(0));
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        let clamped_pos = pos_ms.max(0);
+        set_mac_player_position_ms(player, clamped_pos);
+        if let Some(ref mut s) = pre_action_snap {
+            s.position_ms = clamped_pos;
+        }
         did_mutate = true;
     }
 
@@ -706,7 +776,9 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
             player
         );
         seek_mac_player_offset_us(player, offset_us);
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        if let Some(ref mut s) = pre_action_snap {
+            s.position_ms = (s.position_ms + (offset_us / 1000)).clamp(0, s.length_ms.max(0));
+        }
         did_mutate = true;
     }
 
@@ -714,10 +786,25 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
     let req_volume = req_volume_flag;
 
     if req_now_playing || req_volume {
-        if let Some(mut snap) = query_mac_player_status(player) {
+        if let Some(mut snap) = pre_action_snap {
             snap.player = player.to_string();
-            if let Some(override_playing) = expected_playing_override {
-                snap.is_playing = override_playing;
+            if did_mutate {
+                if let Ok(mut sig_guard) = last_broadcast_sig_store().lock() {
+                    let prev_players = sig_guard
+                        .as_ref()
+                        .map(|s| s.7.clone())
+                        .unwrap_or_else(|| vec![snap.player.clone()]);
+                    *sig_guard = Some((
+                        snap.player.clone(),
+                        snap.title.clone(),
+                        snap.artist.clone(),
+                        snap.album.clone(),
+                        snap.album_art_url.clone(),
+                        snap.is_playing,
+                        snap.length_ms,
+                        prev_players,
+                    ));
+                }
             }
             responses.push(snap.to_mpris_packet(req_now_playing, req_volume));
         }
