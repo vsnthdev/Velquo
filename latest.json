@@ -1,11 +1,11 @@
 {
-    "version": "1.1.1",
-    "notes": "Fixed browsing files on Android phone not working.",
-    "pub_date": "2026-10-24T16:35:36Z",
+    "version": "1.1.2",
+    "notes": "Fixed signature issues with the updater script.",
+    "pub_date": "2026-10-24T17:03:08Z",
     "platforms": {
         "darwin-aarch64": {
-            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRak9iRWxRUWppdTl3S0xqMlRJVEVud1lpTzBzZksrSllzWlJVRmcwUm9OYk1SdWQrZGR3TEF5Ymd1TEkveVdjVXVob2tXakI0OWJhTUdGb00vN0JtOXoyaHYzemRrNGdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyODU5OTYwCWZpbGU6VmVscXVvLmFwcC50YXIuZ3oJdmVyc2lvbjoxLjEuMQpWd0VaRENRYnBCQTVhWnJ2TmRPUDd1SVVqakhHNUlsSUZ2T3c4WVJ0SENvNkJUT3BQN1JMSmVWN2kyR2pEYjB4dU1VdURtZHNsVENOOU1DVXVkWlNEQT09Cg==",
-            "url": "https://github.com/vsnthdev/Velquo/releases/download/v1.1.1/Velquo.app.tar.gz"
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRak9iRWxRUWppdS9saDhJVW4randybG4yZnVUdHlJaHg0UDBRajhXQ3hvVFBKalNENkM1aWl4TkVLN0pnS0ozM2xCUDN5b3FWanpicEl6WVZrTkM5akJuY3c0QnUxS2dzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyODYxMzg4CWZpbGU6VmVscXVvLmFwcC50YXIuZ3oJdmVyc2lvbjoxLjEuMgpvMEJ2SGk3QStSbkFtNks0c0FwOU9BbFlXcHV4bWRpUExGSnVOTHBKNCt0YWtFQmJUTGNGZlk5Y0V0ZDBqYmd4ckFHMHRoWCt5SkpjTCt6M2RMSEpBdz09Cg==",
+            "url": "https://github.com/vsnthdev/Velquo/releases/download/v1.1.2/Velquo.app.tar.gz"
         }
     }
 }

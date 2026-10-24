@@ -2,7 +2,7 @@
     "name": "velquo",
     "description": "A fast, native Apple Silicon client for KDE Connect — seamlessly bridging Android and Linux devices with your Mac.",
     "private": true,
-    "version": "1.1.1",
+    "version": "1.1.2",
     "homepage": "https://github.com/vsnthdev/Velquo",
     "type": "module",
     "scripts": {
