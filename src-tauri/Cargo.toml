@@ -1,6 +1,6 @@
 [package]
 name = "velquo"
-version = "0.2.0"
+version = "0.3.0"
 description = "A fast, native Apple Silicon client for KDE Connect — seamlessly bridging Android and Linux devices with your Mac."
 authors = ["vsnthdev"]
 edition = "2021"
