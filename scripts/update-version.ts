@@ -3,6 +3,29 @@ import prompts from "prompts";
 import readFileInput from "read-file-input";
 
 const rootUrl = new URL("../", import.meta.url);
+const rootPath = new URL(".", rootUrl).pathname;
+
+// 0. Ensure git working tree is completely clean (no modified, staged, or untracked files)
+const gitStatusProc = Bun.spawn(["git", "status", "--porcelain"], {
+  cwd: rootPath,
+  stdout: "pipe",
+  stderr: "pipe",
+});
+const gitStatusOutput = (
+  await new Response(gitStatusProc.stdout).text()
+).trim();
+const gitStatusExit = await gitStatusProc.exited;
+
+if (gitStatusExit !== 0 || gitStatusOutput.length > 0) {
+  console.error(
+    "==> Aborted: Git working tree is not clean. Please commit or reset all changes and untracked files before running update-version.",
+  );
+  if (gitStatusOutput.length > 0) {
+    console.error(gitStatusOutput);
+  }
+  process.exit(1);
+}
+
 const pkgFile = Bun.file(new URL("package.json", rootUrl));
 const cargoTomlFile = Bun.file(new URL("src-tauri/Cargo.toml", rootUrl));
 const latestJsonFile = Bun.file(new URL("latest.json", rootUrl));
@@ -93,7 +116,7 @@ Bun.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "";
 
 console.log(`\n==> Building and signing release bundle for v${nextVersion}...`);
 const bundleProc = Bun.spawn(["bun", "run", "bundle"], {
-  cwd: new URL(".", rootUrl).pathname,
+  cwd: rootPath,
   stdio: ["inherit", "inherit", "inherit"],
 });
 
