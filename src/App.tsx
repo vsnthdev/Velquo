@@ -511,7 +511,7 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <main className="relative z-10 h-full w-full overflow-x-hidden overflow-y-auto px-8 pt-10 pb-8">
+        <main className="relative z-10 h-full w-full overscroll-none overflow-x-hidden overflow-y-auto px-8 pt-10 pb-8">
           {/* Top-to-50% Ambient Blurred Album Artwork Gradient for the Entire Right Section */}
           <AnimatePresence>
             {hasArtworkBackdrop && artworkSrc && (

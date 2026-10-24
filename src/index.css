@@ -32,6 +32,7 @@ body,
   padding: 0;
   background: transparent;
   overflow: hidden;
+  overscroll-behavior: none;
   font-family: "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-user-select: none;
   user-select: none;
