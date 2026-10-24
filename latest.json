@@ -1,11 +1,11 @@
 {
-    "version": "1.1.0",
-    "notes": "1. Browse, download, and delete files on your phone directly from your Mac.\n2. Type on your phone using your Mac keyboard with Remote Input.\n3. Automatically copy incoming OTP codes in the background with native macOS notifications.\n4. Reliably resume Mac media playback after phone calls end.",
-    "pub_date": "2026-10-24T15:58:22Z",
+    "version": "1.1.1",
+    "notes": "Fixed browsing files on Android phone not working.",
+    "pub_date": "2026-10-24T16:35:36Z",
     "platforms": {
         "darwin-aarch64": {
             "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRak9iRWxRUWppdTBZbGdFUlRMNmx0TG5MNlBOM3VZUnJmTFBjWEJyeUxNaFpSSVdteWRtT2lEaWUvSG9oLzRTbFdLRWNxRk1LQkhqOGx1YUJTUmlLYXZmTkpwUHVzVkFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyODU2NjYyCWZpbGU6VmVscXVvLmFwcC50YXIuZ3oJdmVyc2lvbjoxLjEuMApFb1JnM2ZMK2xtR1hhT0ExZ0NnVnNEdHZMSVdheW5QNUk2SkxWZThJSnJrSDY0T2kyckgwa2F3OHlEZUZlejNWV0tQVjlaRFRuNkt3eWtacE9hNExBdz09Cg==",
-            "url": "https://github.com/vsnthdev/Velquo/releases/download/v1.1.0/Velquo.app.tar.gz"
+            "url": "https://github.com/vsnthdev/Velquo/releases/download/v1.1.1/Velquo.app.tar.gz"
         }
     }
 }
