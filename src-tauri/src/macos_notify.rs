@@ -84,8 +84,7 @@ define_class!(
 
             let is_dismiss_clicked = activation_type
                 == NSUserNotificationActivationType::ActionButtonClicked
-                || (activation_type
-                    == NSUserNotificationActivationType::AdditionalActionClicked
+                || (activation_type == NSUserNotificationActivationType::AdditionalActionClicked
                     && additional_action_id.as_deref() == Some("dismiss"));
 
             if is_dismiss_clicked {
@@ -236,8 +235,8 @@ pub fn show_macos_notification(
             let v1 = NSString::from_str(device_id_owned.as_deref().unwrap_or(""));
             let v2 = NSString::from_str(notif_id_owned.as_deref().unwrap_or(""));
 
-            let v1_obj: &AnyObject = &*v1;
-            let v2_obj: &AnyObject = &*v2;
+            let v1_obj: &AnyObject = &v1;
+            let v2_obj: &AnyObject = &v2;
 
             let dict = NSDictionary::from_slices(&[&*k1, &*k2], &[v1_obj, v2_obj]);
             notification.setUserInfo(Some(&dict));

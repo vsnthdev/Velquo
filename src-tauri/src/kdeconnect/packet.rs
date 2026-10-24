@@ -43,7 +43,10 @@ pub struct NetworkPacket {
     pub body: Map<String, Value>,
     #[serde(rename = "payloadSize", skip_serializing_if = "Option::is_none")]
     pub payload_size: Option<i64>,
-    #[serde(rename = "payloadTransferInfo", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "payloadTransferInfo",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub payload_transfer_info: Option<Map<String, Value>>,
 }
 
@@ -157,11 +160,12 @@ impl NetworkPacket {
             v.as_bool()
                 .or_else(|| v.as_i64().map(|n| n != 0))
                 .or_else(|| {
-                    v.as_str().and_then(|s| match s.trim().to_ascii_lowercase().as_str() {
-                        "true" | "1" | "yes" => Some(true),
-                        "false" | "0" | "no" => Some(false),
-                        _ => None,
-                    })
+                    v.as_str()
+                        .and_then(|s| match s.trim().to_ascii_lowercase().as_str() {
+                            "true" | "1" | "yes" => Some(true),
+                            "false" | "0" | "no" => Some(false),
+                            _ => None,
+                        })
                 })
         })
     }
@@ -218,7 +222,10 @@ impl NetworkPacket {
         body.insert("deviceType".into(), json!(host.device_type));
         body.insert("protocolVersion".into(), json!(PROTOCOL_VERSION));
         body.insert("targetDeviceId".into(), json!(target_device_id));
-        body.insert("targetProtocolVersion".into(), json!(target_protocol_version));
+        body.insert(
+            "targetProtocolVersion".into(),
+            json!(target_protocol_version),
+        );
         body.insert(
             "incomingCapabilities".into(),
             json!(supported_incoming_capabilities()),

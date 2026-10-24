@@ -74,7 +74,10 @@ fn reject_pairing(
     device_id: String,
     daemon: State<'_, Arc<KdeConnectDaemon>>,
 ) -> Result<(), String> {
-    log::info!("[ui] Rejecting/cancelling pairing with device_id={}", device_id);
+    log::info!(
+        "[ui] Rejecting/cancelling pairing with device_id={}",
+        device_id
+    );
     daemon
         .unpair_or_reject(&device_id)
         .map_err(|e| e.to_string())
@@ -109,17 +112,12 @@ fn send_ping(
 }
 
 #[tauri::command]
-fn ring_device(
-    device_id: String,
-    daemon: State<'_, Arc<KdeConnectDaemon>>,
-) -> Result<(), String> {
+fn ring_device(device_id: String, daemon: State<'_, Arc<KdeConnectDaemon>>) -> Result<(), String> {
     log::info!(
         "[ui] Sending Find My Phone (ring) request to device_id={}",
         device_id
     );
-    daemon
-        .ring_device(&device_id)
-        .map_err(|e| e.to_string())
+    daemon.ring_device(&device_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -211,12 +209,10 @@ fn send_url(
         url,
         device_id
     );
-    daemon
-        .send_url_to_device(&device_id, &url)
-        .map_err(|e| {
-            log::error!("[ui] send_url failed: {:?}", e);
-            e.to_string()
-        })
+    daemon.send_url_to_device(&device_id, &url).map_err(|e| {
+        log::error!("[ui] send_url failed: {:?}", e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -330,10 +326,7 @@ fn set_ignore_whatsapp_conversations(
     enabled: bool,
     daemon: State<'_, Arc<KdeConnectDaemon>>,
 ) -> Result<(), String> {
-    log::info!(
-        "[ui] Setting ignore_whatsapp_conversations={}",
-        enabled
-    );
+    log::info!("[ui] Setting ignore_whatsapp_conversations={}", enabled);
     daemon
         .set_ignore_whatsapp_conversations(enabled)
         .map_err(|e| e.to_string())
@@ -408,7 +401,11 @@ async fn sftp_browse(
 ) -> Result<SftpBrowseResponse, String> {
     daemon.sftp_browse(&device_id, path).await.map_err(|e| {
         let msg = format!("{:#}", e);
-        log::warn!("[sftp] sftp_browse failed for device_id={}: {}", device_id, msg);
+        log::warn!(
+            "[sftp] sftp_browse failed for device_id={}: {}",
+            device_id,
+            msg
+        );
         msg
     })
 }
@@ -523,20 +520,17 @@ async fn open_file_browser_window(
     }
 
     let url = format!("index.html?window=file-browser&deviceId={}", device_id);
-    let builder = tauri::WebviewWindowBuilder::new(
-        &app,
-        &label,
-        tauri::WebviewUrl::App(url.into()),
-    )
-    .title(format!("{} — Files", device_name))
-    .inner_size(620.0, 500.0)
-    .min_inner_size(460.0, 340.0)
-    .resizable(true)
-    .maximizable(true)
-    .minimizable(true)
-    .closable(true)
-    .decorations(true)
-    .center();
+    let builder =
+        tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(url.into()))
+            .title(format!("{} — Files", device_name))
+            .inner_size(620.0, 500.0)
+            .min_inner_size(460.0, 340.0)
+            .resizable(true)
+            .maximizable(true)
+            .minimizable(true)
+            .closable(true)
+            .decorations(true)
+            .center();
 
     #[cfg(target_os = "macos")]
     let builder = builder
@@ -664,7 +658,8 @@ fn mark_menu_icons_as_template(tray: &tauri::tray::TrayIcon<tauri::Wry>) {
                         let cls: *const objc2::runtime::AnyClass =
                             objc2::msg_send![&*subview, class];
                         if !cls.is_null() {
-                            let ivar = objc2::ffi::class_getInstanceVariable(cls, c"ivars".as_ptr());
+                            let ivar =
+                                objc2::ffi::class_getInstanceVariable(cls, c"ivars".as_ptr());
                             if !ivar.is_null() {
                                 let offset = objc2::ffi::ivar_getOffset(ivar);
                                 let ivars_ptr = (&*subview as *const _ as *const u8).offset(offset)
@@ -832,9 +827,7 @@ pub fn refresh_tray_menu(app: &AppHandle, trusted_devices: Vec<(String, String, 
 pub fn run() {
     let log_file_path = AppLogger::init();
     log::info!("================================================================");
-    log::info!(
-        "Starting Velquo (macOS Apple Silicon aarch64) - KDE Connect Protocol v8"
-    );
+    log::info!("Starting Velquo (macOS Apple Silicon aarch64) - KDE Connect Protocol v8");
     log::info!("Log file path: {:?}", log_file_path);
     log::info!("================================================================");
 
@@ -900,7 +893,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 // Start silently in the macOS menu bar without opening the window or showing in Dock
-                let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
 
             AppLogger::set_app_handle(app.handle().clone());

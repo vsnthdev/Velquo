@@ -254,7 +254,11 @@ pub struct KdeConnectDaemon {
 }
 
 impl KdeConnectDaemon {
-    pub fn new(config_dir: PathBuf, downloads_dir: PathBuf, log_file_path: PathBuf) -> Result<Arc<Self>> {
+    pub fn new(
+        config_dir: PathBuf,
+        downloads_dir: PathBuf,
+        log_file_path: PathBuf,
+    ) -> Result<Arc<Self>> {
         let _ = fs::create_dir_all(&config_dir);
         let _ = fs::create_dir_all(&downloads_dir);
 
@@ -354,7 +358,11 @@ impl KdeConnectDaemon {
         let path = Self::trusted_devices_file(config_dir);
         if let Ok(data) = fs::read_to_string(&path) {
             if let Ok(map) = serde_json::from_str::<HashMap<String, TrustedDeviceRecord>>(&data) {
-                log::info!("[config] Loaded {} trusted device(s) from {:?}", map.len(), path);
+                log::info!(
+                    "[config] Loaded {} trusted device(s) from {:?}",
+                    map.len(),
+                    path
+                );
                 return map;
             }
         }
@@ -368,7 +376,11 @@ impl KdeConnectDaemon {
                 if let Err(e) = fs::write(&path, json) {
                     log::error!("[config] Failed to save trusted devices: {}", e);
                 } else {
-                    log::info!("[config] Saved {} trusted device(s) to {:?}", guard.len(), path);
+                    log::info!(
+                        "[config] Saved {} trusted device(s) to {:?}",
+                        guard.len(),
+                        path
+                    );
                 }
             }
         }
@@ -546,7 +558,7 @@ impl KdeConnectDaemon {
     pub fn get_transfers_list(&self) -> Vec<TransferItem> {
         let guard = self.transfers.lock().unwrap();
         let mut list = guard.clone();
-        list.sort_by(|a, b| b.timestamp_ms.cmp(&a.timestamp_ms));
+        list.sort_by_key(|b| std::cmp::Reverse(b.timestamp_ms));
         list
     }
 
@@ -573,7 +585,11 @@ impl KdeConnectDaemon {
                     break;
                 }
                 Err(e) => {
-                    log::warn!("[tcp-server] Port {} unavailable ({}), trying next...", port, e);
+                    log::warn!(
+                        "[tcp-server] Port {} unavailable ({}), trying next...",
+                        port,
+                        e
+                    );
                 }
             }
         }
@@ -607,7 +623,11 @@ impl KdeConnectDaemon {
                         let d = Arc::clone(&daemon_tcp);
                         tokio::spawn(async move {
                             if let Err(e) = d.handle_inbound_tcp(stream, peer_addr).await {
-                                log::warn!("[tcp-in] Connection from {} closed/failed: {:?}", peer_addr, e);
+                                log::warn!(
+                                    "[tcp-in] Connection from {} closed/failed: {:?}",
+                                    peer_addr,
+                                    e
+                                );
                             }
                         });
                     }
@@ -669,7 +689,7 @@ impl KdeConnectDaemon {
                 tick_count = tick_count.wrapping_add(1);
 
                 // Every 30s (6 ticks), check if MacBook battery % or charging state changed
-                if tick_count % 6 == 0 {
+                if tick_count.is_multiple_of(6) {
                     if let Some(current_bat) = Self::read_macos_battery_status() {
                         if last_host_battery != Some(current_bat) {
                             log::info!(
@@ -1360,13 +1380,11 @@ impl KdeConnectDaemon {
             conn_bytes.len()
         );
 
-        let mut tls_stream = tokio::time::timeout(
-            Duration::from_secs(6),
-            self.tls_acceptor.accept(tcp_stream),
-        )
-        .await
-        .context("TLS Server handshake timed out")?
-        .context("TLS Server handshake failed")?;
+        let mut tls_stream =
+            tokio::time::timeout(Duration::from_secs(6), self.tls_acceptor.accept(tcp_stream))
+                .await
+                .context("TLS Server handshake timed out")?
+                .context("TLS Server handshake failed")?;
 
         let peer_cert_der = tls_stream
             .get_ref()
@@ -1374,7 +1392,9 @@ impl KdeConnectDaemon {
             .peer_certificates()
             .and_then(|certs| certs.first())
             .map(|c| c.as_ref().to_vec())
-            .ok_or_else(|| anyhow!("Peer did not present a client X.509 certificate during TLS handshake"))?;
+            .ok_or_else(|| {
+                anyhow!("Peer did not present a client X.509 certificate during TLS handshake")
+            })?;
 
         log::info!(
             "[tls] Outbound TCP -> TLS Server handshake succeeded with {} (cert SHA256={})",
@@ -1386,10 +1406,7 @@ impl KdeConnectDaemon {
         let my_identity_bytes = NetworkPacket::full_identity(&self.host).serialize_line()?;
         tls_stream.write_all(&my_identity_bytes).await?;
         tls_stream.flush().await?;
-        log::debug!(
-            "[tls] Sent encrypted full identity packet to {}",
-            peer_addr
-        );
+        log::debug!("[tls] Sent encrypted full identity packet to {}", peer_addr);
 
         let mut buf_reader = BufReader::new(tls_stream);
         let mut first_line = String::new();
@@ -1402,7 +1419,9 @@ impl KdeConnectDaemon {
             .await
             .context("Timed out waiting for peer encrypted identity packet (v8)")??;
             if n == 0 {
-                return Err(anyhow!("Peer closed TLS stream before sending encrypted identity"));
+                return Err(anyhow!(
+                    "Peer closed TLS stream before sending encrypted identity"
+                ));
             }
             let pkt = NetworkPacket::parse_line(first_line.as_bytes())?;
             log::info!(
@@ -1436,7 +1455,9 @@ impl KdeConnectDaemon {
             .await
             .context("Timed out waiting for plaintext connection packet on inbound TCP")??;
         if n == 0 {
-            return Err(anyhow!("Inbound TCP closed before sending connection packet"));
+            return Err(anyhow!(
+                "Inbound TCP closed before sending connection packet"
+            ));
         }
 
         let initial_packet = NetworkPacket::parse_line(line.as_bytes())?;
@@ -1499,7 +1520,9 @@ impl KdeConnectDaemon {
             .peer_certificates()
             .and_then(|certs| certs.first())
             .map(|c| c.as_ref().to_vec())
-            .ok_or_else(|| anyhow!("Peer did not present a server X.509 certificate during TLS handshake"))?;
+            .ok_or_else(|| {
+                anyhow!("Peer did not present a server X.509 certificate during TLS handshake")
+            })?;
 
         log::info!(
             "[tls] Inbound TCP -> TLS Client handshake succeeded with {} (cert SHA256={})",
@@ -1518,12 +1541,10 @@ impl KdeConnectDaemon {
 
             let mut buf_reader = BufReader::new(tls_stream);
             let mut sec_line = String::new();
-            let n = tokio::time::timeout(
-                Duration::from_secs(3),
-                buf_reader.read_line(&mut sec_line),
-            )
-            .await
-            .context("Timed out waiting for peer encrypted v8 identity on inbound TCP")??;
+            let n =
+                tokio::time::timeout(Duration::from_secs(3), buf_reader.read_line(&mut sec_line))
+                    .await
+                    .context("Timed out waiting for peer encrypted v8 identity on inbound TCP")??;
             if n == 0 {
                 return Err(anyhow!(
                     "Peer closed inbound TLS stream before sending encrypted identity"
@@ -1539,8 +1560,14 @@ impl KdeConnectDaemon {
                 .await
         } else {
             let buf_reader = BufReader::new(tls_stream);
-            self.run_authenticated_link(buf_reader, raw_fd, peer_addr, initial_packet, peer_cert_der)
-                .await
+            self.run_authenticated_link(
+                buf_reader,
+                raw_fd,
+                peer_addr,
+                initial_packet,
+                peer_cert_der,
+            )
+            .await
         }
     }
 
@@ -1602,7 +1629,10 @@ impl KdeConnectDaemon {
                         device_id,
                         device_name
                     );
-                    return Err(anyhow!("Certificate mismatch for paired device {}", device_id));
+                    return Err(anyhow!(
+                        "Certificate mismatch for paired device {}",
+                        device_id
+                    ));
                 }
                 let loc = rec
                     .save_location
@@ -1619,7 +1649,15 @@ impl KdeConnectDaemon {
                     rec.run_commands.clone(),
                 )
             } else {
-                (false, true, true, true, true, default_downloads_str, Vec::new())
+                (
+                    false,
+                    true,
+                    true,
+                    true,
+                    true,
+                    default_downloads_str,
+                    Vec::new(),
+                )
             }
         };
 
@@ -2002,7 +2040,11 @@ impl KdeConnectDaemon {
                 }
             }
             PACKET_TYPE_CONNECTIVITY_REPORT => {
-                if let Some(subs) = packet.body.get("signalStrengths").and_then(|v| v.as_object()) {
+                if let Some(subs) = packet
+                    .body
+                    .get("signalStrengths")
+                    .and_then(|v| v.as_object())
+                {
                     let mut sim_list: Vec<SimSignalInfo> = subs
                         .iter()
                         .filter_map(|(slot_key, sub_val)| {
@@ -2010,10 +2052,8 @@ impl KdeConnectDaemon {
                                 .get("networkType")
                                 .and_then(|v| v.as_str())?
                                 .to_string();
-                            let sig_strength = sub_val
-                                .get("signalStrength")
-                                .and_then(|v| v.as_i64())?
-                                as i32;
+                            let sig_strength =
+                                sub_val.get("signalStrength").and_then(|v| v.as_i64())? as i32;
                             Some(SimSignalInfo {
                                 slot_id: slot_key.clone(),
                                 network_type: net_type,
@@ -2071,9 +2111,10 @@ impl KdeConnectDaemon {
                         return;
                     }
 
-                    if let Ok(responses) =
-                        tokio::task::spawn_blocking(move || handle_incoming_mpris_request(&pkt_clone))
-                            .await
+                    if let Ok(responses) = tokio::task::spawn_blocking(move || {
+                        handle_incoming_mpris_request(&pkt_clone)
+                    })
+                    .await
                     {
                         for resp in responses {
                             if let Err(e) = daemon.send_packet_to_device(&dev_id, &resp) {
@@ -2511,12 +2552,7 @@ impl KdeConnectDaemon {
         let _ = self.send_packet_to_device(device_id, &pkt);
     }
 
-    pub fn add_device_run_command(
-        &self,
-        device_id: &str,
-        name: &str,
-        command: &str,
-    ) -> Result<()> {
+    pub fn add_device_run_command(&self, device_id: &str, name: &str, command: &str) -> Result<()> {
         let clean_name = name.trim();
         let clean_cmd = command.trim();
         if clean_name.is_empty() || clean_cmd.is_empty() {
@@ -2892,7 +2928,19 @@ impl KdeConnectDaemon {
             c.is_whitespace()
                 || matches!(
                     c,
-                    ',' | '.' | '!' | '?' | ';' | ':' | '(' | ')' | '[' | ']' | '"' | '\'' | '<' | '>'
+                    ',' | '.'
+                        | '!'
+                        | '?'
+                        | ';'
+                        | ':'
+                        | '('
+                        | ')'
+                        | '['
+                        | ']'
+                        | '"'
+                        | '\''
+                        | '<'
+                        | '>'
                 )
         }) {
             let trimmed = raw_token.trim_matches('-');
@@ -3028,7 +3076,8 @@ impl KdeConnectDaemon {
                             // Remove any generic summary placeholder for this package
                             entry.view.notifications.retain(|n| {
                                 let n_norm = Self::normalize_notif_id(&n.id);
-                                let same_pkg = Self::extract_notif_package(&n_norm) == Some(pkg.as_str());
+                                let same_pkg =
+                                    Self::extract_notif_package(&n_norm) == Some(pkg.as_str());
                                 !(same_pkg && Self::is_generic_summary_placeholder(n))
                             });
                             // If still nothing was removed (e.g. only 1 notification from this package existed with a different sub-id), remove it
@@ -3038,14 +3087,16 @@ impl KdeConnectDaemon {
                                     .notifications
                                     .iter()
                                     .filter(|n| {
-                                        Self::extract_notif_package(&Self::normalize_notif_id(&n.id))
-                                            == Some(pkg.as_str())
+                                        Self::extract_notif_package(&Self::normalize_notif_id(
+                                            &n.id,
+                                        )) == Some(pkg.as_str())
                                     })
                                     .count();
                                 if pkg_count == 1 {
                                     entry.view.notifications.retain(|n| {
-                                        Self::extract_notif_package(&Self::normalize_notif_id(&n.id))
-                                            != Some(pkg.as_str())
+                                        Self::extract_notif_package(&Self::normalize_notif_id(
+                                            &n.id,
+                                        )) != Some(pkg.as_str())
                                     });
                                 }
                             }
@@ -3081,11 +3132,7 @@ impl KdeConnectDaemon {
             return;
         }
 
-        let app_name = packet
-            .get_str("appName")
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let app_name = packet.get_str("appName").unwrap_or("").trim().to_string();
         if app_name.eq_ignore_ascii_case("KDE Connect") {
             return;
         }
@@ -3192,7 +3239,7 @@ impl KdeConnectDaemon {
                 entry
                     .view
                     .notifications
-                    .sort_by(|a, b| b.timestamp_ms.cmp(&a.timestamp_ms));
+                    .sort_by_key(|b| std::cmp::Reverse(b.timestamp_ms));
                 if entry.view.notifications.len() > 25 {
                     entry.view.notifications.truncate(25);
                 }
@@ -3302,10 +3349,8 @@ impl KdeConnectDaemon {
         self.notify_ui();
 
         if is_online_and_paired {
-            let _ = self.send_packet_to_device(
-                device_id,
-                &NetworkPacket::mousepad_keyboard_state(enabled),
-            );
+            let _ = self
+                .send_packet_to_device(device_id, &NetworkPacket::mousepad_keyboard_state(enabled));
         }
 
         Ok(())
@@ -3568,11 +3613,10 @@ impl KdeConnectDaemon {
         album_art_url: &str,
     ) {
         let url_owned = album_art_url.to_string();
-        let maybe_bytes =
-            tokio::task::spawn_blocking(move || get_cached_mac_album_art(&url_owned))
-                .await
-                .ok()
-                .flatten();
+        let maybe_bytes = tokio::task::spawn_blocking(move || get_cached_mac_album_art(&url_owned))
+            .await
+            .ok()
+            .flatten();
 
         let Some(art_bytes) = maybe_bytes else {
             log::debug!(
@@ -3636,11 +3680,9 @@ impl KdeConnectDaemon {
         if let Ok(Ok((tcp_stream, _peer_addr))) =
             tokio::time::timeout(Duration::from_secs(10), listener.accept()).await
         {
-            if let Ok(Ok(mut tls_stream)) = tokio::time::timeout(
-                Duration::from_secs(8),
-                self.tls_acceptor.accept(tcp_stream),
-            )
-            .await
+            if let Ok(Ok(mut tls_stream)) =
+                tokio::time::timeout(Duration::from_secs(8), self.tls_acceptor.accept(tcp_stream))
+                    .await
             {
                 let _ = tls_stream.write_all(&art_bytes).await;
                 let _ = tls_stream.flush().await;
@@ -3678,7 +3720,9 @@ impl KdeConnectDaemon {
                     let clamped = charge.clamp(0, 100);
                     let after = &line[pct_idx + 2..];
                     let is_charging = on_ac_power
-                        || (after.contains("charging") && !after.contains("discharging") && !after.contains("not charging"))
+                        || (after.contains("charging")
+                            && !after.contains("discharging")
+                            && !after.contains("not charging"))
                         || after.contains("charged")
                         || after.contains("finishing charge");
                     return Some((clamped, is_charging));
@@ -3840,13 +3884,13 @@ impl KdeConnectDaemon {
                 log::warn!("[mpris] transferringAlbumArt=true but no albumArtUrl present");
                 return;
             };
-            let player = packet
-                .get_str("player")
-                .unwrap_or("")
-                .to_string();
+            let player = packet.get_str("player").unwrap_or("").to_string();
             let payload_size = packet.payload_size.unwrap_or(0).max(0) as usize;
             if payload_size > 8 * 1024 * 1024 {
-                log::warn!("[mpris] Album art payload too large ({} bytes), ignoring", payload_size);
+                log::warn!(
+                    "[mpris] Album art payload too large ({} bytes), ignoring",
+                    payload_size
+                );
                 return;
             }
 
@@ -3874,7 +3918,9 @@ impl KdeConnectDaemon {
 
                                 // Attach to any matching player entry
                                 for p_info in entry.mpris_players.values_mut() {
-                                    if p_info.album_art_url.as_deref() == Some(album_art_url.as_str()) {
+                                    if p_info.album_art_url.as_deref()
+                                        == Some(album_art_url.as_str())
+                                    {
                                         p_info.album_art_data = Some(data_url.clone());
                                     }
                                 }
@@ -3964,7 +4010,9 @@ impl KdeConnectDaemon {
 
                 let prev_player = entry.mpris_players.get(player).cloned();
 
-                let title = if packet.body.contains_key("title") || packet.body.contains_key("nowPlaying") {
+                let title = if packet.body.contains_key("title")
+                    || packet.body.contains_key("nowPlaying")
+                {
                     packet
                         .get_str("title")
                         .or_else(|| packet.get_str("nowPlaying"))
@@ -4025,7 +4073,8 @@ impl KdeConnectDaemon {
                     .get_bool("isPlaying")
                     .unwrap_or_else(|| prev_player.as_ref().map(|p| p.is_playing).unwrap_or(false));
 
-                let (position_ms, position_updated_at_ms) = if let Some(pos) = packet.get_i64("pos") {
+                let (position_ms, position_updated_at_ms) = if let Some(pos) = packet.get_i64("pos")
+                {
                     (pos, current_millis())
                 } else if let Some(prev) = &prev_player {
                     (prev.position_ms, prev.position_updated_at_ms)
@@ -4046,9 +4095,12 @@ impl KdeConnectDaemon {
                 let can_go_next = packet
                     .get_bool("canGoNext")
                     .unwrap_or_else(|| prev_player.as_ref().map(|p| p.can_go_next).unwrap_or(true));
-                let can_go_previous = packet
-                    .get_bool("canGoPrevious")
-                    .unwrap_or_else(|| prev_player.as_ref().map(|p| p.can_go_previous).unwrap_or(true));
+                let can_go_previous = packet.get_bool("canGoPrevious").unwrap_or_else(|| {
+                    prev_player
+                        .as_ref()
+                        .map(|p| p.can_go_previous)
+                        .unwrap_or(true)
+                });
                 let can_seek = packet
                     .get_bool("canSeek")
                     .unwrap_or_else(|| prev_player.as_ref().map(|p| p.can_seek).unwrap_or(true));
@@ -4287,17 +4339,8 @@ impl KdeConnectDaemon {
                         );
                     }
                     Err(e) => {
-                        log::error!(
-                            "[share-in] File download '{}' failed: {:?}",
-                            clean_name,
-                            e
-                        );
-                        daemon.finish_transfer(
-                            &transfer_id,
-                            "Failed",
-                            None,
-                            Some(e.to_string()),
-                        );
+                        log::error!("[share-in] File download '{}' failed: {:?}", clean_name, e);
+                        daemon.finish_transfer(&transfer_id, "Failed", None, Some(e.to_string()));
                     }
                 }
             });
@@ -4320,8 +4363,7 @@ impl KdeConnectDaemon {
             let extracted_url = text
                 .lines()
                 .map(|l| l.trim())
-                .filter(|l| !l.is_empty())
-                .last()
+                .rfind(|l| !l.is_empty())
                 .filter(|cand| cand.starts_with("http://") || cand.starts_with("https://"))
                 .map(|s| s.to_string());
 

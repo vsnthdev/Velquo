@@ -328,7 +328,7 @@ fn spawn_itunes_hires_upgrade(track_key: String, title: String, artist: String) 
 
         let mut hasher = Sha256::new();
         hasher.update(track_key.as_bytes());
-        hasher.update(&(hires_bytes.len() as u64).to_le_bytes());
+        hasher.update((hires_bytes.len() as u64).to_le_bytes());
         hasher.update(b"itunes-600x600");
         let digest = hasher.finalize();
         let short_hash = digest[..8]
@@ -419,7 +419,7 @@ fn resolve_and_cache_artwork_for_cc(cc: &ControlCenterNowPlaying) -> String {
     if !initial_bytes.is_empty() {
         let mut hasher = Sha256::new();
         hasher.update(track_key.as_bytes());
-        hasher.update(&(initial_bytes.len() as u64).to_le_bytes());
+        hasher.update((initial_bytes.len() as u64).to_le_bytes());
         let digest = hasher.finalize();
         let short_hash = digest[..8]
             .iter()
@@ -652,14 +652,12 @@ pub fn resume_mac_media_after_call(paused_sources: &[String]) {
                 );
                 execute_mac_player_action(source, "Play");
             }
-            DEFAULT_MAC_PLAYER => {
-                if !is_macos_audio_output_running() {
-                    log::info!(
-                        "[pause-music] Resuming macOS Control Center media playback after phone call ended"
-                    );
-                    if !send_control_center_mr_command(Some(MR_CMD_PLAY), None) {
-                        send_macos_media_key(NX_KEYTYPE_PLAY);
-                    }
+            DEFAULT_MAC_PLAYER if !is_macos_audio_output_running() => {
+                log::info!(
+                    "[pause-music] Resuming macOS Control Center media playback after phone call ended"
+                );
+                if !send_control_center_mr_command(Some(MR_CMD_PLAY), None) {
+                    send_macos_media_key(NX_KEYTYPE_PLAY);
                 }
             }
             _ => {}
@@ -1134,11 +1132,23 @@ struct AudioObjectPropertyAddress {
 }
 
 #[cfg(target_os = "macos")]
-#[link(name = "CoreAudio", kind = "framework")]
 #[link(name = "AudioToolbox", kind = "framework")]
+extern "C" {}
+
+#[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {}
+
+#[cfg(target_os = "macos")]
 #[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {}
+
+#[cfg(target_os = "macos")]
 #[link(name = "AppKit", kind = "framework")]
+extern "C" {}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreAudio", kind = "framework")]
 extern "C" {
     fn AudioObjectGetPropertyData(
         in_object_id: u32,

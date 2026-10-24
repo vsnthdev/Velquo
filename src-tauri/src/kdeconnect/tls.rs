@@ -4,7 +4,9 @@ use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, Server
 use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, CryptoProvider};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName, UnixTime};
 use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
-use rustls::{ClientConfig, DigitallySignedStruct, DistinguishedName, Error, ServerConfig, SignatureScheme};
+use rustls::{
+    ClientConfig, DigitallySignedStruct, DistinguishedName, Error, ServerConfig, SignatureScheme,
+};
 use std::sync::Arc;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
@@ -16,6 +18,12 @@ use tokio_rustls::{TlsAcceptor, TlsConnector};
 pub struct KdeConnectCertVerifier {
     provider: Arc<CryptoProvider>,
     empty_roots: Vec<DistinguishedName>,
+}
+
+impl Default for KdeConnectCertVerifier {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl KdeConnectCertVerifier {

@@ -8,6 +8,7 @@
     "scripts": {
         "dev": "vite",
         "build": "bun check && vite build",
+        "lint": "bun lint --no-script --fix && cargo fmt --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings",
         "preview": "vite preview",
         "tauri": "tauri",
         "bundle": "tauri build --bundles app,dmg",

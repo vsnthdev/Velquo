@@ -89,3 +89,7 @@ strip = "none"
 [profile.release.build-override]
 strip = "none"
 
+[lints.clippy]
+too_many_arguments = "allow"
+
+

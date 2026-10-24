@@ -12,8 +12,11 @@ struct CGPoint {
 }
 
 #[cfg(target_os = "macos")]
-#[link(name = "CoreGraphics", kind = "framework")]
 #[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
     fn CGMainDisplayID() -> u32;
     fn CGDisplayPixelsWide(display: u32) -> usize;
@@ -96,39 +99,39 @@ const K_VK_CONTROL: u16 = 0x3B;
 
 #[cfg(target_os = "macos")]
 const SPECIAL_KEYS_MAP: [Option<u16>; 33] = [
-    None,        // 0: Invalid
-    Some(0x33),  // 1: kVK_Delete (Backspace)
-    Some(0x30),  // 2: kVK_Tab
-    Some(0x24),  // 3: kVK_Return
-    Some(0x7B),  // 4: kVK_LeftArrow
-    Some(0x7E),  // 5: kVK_UpArrow
-    Some(0x7C),  // 6: kVK_RightArrow
-    Some(0x7D),  // 7: kVK_DownArrow
-    Some(0x74),  // 8: kVK_PageUp (Previous Slide)
-    Some(0x79),  // 9: kVK_PageDown (Next Slide)
-    Some(0x73),  // 10: kVK_Home
-    Some(0x77),  // 11: kVK_End
-    Some(0x24),  // 12: kVK_Return
-    Some(0x75),  // 13: kVK_ForwardDelete
-    Some(0x35),  // 14: kVK_Escape (Exit Presentation)
-    None,        // 15: SysReq
-    None,        // 16: ScrollLock
-    Some(0x3B),  // 17: kVK_Control
-    Some(0x3A),  // 18: kVK_Option
-    Some(0x38),  // 19: kVK_Shift
-    Some(0x37),  // 20: kVK_Command
-    Some(0x7A),  // 21: kVK_F1
-    Some(0x78),  // 22: kVK_F2
-    Some(0x63),  // 23: kVK_F3
-    Some(0x76),  // 24: kVK_F4
-    Some(0x60),  // 25: kVK_F5 (Start Presentation)
-    Some(0x61),  // 26: kVK_F6
-    Some(0x62),  // 27: kVK_F7
-    Some(0x64),  // 28: kVK_F8
-    Some(0x65),  // 29: kVK_F9
-    Some(0x6D),  // 30: kVK_F10
-    Some(0x67),  // 31: kVK_F11
-    Some(0x6F),  // 32: kVK_F12
+    None,       // 0: Invalid
+    Some(0x33), // 1: kVK_Delete (Backspace)
+    Some(0x30), // 2: kVK_Tab
+    Some(0x24), // 3: kVK_Return
+    Some(0x7B), // 4: kVK_LeftArrow
+    Some(0x7E), // 5: kVK_UpArrow
+    Some(0x7C), // 6: kVK_RightArrow
+    Some(0x7D), // 7: kVK_DownArrow
+    Some(0x74), // 8: kVK_PageUp (Previous Slide)
+    Some(0x79), // 9: kVK_PageDown (Next Slide)
+    Some(0x73), // 10: kVK_Home
+    Some(0x77), // 11: kVK_End
+    Some(0x24), // 12: kVK_Return
+    Some(0x75), // 13: kVK_ForwardDelete
+    Some(0x35), // 14: kVK_Escape (Exit Presentation)
+    None,       // 15: SysReq
+    None,       // 16: ScrollLock
+    Some(0x3B), // 17: kVK_Control
+    Some(0x3A), // 18: kVK_Option
+    Some(0x38), // 19: kVK_Shift
+    Some(0x37), // 20: kVK_Command
+    Some(0x7A), // 21: kVK_F1
+    Some(0x78), // 22: kVK_F2
+    Some(0x63), // 23: kVK_F3
+    Some(0x76), // 24: kVK_F4
+    Some(0x60), // 25: kVK_F5 (Start Presentation)
+    Some(0x61), // 26: kVK_F6
+    Some(0x62), // 27: kVK_F7
+    Some(0x64), // 28: kVK_F8
+    Some(0x65), // 29: kVK_F9
+    Some(0x6D), // 30: kVK_F10
+    Some(0x67), // 31: kVK_F11
+    Some(0x6F), // 32: kVK_F12
 ];
 
 pub struct PresenterInputState {
@@ -243,8 +246,9 @@ pub fn handle_mousepad_packet(packet: &NetworkPacket) {
         let is_scroll = packet.get_bool("scroll").unwrap_or(false);
         let key_str = packet.get_str("key").unwrap_or("");
         let special_key = packet.get_i64("specialKey").unwrap_or(0) as usize;
-        let valid_special_key =
-            special_key > 0 && special_key < SPECIAL_KEYS_MAP.len() && SPECIAL_KEYS_MAP[special_key].is_some();
+        let valid_special_key = special_key > 0
+            && special_key < SPECIAL_KEYS_MAP.len()
+            && SPECIAL_KEYS_MAP[special_key].is_some();
 
         let cur_pt = get_current_cursor_pos();
 

@@ -111,8 +111,7 @@ impl SftpManager {
         peer_ip: IpAddr,
         packet: &NetworkPacket,
     ) {
-        if packet.get_bool("serverRunning") == Some(false)
-            || packet.get_bool("stop") == Some(true)
+        if packet.get_bool("serverRunning") == Some(false) || packet.get_bool("stop") == Some(true)
         {
             log::info!(
                 "[sftp] Device '{}' ({}) reported SFTP server stopped",
@@ -262,10 +261,7 @@ impl SftpManager {
         }
     }
 
-    fn get_cached_session(
-        &self,
-        device_id: &str,
-    ) -> Option<(SftpServerInfo, Arc<SftpSession>)> {
+    fn get_cached_session(&self, device_id: &str) -> Option<(SftpServerInfo, Arc<SftpSession>)> {
         let mut guard = self.active.lock().ok()?;
         if let Some(conn) = guard.get(device_id) {
             if !conn.ssh_handle.is_closed() {
@@ -300,10 +296,7 @@ impl SftpManager {
         let (tx, rx) = oneshot::channel();
         {
             let mut pending = self.pending_handshakes.lock().unwrap();
-            pending
-                .entry(device_id.to_string())
-                .or_default()
-                .push(tx);
+            pending.entry(device_id.to_string()).or_default().push(tx);
         }
 
         send_start_browsing()?;
@@ -675,8 +668,9 @@ async fn connect_ssh_sftp(
         if let Ok(key_pem) = std::fs::read_to_string(&key_pem_path) {
             if let Ok(secret_key) = decode_secret_key(&key_pem, None) {
                 let key_with_alg = PrivateKeyWithHashAlg::new(Arc::new(secret_key), None);
-                if let Ok(AuthResult::Success) =
-                    handle.authenticate_publickey(&info.user, key_with_alg).await
+                if let Ok(AuthResult::Success) = handle
+                    .authenticate_publickey(&info.user, key_with_alg)
+                    .await
                 {
                     authenticated = true;
                 }
@@ -879,7 +873,8 @@ async fn delete_sftp_directory_recursive(sftp: &Arc<SftpSession>, root_dir: &str
         // Pipeline file deletions in concurrent batches of 8 over the multiplexed SFTP session
         for chunk in files_to_delete.chunks(8) {
             let mut join_set = tokio::task::JoinSet::new();
-            for file_path in chunk.iter().cloned() {
+            for file_path in chunk {
+                let file_path = file_path.clone();
                 let sftp_clone = Arc::clone(sftp);
                 join_set.spawn(async move {
                     sftp_clone
