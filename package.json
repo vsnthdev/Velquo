@@ -32,9 +32,11 @@
     "@resvg/resvg-js": "^2.6.2",
     "@tauri-apps/cli": "^2.5.0",
     "@types/bun": "^1.4.4",
+    "@types/prompts": "^2.4.9",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "prompts": "^2.4.2",
     "read-file-input": "^1.1.6",
     "vite": "^8.3.4"
   }
