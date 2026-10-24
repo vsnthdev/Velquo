@@ -12,5 +12,12 @@
 	<string>APPL</string>
 	<key>NSUserNotificationAlertStyle</key>
 	<string>alert</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Velquo uses your local Wi-Fi network to discover, pair, transfer files, and sync with your KDE Connect devices.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_kdeconnect._udp</string>
+		<string>_kdeconnect._tcp</string>
+	</array>
 </dict>
 </plist>

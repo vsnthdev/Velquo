@@ -406,10 +406,11 @@ async fn sftp_browse(
     path: Option<String>,
     daemon: State<'_, Arc<KdeConnectDaemon>>,
 ) -> Result<SftpBrowseResponse, String> {
-    daemon
-        .sftp_browse(&device_id, path)
-        .await
-        .map_err(|e| e.to_string())
+    daemon.sftp_browse(&device_id, path).await.map_err(|e| {
+        let msg = format!("{:#}", e);
+        log::warn!("[sftp] sftp_browse failed for device_id={}: {}", device_id, msg);
+        msg
+    })
 }
 
 #[tauri::command]
@@ -428,7 +429,16 @@ async fn sftp_download_file(
     daemon
         .sftp_download_file(&device_id, &remote_path, &file_name)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            let msg = format!("{:#}", e);
+            log::warn!(
+                "[sftp] sftp_download_file '{}' failed for device_id={}: {}",
+                remote_path,
+                device_id,
+                msg
+            );
+            msg
+        })
 }
 
 #[tauri::command]
@@ -447,7 +457,16 @@ async fn sftp_delete_entry(
     daemon
         .sftp_delete_entry(&device_id, &remote_path, is_dir)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            let msg = format!("{:#}", e);
+            log::warn!(
+                "[sftp] sftp_delete_entry '{}' failed for device_id={}: {}",
+                remote_path,
+                device_id,
+                msg
+            );
+            msg
+        })
 }
 
 #[tauri::command]
