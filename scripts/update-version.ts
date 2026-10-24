@@ -69,32 +69,6 @@ const repoBaseUrl = (
   pkg.homepage || "https://github.com/vsnthdev/Velquo"
 ).replace(/\/+$/, "");
 
-let existingSignature = "";
-if (await latestJsonFile.exists()) {
-  try {
-    const currentLatest = await latestJsonFile.json();
-    existingSignature =
-      currentLatest?.platforms?.["darwin-aarch64"]?.signature ?? "";
-  } catch {
-    // Ignore malformed existing latest.json
-  }
-}
-
-let signature = existingSignature;
-if (await sigFile.exists()) {
-  const builtSig = (await sigFile.text()).trim();
-  if (builtSig) {
-    signature = builtSig;
-    console.log(
-      "==> Loaded fresh signature from src-tauri/target/release/bundle/macos/Velquo.app.tar.gz.sig",
-    );
-  }
-} else {
-  console.warn(
-    "==> Note: Velquo.app.tar.gz.sig not found; keeping existing signature from latest.json",
-  );
-}
-
 // 1. Update package.json
 pkg.version = nextVersion;
 await Bun.write(pkgFile, `${JSON.stringify(pkg, null, 2)}\n`);
@@ -107,7 +81,44 @@ const updatedCargoToml = cargoTomlText.replace(
 );
 await Bun.write(cargoTomlFile, updatedCargoToml);
 
-// 3. Update latest.json
+// 3. Build and sign the release bundle so Velquo.app.tar.gz.sig is generated for v${nextVersion}
+const keyFile = Bun.file(`${Bun.env.HOME}/.tauri/velquo.key`);
+if (!(await keyFile.exists())) {
+  console.error("==> Error: Signing key not found at ~/.tauri/velquo.key");
+  process.exit(1);
+}
+const signingPrivateKey = (await keyFile.text()).trim();
+Bun.env.TAURI_SIGNING_PRIVATE_KEY = signingPrivateKey;
+Bun.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "";
+
+console.log(`\n==> Building and signing release bundle for v${nextVersion}...`);
+const bundleProc = Bun.spawn(["bun", "run", "bundle"], {
+  cwd: new URL(".", rootUrl).pathname,
+  stdio: ["inherit", "inherit", "inherit"],
+});
+
+const exitCode = await bundleProc.exited;
+if (exitCode !== 0) {
+  console.error(`==> Error: bun run bundle failed with exit code ${exitCode}`);
+  process.exit(exitCode);
+}
+
+// 4. Read the freshly generated v${nextVersion} signature and write latest.json
+let signature = "";
+if (await sigFile.exists()) {
+  signature = (await sigFile.text()).trim();
+  console.log(
+    "==> Loaded fresh signature from src-tauri/target/release/bundle/macos/Velquo.app.tar.gz.sig",
+  );
+} else if (await latestJsonFile.exists()) {
+  try {
+    const currentLatest = await latestJsonFile.json();
+    signature = currentLatest?.platforms?.["darwin-aarch64"]?.signature ?? "";
+  } catch {
+    // Ignore malformed existing latest.json
+  }
+}
+
 const pubDate = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 const downloadUrl = `${repoBaseUrl}/releases/download/v${nextVersion}/Velquo.app.tar.gz`;
 
@@ -126,7 +137,7 @@ const latestPayload = {
 await Bun.write(latestJsonFile, `${JSON.stringify(latestPayload, null, 4)}\n`);
 
 console.log(
-  `\n==> Bumped version to v${nextVersion} across package.json, src-tauri/Cargo.toml, and latest.json:`,
+  `\n==> Bumped version to v${nextVersion}, built signed bundle, and updated latest.json:`,
 );
 console.log(`    version  : ${nextVersion}`);
 console.log(`    pub_date : ${pubDate}`);

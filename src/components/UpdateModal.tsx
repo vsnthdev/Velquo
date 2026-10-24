@@ -76,9 +76,11 @@ export function UpdateModal({
     } catch (err) {
       console.error("Failed to download and install update:", err);
       setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : "Failed to download and install the update.",
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "Failed to download and install the update.",
       );
       setStep("error");
     }
