@@ -1,11 +1,11 @@
 {
-    "version": "1.0.0",
-    "notes": "First stable version for public usage, improved macOS media control from KDE Connect Android app.",
-    "pub_date": "2026-10-24T08:16:04Z",
-    "platforms": {
-        "darwin-aarch64": {
-            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRak9iRWxRUWppdTJFS1E5bjlIYXJBTGZQOENSRnFsOWp0Q1dYeG1aYit6Q28rdXh2NjJDT2hLR2pobnpWQWxtemxaYlJIbXoyc3dvQkt5WGN5NUVnUUwvTExPOWJsbWdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyODI5MjE0CWZpbGU6VmVscXVvLmFwcC50YXIuZ3oJdmVyc2lvbjoxLjAuMApwWCthTlFwcWVXOWg1YjBwZG1KMVlyZkVaK0ROZmg3Z2QweHhZemlKcWhSek9jL2hhVU02bUJWWjNFM1UzZG9QaVZUVGh0VnB2WUpPUVJvRlc2TTJEUT09Cg==",
-            "url": "https://github.com/vsnthdev/Velquo/releases/download/v1.0.0/Velquo.app.tar.gz"
-        }
+  "version": "1.0.0",
+  "notes": "First stable version for public usage, improved macOS media control from KDE Connect Android app.",
+  "pub_date": "2026-10-24T08:16:04Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRak9iRWxRUWppdTJFS1E5bjlIYXJBTGZQOENSRnFsOWp0Q1dYeG1aYit6Q28rdXh2NjJDT2hLR2pobnpWQWxtemxaYlJIbXoyc3dvQkt5WGN5NUVnUUwvTExPOWJsbWdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyODI5MjE0CWZpbGU6VmVscXVvLmFwcC50YXIuZ3oJdmVyc2lvbjoxLjAuMApwWCthTlFwcWVXOWg1YjBwZG1KMVlyZkVaK0ROZmg3Z2QweHhZemlKcWhSek9jL2hhVU02bUJWWjNFM1UzZG9QaVZUVGh0VnB2WUpPUVJvRlc2TTJEUT09Cg==",
+      "url": "https://github.com/vsnthdev/Velquo/releases/download/v1.0.0/Velquo.app.tar.gz"
     }
+  }
 }

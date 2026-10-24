@@ -22,7 +22,7 @@ Velquo defines its version in **only two files** (both `src-tauri/tauri.conf.jso
    version = "0.3.0"
    ```
 
-*(Do not add a `"version"` field to `src-tauri/tauri.conf.json` — Tauri automatically inherits the version from `src-tauri/Cargo.toml` / `package.json`).*
+_(Do not add a `"version"` field to `src-tauri/tauri.conf.json` — Tauri automatically inherits the version from `src-tauri/Cargo.toml` / `package.json`)._
 
 ---
 
@@ -40,14 +40,15 @@ bun run bundle
 ```
 
 ### What `bun run bundle` Generates
+
 Inside `src-tauri/target/release/bundle/`, Tauri produces:
 
 1. **DMG Installer (for new users downloading from GitHub Releases):**
    - `src-tauri/target/release/bundle/dmg/Velquo_<VERSION>_aarch64.dmg`
 2. **macOS App Bundle & Signed Updater Archive (for in-app auto-updates):**
    - `src-tauri/target/release/bundle/macos/Velquo.app`
-   - `src-tauri/target/release/bundle/macos/Velquo.app.tar.gz` *(downloaded by the auto-updater)*
-   - `src-tauri/target/release/bundle/macos/Velquo.app.tar.gz.sig` *(cryptographic Minisign signature)*
+   - `src-tauri/target/release/bundle/macos/Velquo.app.tar.gz` _(downloaded by the auto-updater)_
+   - `src-tauri/target/release/bundle/macos/Velquo.app.tar.gz.sig` _(cryptographic Minisign signature)_
 
 ---
 
@@ -78,6 +79,7 @@ EOF
 ```
 
 ### Important Fields in `latest.json`
+
 - **`"version"`:** Must match the new version in `package.json` and `src-tauri/Cargo.toml` (e.g., `"0.3.0"`).
 - **`"notes"`:** Shown inside Velquo's **Update available** dialog box before the user clicks **Update now**.
 - **`"platforms.darwin-aarch64.signature"`:** Must be the **exact string content** of `Velquo.app.tar.gz.sig` (not a file path or URL).
@@ -88,6 +90,7 @@ EOF
 ## Step 4: Commit, Tag, and Publish the GitHub Release
 
 1. **Commit the version bump and push the tag:**
+
    ```bash
    git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock
    git commit -m "chore: release v0.3.0"
@@ -116,10 +119,10 @@ EOF
 
 ## Release Checklist Summary
 
-| # | Item | Path / Location |
-| :- | :--- | :--- |
-| 1 | Bump `"version"` in `package.json` | `package.json` |
-| 2 | Bump `version` in `Cargo.toml` | `src-tauri/Cargo.toml` |
-| 3 | Export `TAURI_SIGNING_PRIVATE_KEY` & run `bun run bundle` | `~/.tauri/velquo.key` |
-| 4 | Generate `latest.json` with `Velquo.app.tar.gz.sig` content | `./latest.json` |
-| 5 | Upload `Velquo_<VERSION>_aarch64.dmg`, `Velquo.app.tar.gz`, and `latest.json` to GitHub Release `v<VERSION>` | `github.com/vsnthdev/Velquo/releases` |
+| #   | Item                                                                                                         | Path / Location                       |
+| :-- | :----------------------------------------------------------------------------------------------------------- | :------------------------------------ |
+| 1   | Bump `"version"` in `package.json`                                                                           | `package.json`                        |
+| 2   | Bump `version` in `Cargo.toml`                                                                               | `src-tauri/Cargo.toml`                |
+| 3   | Export `TAURI_SIGNING_PRIVATE_KEY` & run `bun run bundle`                                                    | `~/.tauri/velquo.key`                 |
+| 4   | Generate `latest.json` with `Velquo.app.tar.gz.sig` content                                                  | `./latest.json`                       |
+| 5   | Upload `Velquo_<VERSION>_aarch64.dmg`, `Velquo.app.tar.gz`, and `latest.json` to GitHub Release `v<VERSION>` | `github.com/vsnthdev/Velquo/releases` |

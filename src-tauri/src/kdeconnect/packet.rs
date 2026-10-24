@@ -30,6 +30,8 @@ pub const PACKET_TYPE_RUNCOMMAND_OUTPUT: &str = "kdeconnect.runcommand.output";
 pub const PACKET_TYPE_RUNCOMMAND_REQUEST: &str = "kdeconnect.runcommand.request";
 pub const PACKET_TYPE_SHARE_REQUEST: &str = "kdeconnect.share.request";
 pub const PACKET_TYPE_SHARE_REQUEST_UPDATE: &str = "kdeconnect.share.request.update";
+pub const PACKET_TYPE_SFTP: &str = "kdeconnect.sftp";
+pub const PACKET_TYPE_SFTP_REQUEST: &str = "kdeconnect.sftp.request";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkPacket {
@@ -83,6 +85,7 @@ pub fn supported_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_FINDMYPHONE_REQUEST.to_string(),
         PACKET_TYPE_NOTIFICATION.to_string(),
         PACKET_TYPE_RUNCOMMAND_REQUEST.to_string(),
+        PACKET_TYPE_SFTP.to_string(),
     ]
 }
 
@@ -106,6 +109,7 @@ pub fn supported_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_NOTIFICATION_REQUEST.to_string(),
         PACKET_TYPE_RUNCOMMAND.to_string(),
         PACKET_TYPE_RUNCOMMAND_OUTPUT.to_string(),
+        PACKET_TYPE_SFTP_REQUEST.to_string(),
     ]
 }
 
@@ -448,5 +452,11 @@ impl NetworkPacket {
         body.insert("commandList".into(), json!(commands_json));
         body.insert("canAddCommand".into(), json!(true));
         Self::new(PACKET_TYPE_RUNCOMMAND, body)
+    }
+
+    pub fn sftp_start_browsing() -> Self {
+        let mut body = Map::new();
+        body.insert("startBrowsing".into(), json!(true));
+        Self::new(PACKET_TYPE_SFTP_REQUEST, body)
     }
 }

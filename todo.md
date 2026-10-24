@@ -1,11 +1,7 @@
 # Velquo — Remaining KDE Connect Features
 
-- [ ] **Telephony & Call Alerts** — Show incoming/missed call banners with Mute Call button (`kdeconnect.telephony`)
-- [ ] **SMS & MMS Messaging** — View threads, send/reply to SMS, and download MMS attachments (`kdeconnect.sms.*`)
-- [ ] **Contacts Sync** — Sync phone vCards to resolve caller and SMS contact names/photos (`kdeconnect.contacts.*`)
-- [ ] **Remote File Browser (SFTP)** — Browse phone folders and storage over SFTP (`kdeconnect.sftp`)
-- [ ] **System Volume Control** — View and adjust phone audio streams and expose Mac volume (`kdeconnect.systemvolume`)
-- [ ] **Drawing Tablet Input** — Stylus pressure/tilt input support (`kdeconnect.digitizer`)
+- [x] **Remote File Browser (SFTP)** — Browse phone folders and storage over SFTP (`kdeconnect.sftp`)
+- [x] **System Volume Control** — Expose and control Mac system audio volume from the phone (`CoreAudio` / `kdeconnect.mpris`)
 - [x] **Run Commands** — Trigger pre-configured shell commands between Mac and phone (`kdeconnect.runcommand`)
 - [x] **Notifications Sync** — View and dismiss phone notifications on Mac (`kdeconnect.notification`)
 - [x] **OTP / 2FA Auto-Copy** — Extract and copy verification codes from incoming notifications

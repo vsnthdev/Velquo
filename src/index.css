@@ -2,12 +2,17 @@
 
 @theme {
   --font-sans: "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: "Google Sans Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono:
+    "Google Sans Code", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 :root {
   color-scheme: light dark;
-  font-family: "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    "Google Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
 }
 
 *,
@@ -33,7 +38,11 @@ body,
   background: transparent;
   overflow: hidden;
   overscroll-behavior: none;
-  font-family: "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    "Google Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   -webkit-user-select: none;
   user-select: none;
 }

@@ -5,6 +5,7 @@ pub mod macos_notify;
 
 use crate::kdeconnect::daemon::{DeviceView, HostInfo, KdeConnectDaemon, TransferItem};
 use crate::kdeconnect::packet::NetworkPacket;
+use crate::kdeconnect::sftp::SftpBrowseResponse;
 use crate::logger::{AppLogger, LogEntry};
 use serde::Serialize;
 use std::path::PathBuf;
@@ -400,6 +401,37 @@ fn send_remote_key(
 }
 
 #[tauri::command]
+async fn sftp_browse(
+    device_id: String,
+    path: Option<String>,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<SftpBrowseResponse, String> {
+    daemon
+        .sftp_browse(&device_id, path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn sftp_download_file(
+    device_id: String,
+    remote_path: String,
+    file_name: String,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<String, String> {
+    log::info!(
+        "[sftp] Downloading remote file '{}' ('{}') from device_id={}",
+        file_name,
+        remote_path,
+        device_id
+    );
+    daemon
+        .sftp_download_file(&device_id, &remote_path, &file_name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn clear_logs() {
     AppLogger::clear_entries();
     log::info!("[ui] Logs cleared");
@@ -743,6 +775,8 @@ pub fn run() {
             add_device_run_command,
             remove_device_run_command,
             send_remote_key,
+            sftp_browse,
+            sftp_download_file,
             clear_logs,
             quit_app,
             restart_app,

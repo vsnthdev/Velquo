@@ -13,7 +13,7 @@ const sigPath = join(
   "release",
   "bundle",
   "macos",
-  "Velquo.app.tar.gz.sig"
+  "Velquo.app.tar.gz.sig",
 );
 
 const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as {
@@ -44,18 +44,18 @@ if (existsSync(sigPath)) {
   if (builtSig) {
     signature = builtSig;
     console.log(
-      `==> Loaded fresh signature from src-tauri/target/release/bundle/macos/Velquo.app.tar.gz.sig`
+      `==> Loaded fresh signature from src-tauri/target/release/bundle/macos/Velquo.app.tar.gz.sig`,
     );
   }
 } else {
   console.warn(
-    `==> Note: ${sigPath} not found; keeping existing signature from latest.json`
+    `==> Note: ${sigPath} not found; keeping existing signature from latest.json`,
   );
 }
 
 console.log(`==> Preparing latest.json for Velquo v${version}`);
 console.log(
-  `==> Paste or type release notes below (press Enter on an empty line or Ctrl+D to finish):`
+  `==> Paste or type release notes below (press Enter on an empty line or Ctrl+D to finish):`,
 );
 
 const rl = createInterface({
@@ -92,7 +92,7 @@ const latestPayload = {
 writeFileSync(
   latestJsonPath,
   `${JSON.stringify(latestPayload, null, 4)}\n`,
-  "utf-8"
+  "utf-8",
 );
 
 console.log(`\n==> Updated latest.json successfully:`);

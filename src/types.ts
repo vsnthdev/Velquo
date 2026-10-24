@@ -39,6 +39,26 @@ export interface RunCommandItem {
   command: string;
 }
 
+export interface SftpRootEntry {
+  name: string;
+  path: string;
+}
+
+export interface SftpFileEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+  modifiedSecs: number | null;
+}
+
+export interface SftpBrowseResponse {
+  currentPath: string;
+  roots: SftpRootEntry[];
+  entries: SftpFileEntry[];
+  unconfiguredMessage: string | null;
+}
+
 export interface DeviceView {
   deviceId: string;
   deviceName: string;

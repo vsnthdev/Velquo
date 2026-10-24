@@ -60,7 +60,7 @@ export function UpdateModal({
           if (totalBytes > 0) {
             const pct = Math.min(
               99,
-              Math.max(2, Math.round((downloadedBytes / totalBytes) * 100))
+              Math.max(2, Math.round((downloadedBytes / totalBytes) * 100)),
             );
             setProgressPct(pct);
           } else {
@@ -78,7 +78,7 @@ export function UpdateModal({
       setErrorMessage(
         err instanceof Error
           ? err.message
-          : "Failed to download and install the update."
+          : "Failed to download and install the update.",
       );
       setStep("error");
     }

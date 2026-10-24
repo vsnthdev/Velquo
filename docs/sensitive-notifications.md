@@ -23,24 +23,24 @@ brew install --cask android-platform-tools
 ## Step 2: Enable USB Debugging on Your Phone
 
 1. Open **Settings** on your Android phone and go to **About device** (or **About phone**).
-2. Tap **Version** (if on OnePlus / OxygenOS) → tap **Build number** **7 times** until it says *"You are now in Developer mode!"*.
+2. Tap **Version** (if on OnePlus / OxygenOS) → tap **Build number** **7 times** until it says _"You are now in Developer mode!"_.
 3. Go back to **Settings** → **System & update** (or **Additional settings** / **System**) → **Developer options**.
 4. Turn on **USB debugging**.
-   - **Important for OnePlus / Oppo / Realme (OxygenOS / ColorOS):** Scroll all the way to the very bottom of **Developer options** (under the **Apps** section) and turn on **"Disable system optimisation"** *(called **"Disable permission monitoring"** on older OxygenOS/ColorOS versions)*. Without this toggle enabled, ADB will fail with `SecurityException: uid 2000 does not have android.permission.MANAGE_APP_OPS_MODES`.
+   - **Important for OnePlus / Oppo / Realme (OxygenOS / ColorOS):** Scroll all the way to the very bottom of **Developer options** (under the **Apps** section) and turn on **"Disable system optimisation"** _(called **"Disable permission monitoring"** on older OxygenOS/ColorOS versions)_. Without this toggle enabled, ADB will fail with `SecurityException: uid 2000 does not have android.permission.MANAGE_APP_OPS_MODES`.
 
 ---
 
 ## Step 3: Run the Permission Command from Your Mac
 
 1. Connect your phone to your Mac with a USB-C cable.
-2. On your phone screen, tap **Allow** on the *"Allow USB debugging?"* prompt.
+2. On your phone screen, tap **Allow** on the _"Allow USB debugging?"_ prompt.
 3. Run the following command in your Mac terminal:
 
 ```bash
 adb shell appops set org.kde.kdeconnect_tp RECEIVE_SENSITIVE_NOTIFICATIONS allow
 ```
 
-*(If you use the F-Droid nightly build of KDE Connect, replace `org.kde.kdeconnect_tp` with your installed package name).*
+_(If you use the F-Droid nightly build of KDE Connect, replace `org.kde.kdeconnect_tp` with your installed package name)._
 
 You can verify the permission was granted by running:
 

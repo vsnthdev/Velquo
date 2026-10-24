@@ -4,7 +4,13 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { AnimatePresence, motion } from "motion/react";
-import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { PingToast } from "./components/PingToast";
 import { Sidebar } from "./components/Sidebar";
 import { UpdateModal } from "./components/UpdateModal";
@@ -32,7 +38,7 @@ export default function App() {
   const [justDroppedCount, setJustDroppedCount] = useState<number>(0);
   const [pingToast, setPingToast] = useState<PingToastData | null>(null);
   const [fallbackArtworkUrl, setFallbackArtworkUrl] = useState<string | null>(
-    null
+    null,
   );
   const [ignoreWhatsappConversations, setIgnoreWhatsappConversations] =
     useState<boolean>(true);
@@ -54,7 +60,7 @@ export default function App() {
 
   const runUpdateCheck = useCallback(
     async (
-      force: boolean
+      force: boolean,
     ): Promise<"update-found" | "up-to-date" | "error"> => {
       try {
         const update = await check({ timeout: 20000 });
@@ -63,7 +69,7 @@ export default function App() {
         }
 
         const skippedVersion = localStorage.getItem(
-          "velquo.skippedUpdateVersion"
+          "velquo.skippedUpdateVersion",
         );
         if (!force && skippedVersion === update.version) {
           return "up-to-date";
@@ -78,7 +84,7 @@ export default function App() {
         return "error";
       }
     },
-    []
+    [],
   );
 
   // Automatic background update check shortly after launch and every 8 hours
@@ -116,7 +122,7 @@ export default function App() {
 
         const paired = snap.devices.filter((d) => d.pairState === "Paired");
         const newlyPaired = paired.find(
-          (d) => !prevPairedIdsRef.current.has(d.deviceId)
+          (d) => !prevPairedIdsRef.current.has(d.deviceId),
         );
         prevPairedIdsRef.current = new Set(paired.map((d) => d.deviceId));
 
@@ -174,7 +180,7 @@ export default function App() {
         });
         if (pingTimer) clearTimeout(pingTimer);
         pingTimer = setTimeout(() => setPingToast(null), 4000);
-      }
+      },
     ).then((fn) => {
       if (disposed) {
         fn();
@@ -184,18 +190,15 @@ export default function App() {
     });
 
     let unlistenSetup: (() => void) | undefined;
-    listen<{ deviceId: string }>(
-      "velquo://open-runcommand-setup",
-      (event) => {
-        if (disposed) return;
-        setActiveView({
-          kind: "device",
-          deviceId: event.payload.deviceId,
-          subview: "settings",
-        });
-        setOpenAddCommandSignal((prev) => prev + 1);
-      }
-    ).then((fn) => {
+    listen<{ deviceId: string }>("velquo://open-runcommand-setup", (event) => {
+      if (disposed) return;
+      setActiveView({
+        kind: "device",
+        deviceId: event.payload.deviceId,
+        subview: "settings",
+      });
+      setOpenAddCommandSignal((prev) => prev + 1);
+    }).then((fn) => {
       if (disposed) {
         fn();
       } else {
@@ -210,17 +213,14 @@ export default function App() {
         if (disposed) return;
         if (event.payload.view === "pair-device") {
           setActiveView({ kind: "pair-device" });
-        } else if (
-          event.payload.view === "device" &&
-          event.payload.deviceId
-        ) {
+        } else if (event.payload.view === "device" && event.payload.deviceId) {
           setActiveView({
             kind: "device",
             deviceId: event.payload.deviceId,
             subview: "control",
           });
         }
-      }
+      },
     ).then((fn) => {
       if (disposed) {
         fn();
@@ -248,7 +248,7 @@ export default function App() {
             seq: (prev?.seq ?? 0) + 1,
           }));
         }
-      }
+      },
     ).then((fn) => {
       if (disposed) {
         fn();
@@ -270,7 +270,7 @@ export default function App() {
 
   const pairedDevices = devices.filter((d) => d.pairState === "Paired");
   const unpairedDevices = devices.filter(
-    (d) => d.pairState !== "Paired" && d.reachable
+    (d) => d.pairState !== "Paired" && d.reachable,
   );
 
   const selectedDevice =
@@ -399,8 +399,8 @@ export default function App() {
 
         const resp = await fetch(
           `https://itunes.apple.com/search?term=${encodeURIComponent(
-            searchTerm
-          )}&entity=song&limit=1`
+            searchTerm,
+          )}&entity=song&limit=1`,
         );
         if (!resp.ok) return;
         const data = await resp.json();
@@ -426,9 +426,9 @@ export default function App() {
   const artworkSrc = nativeArtData || fallbackArtworkUrl;
   const hasActiveMedia = Boolean(
     activeView.kind === "device" &&
-      activeView.subview === "control" &&
-      selectedDevice?.reachable &&
-      selectedDevice?.nowPlaying?.title
+    activeView.subview === "control" &&
+    selectedDevice?.reachable &&
+    selectedDevice?.nowPlaying?.title,
   );
   const hasArtworkBackdrop = Boolean(hasActiveMedia && artworkSrc);
 
@@ -540,109 +540,109 @@ export default function App() {
             )}
           </AnimatePresence>
 
-        <AnimatePresence mode="wait">
-          {activeView.kind === "device" && selectedDevice && (
-            <DevicePage
-              key={`device-${selectedDevice.deviceId}`}
-              device={selectedDevice}
-              transfers={transfers}
-              subview={activeView.subview}
-              onToggleSubview={() =>
-                setActiveView((prev) =>
-                  prev.kind === "device"
-                    ? {
-                        ...prev,
-                        subview:
-                          prev.subview === "control" ? "settings" : "control",
-                      }
-                    : prev
-                )
-              }
-              hasArtworkBackdrop={hasArtworkBackdrop}
-              artworkSrc={artworkSrc}
-              dropZoneRef={dropZoneRef}
-              isDraggingOver={isDraggingOver}
-              justDroppedCount={justDroppedCount}
-              onFilesPicked={handleFilesPicked}
-              fileSaveLocation={selectedDevice.saveLocation}
-              onChangeFileSaveLocation={(nextPath) =>
-                invoke("set_device_save_location", {
-                  deviceId: selectedDevice.deviceId,
-                  saveLocation: nextPath,
-                })
-              }
-              syncClipboard={selectedDevice.syncClipboard}
-              onToggleSyncClipboard={() =>
-                invoke("set_device_clipboard_sync", {
-                  deviceId: selectedDevice.deviceId,
-                  enabled: !selectedDevice.syncClipboard,
-                })
-              }
-              allowPresenter={selectedDevice.allowPresenter}
-              onTogglePresenter={() =>
-                invoke("set_device_presenter", {
-                  deviceId: selectedDevice.deviceId,
-                  enabled: !selectedDevice.allowPresenter,
-                })
-              }
-              syncNotifications={selectedDevice.syncNotifications}
-              onToggleNotifications={() =>
-                invoke("set_device_notifications_sync", {
-                  deviceId: selectedDevice.deviceId,
-                  enabled: !selectedDevice.syncNotifications,
-                })
-              }
-              autoCopyOtp={selectedDevice.autoCopyOtp}
-              onToggleAutoCopyOtp={() =>
-                invoke("set_device_auto_copy_otp", {
-                  deviceId: selectedDevice.deviceId,
-                  enabled: !selectedDevice.autoCopyOtp,
-                })
-              }
-              onAddRunCommand={async (name, command) => {
-                await invoke("add_device_run_command", {
-                  deviceId: selectedDevice.deviceId,
-                  name,
-                  command,
-                });
-              }}
-              onRemoveRunCommand={async (key) => {
-                await invoke("remove_device_run_command", {
-                  deviceId: selectedDevice.deviceId,
-                  key,
-                });
-              }}
-              rightPaneContainer={rightPaneEl}
-              openAddCommandSignal={openAddCommandSignal}
-              highlightedNotification={
-                highlightedNotification?.deviceId === selectedDevice.deviceId
-                  ? highlightedNotification
-                  : null
-              }
-              onUnpair={() => handleUnpairDevice(selectedDevice.deviceId)}
-            />
-          )}
+          <AnimatePresence mode="wait">
+            {activeView.kind === "device" && selectedDevice && (
+              <DevicePage
+                key={`device-${selectedDevice.deviceId}`}
+                device={selectedDevice}
+                transfers={transfers}
+                subview={activeView.subview}
+                onToggleSubview={() =>
+                  setActiveView((prev) =>
+                    prev.kind === "device"
+                      ? {
+                          ...prev,
+                          subview:
+                            prev.subview === "control" ? "settings" : "control",
+                        }
+                      : prev,
+                  )
+                }
+                hasArtworkBackdrop={hasArtworkBackdrop}
+                artworkSrc={artworkSrc}
+                dropZoneRef={dropZoneRef}
+                isDraggingOver={isDraggingOver}
+                justDroppedCount={justDroppedCount}
+                onFilesPicked={handleFilesPicked}
+                fileSaveLocation={selectedDevice.saveLocation}
+                onChangeFileSaveLocation={(nextPath) =>
+                  invoke("set_device_save_location", {
+                    deviceId: selectedDevice.deviceId,
+                    saveLocation: nextPath,
+                  })
+                }
+                syncClipboard={selectedDevice.syncClipboard}
+                onToggleSyncClipboard={() =>
+                  invoke("set_device_clipboard_sync", {
+                    deviceId: selectedDevice.deviceId,
+                    enabled: !selectedDevice.syncClipboard,
+                  })
+                }
+                allowPresenter={selectedDevice.allowPresenter}
+                onTogglePresenter={() =>
+                  invoke("set_device_presenter", {
+                    deviceId: selectedDevice.deviceId,
+                    enabled: !selectedDevice.allowPresenter,
+                  })
+                }
+                syncNotifications={selectedDevice.syncNotifications}
+                onToggleNotifications={() =>
+                  invoke("set_device_notifications_sync", {
+                    deviceId: selectedDevice.deviceId,
+                    enabled: !selectedDevice.syncNotifications,
+                  })
+                }
+                autoCopyOtp={selectedDevice.autoCopyOtp}
+                onToggleAutoCopyOtp={() =>
+                  invoke("set_device_auto_copy_otp", {
+                    deviceId: selectedDevice.deviceId,
+                    enabled: !selectedDevice.autoCopyOtp,
+                  })
+                }
+                onAddRunCommand={async (name, command) => {
+                  await invoke("add_device_run_command", {
+                    deviceId: selectedDevice.deviceId,
+                    name,
+                    command,
+                  });
+                }}
+                onRemoveRunCommand={async (key) => {
+                  await invoke("remove_device_run_command", {
+                    deviceId: selectedDevice.deviceId,
+                    key,
+                  });
+                }}
+                rightPaneContainer={rightPaneEl}
+                openAddCommandSignal={openAddCommandSignal}
+                highlightedNotification={
+                  highlightedNotification?.deviceId === selectedDevice.deviceId
+                    ? highlightedNotification
+                    : null
+                }
+                onUnpair={() => handleUnpairDevice(selectedDevice.deviceId)}
+              />
+            )}
 
-          {activeView.kind === "app-settings" && (
-            <AppSettingsPage
-              key="app-settings"
-              ignoreWhatsappConversations={ignoreWhatsappConversations}
-              onToggleIgnoreWhatsappConversations={() =>
-                invoke("set_ignore_whatsapp_conversations", {
-                  enabled: !ignoreWhatsappConversations,
-                })
-              }
-              onCheckForUpdates={() => runUpdateCheck(true)}
-            />
-          )}
+            {activeView.kind === "app-settings" && (
+              <AppSettingsPage
+                key="app-settings"
+                ignoreWhatsappConversations={ignoreWhatsappConversations}
+                onToggleIgnoreWhatsappConversations={() =>
+                  invoke("set_ignore_whatsapp_conversations", {
+                    enabled: !ignoreWhatsappConversations,
+                  })
+                }
+                onCheckForUpdates={() => runUpdateCheck(true)}
+              />
+            )}
 
-          {activeView.kind === "pair-device" && (
-            <PairDevicePage
-              key="pair-device"
-              unpairedDevices={unpairedDevices}
-            />
-          )}
-        </AnimatePresence>
+            {activeView.kind === "pair-device" && (
+              <PairDevicePage
+                key="pair-device"
+                unpairedDevices={unpairedDevices}
+              />
+            )}
+          </AnimatePresence>
         </main>
 
         <UpdateModal

@@ -1,9 +1,4 @@
-import {
-  ArrowsClockwise,
-  Check,
-  WifiHigh,
-  X,
-} from "@phosphor-icons/react";
+import { ArrowsClockwise, Check, WifiHigh, X } from "@phosphor-icons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";

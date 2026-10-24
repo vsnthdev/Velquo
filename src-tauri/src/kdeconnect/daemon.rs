@@ -15,10 +15,11 @@ use crate::kdeconnect::packet::{
     PACKET_TYPE_FINDMYPHONE_REQUEST, PACKET_TYPE_IDENTITY, PACKET_TYPE_MOUSEPAD_REQUEST,
     PACKET_TYPE_MPRIS, PACKET_TYPE_MPRIS_REQUEST, PACKET_TYPE_NOTIFICATION, PACKET_TYPE_PAIR,
     PACKET_TYPE_PING, PACKET_TYPE_PRESENTER, PACKET_TYPE_RUNCOMMAND_OUTPUT,
-    PACKET_TYPE_RUNCOMMAND_REQUEST, PACKET_TYPE_SHARE_REQUEST, PACKET_TYPE_SHARE_REQUEST_UPDATE,
-    PACKET_TYPE_TELEPHONY, PROTOCOL_VERSION,
+    PACKET_TYPE_RUNCOMMAND_REQUEST, PACKET_TYPE_SFTP, PACKET_TYPE_SHARE_REQUEST,
+    PACKET_TYPE_SHARE_REQUEST_UPDATE, PACKET_TYPE_TELEPHONY, PROTOCOL_VERSION,
 };
 use crate::kdeconnect::presenter_input::{handle_mousepad_packet, handle_presenter_packet};
+use crate::kdeconnect::sftp::{SftpBrowseResponse, SftpManager};
 use crate::kdeconnect::tls::{build_tls_acceptor, build_tls_connector};
 use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
@@ -249,6 +250,7 @@ pub struct KdeConnectDaemon {
     pub call_state_seq: Mutex<u64>,
     pub clipboard_state: Mutex<ClipboardState>,
     pub app_settings: Mutex<AppSettings>,
+    pub sftp_manager: SftpManager,
 }
 
 impl KdeConnectDaemon {
@@ -340,6 +342,7 @@ impl KdeConnectDaemon {
                 last_timestamp_ms: 0,
             }),
             app_settings: Mutex::new(app_settings),
+            sftp_manager: SftpManager::new(),
         }))
     }
 
@@ -1903,6 +1906,7 @@ impl KdeConnectDaemon {
         self.notify_ui();
 
         if became_offline {
+            self.sftp_manager.clear_device(&device_id);
             // Send a discovery broadcast so the device can reconnect immediately as soon as its Wi-Fi returns
             let daemon = Arc::clone(self);
             tokio::spawn(async move {
@@ -2131,6 +2135,14 @@ impl KdeConnectDaemon {
                     "[share-in] Share update packet from '{}': {:?}",
                     device_name,
                     packet.body
+                );
+            }
+            PACKET_TYPE_SFTP => {
+                self.sftp_manager.handle_incoming_sftp_packet(
+                    device_id,
+                    device_name,
+                    peer_ip,
+                    &packet,
                 );
             }
             other => {
@@ -4851,5 +4863,41 @@ impl KdeConnectDaemon {
         }
         drop(guard);
         self.notify_ui();
+    }
+
+    pub async fn sftp_browse(
+        &self,
+        device_id: &str,
+        path: Option<String>,
+    ) -> Result<SftpBrowseResponse> {
+        self.sftp_manager
+            .browse(device_id, path, &self.config_dir, || {
+                self.send_packet_to_device(device_id, &NetworkPacket::sftp_start_browsing())
+            })
+            .await
+    }
+
+    pub async fn sftp_download_file(
+        &self,
+        device_id: &str,
+        remote_path: &str,
+        file_name: &str,
+    ) -> Result<String> {
+        let clean_name = Path::new(file_name)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("downloaded_file")
+            .to_string();
+        let dest_path = self.unique_download_path(device_id, &clean_name);
+
+        let saved = self
+            .sftp_manager
+            .download_file(device_id, remote_path, &dest_path, &self.config_dir, || {
+                self.send_packet_to_device(device_id, &NetworkPacket::sftp_start_browsing())
+            })
+            .await?;
+
+        Ok(saved.to_string_lossy().to_string())
     }
 }

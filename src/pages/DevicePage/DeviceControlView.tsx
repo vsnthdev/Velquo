@@ -1,9 +1,24 @@
 import {
+  ArrowLeft,
+  ArrowsClockwise,
   ArrowSquareOut,
   BellRinging,
+  CaretRight,
   Check,
   CheckCircle,
+  CircleNotch,
   Copy,
+  DownloadSimple,
+  File,
+  FileArchive,
+  FileAudio,
+  FileImage,
+  FilePdf,
+  FileText,
+  FileVideo,
+  Folder,
+  FolderLock,
+  FolderOpen,
   Keyboard,
   Link,
   MusicNotes,
@@ -13,13 +28,14 @@ import {
   SkipBack,
   SkipForward,
   UploadSimple,
+  WarningCircle,
   X,
 } from "@phosphor-icons/react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   animate,
   AnimatePresence,
@@ -30,12 +46,24 @@ import {
 import {
   type MouseEvent,
   type RefObject,
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
-import type { DeviceView, TransferItem } from "../../types";
-import { formatDurationMs, isValidHttpUrl } from "../../utils/format";
+import type {
+  DeviceView,
+  SftpBrowseResponse,
+  SftpFileEntry,
+  TransferItem,
+} from "../../types";
+import {
+  formatDurationMs,
+  formatFileSize,
+  formatShortDate,
+  isValidHttpUrl,
+} from "../../utils/format";
 
 const SPECIAL_KEY_MAP: Record<string, number> = {
   Backspace: 1,
@@ -98,6 +126,19 @@ export function DeviceControlView({
   const [shareLinkTouchedInvalid, setShareLinkTouchedInvalid] =
     useState<boolean>(false);
   const [isRemoteInputOpen, setIsRemoteInputOpen] = useState<boolean>(false);
+  const [isFileBrowserOpen, setIsFileBrowserOpen] = useState<boolean>(false);
+  const [sftpData, setSftpData] = useState<SftpBrowseResponse | null>(null);
+  const [isSftpLoading, setIsSftpLoading] = useState<boolean>(false);
+  const [sftpError, setSftpError] = useState<string | null>(null);
+  const [downloadingPaths, setDownloadingPaths] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [downloadedPaths, setDownloadedPaths] = useState<Map<string, string>>(
+    () => new Map(),
+  );
+  const [downloadErrors, setDownloadErrors] = useState<Map<string, string>>(
+    () => new Map(),
+  );
   const [nowTickMs, setNowTickMs] = useState<number>(() => Date.now());
   const [copiedNotifId, setCopiedNotifId] = useState<string | null>(null);
   const [activeHighlightNotifId, setActiveHighlightNotifId] = useState<
@@ -105,6 +146,8 @@ export function DeviceControlView({
   >(null);
   const notifRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const remoteInputZoneRef = useRef<HTMLDivElement | null>(null);
+  const breadcrumbScrollRef = useRef<HTMLDivElement | null>(null);
+  const sftpReqSeqRef = useRef<number>(0);
 
   const seekBarRef = useRef<HTMLDivElement | null>(null);
   const isAnimatingSeekRef = useRef<boolean>(false);
@@ -125,10 +168,262 @@ export function DeviceControlView({
     setIsShareLinkOpen(false);
     setShareLinkTouchedInvalid(false);
     setIsRemoteInputOpen(false);
+    setIsFileBrowserOpen(false);
+    setSftpData(null);
+    setSftpError(null);
+    setIsSftpLoading(false);
+    setDownloadingPaths(new Set());
+    setDownloadedPaths(new Map());
+    setDownloadErrors(new Map());
   }, [device.deviceId]);
 
+  const loadSftpDirectory = useCallback(
+    async (targetPath?: string) => {
+      if (!device.reachable || device.pairState !== "Paired") return;
+      const reqId = ++sftpReqSeqRef.current;
+      setIsSftpLoading(true);
+      setSftpError(null);
+      try {
+        const res = await invoke<SftpBrowseResponse>("sftp_browse", {
+          deviceId: device.deviceId,
+          path: targetPath ?? null,
+        });
+        if (sftpReqSeqRef.current !== reqId) return;
+        setSftpData(res);
+        requestAnimationFrame(() => {
+          if (breadcrumbScrollRef.current) {
+            breadcrumbScrollRef.current.scrollLeft =
+              breadcrumbScrollRef.current.scrollWidth;
+          }
+        });
+      } catch (err) {
+        if (sftpReqSeqRef.current !== reqId) return;
+        setSftpError(typeof err === "string" ? err : String(err));
+      } finally {
+        if (sftpReqSeqRef.current === reqId) {
+          setIsSftpLoading(false);
+        }
+      }
+    },
+    [device.deviceId, device.reachable, device.pairState],
+  );
+
+  const sftpBreadcrumbs = useMemo(() => {
+    if (!sftpData) return [];
+    const current = sftpData.currentPath || "/";
+    const roots = sftpData.roots || [];
+
+    if (current === "/" && roots.length > 1) {
+      return [{ label: "Storage locations", path: "/" }];
+    }
+
+    // Find the deepest matching configured storage root
+    const matchedRoot = [...roots]
+      .sort((a, b) => b.path.length - a.path.length)
+      .find(
+        (r) =>
+          current === r.path ||
+          (r.path !== "/" && current.startsWith(`${r.path}/`)),
+      );
+
+    const crumbs: Array<{ label: string; path: string }> = [];
+    if (roots.length > 1) {
+      crumbs.push({ label: "Storage", path: "/" });
+    }
+
+    if (matchedRoot) {
+      crumbs.push({ label: matchedRoot.name, path: matchedRoot.path });
+      const rel =
+        matchedRoot.path === "/"
+          ? current.slice(1)
+          : current.slice(matchedRoot.path.length);
+      const parts = rel.split("/").filter(Boolean);
+      let accum = matchedRoot.path === "/" ? "" : matchedRoot.path;
+      for (const seg of parts) {
+        accum = `${accum}/${seg}`;
+        crumbs.push({ label: seg, path: accum });
+      }
+      return crumbs;
+    }
+
+    // Fallback path segmentation from "/"
+    crumbs.push({
+      label: roots[0]?.name || "Internal storage",
+      path: "/",
+    });
+    const parts = current.split("/").filter(Boolean);
+    let accum = "";
+    for (const seg of parts) {
+      accum = `${accum}/${seg}`;
+      crumbs.push({ label: seg, path: accum });
+    }
+    return crumbs;
+  }, [sftpData]);
+
+  const canSftpGoBack = sftpBreadcrumbs.length > 1;
+
+  const handleSftpGoBack = () => {
+    if (sftpBreadcrumbs.length <= 1) return;
+    const parentCrumb = sftpBreadcrumbs[sftpBreadcrumbs.length - 2];
+    if (parentCrumb) {
+      loadSftpDirectory(parentCrumb.path);
+    }
+  };
+
+  const handleSftpDownload = async (entry: SftpFileEntry) => {
+    if (entry.isDir || downloadingPaths.has(entry.path)) return;
+
+    setDownloadingPaths((prev) => {
+      const next = new Set(prev);
+      next.add(entry.path);
+      return next;
+    });
+    setDownloadErrors((prev) => {
+      if (!prev.has(entry.path)) return prev;
+      const next = new Map(prev);
+      next.delete(entry.path);
+      return next;
+    });
+
+    try {
+      const savedLocalPath = await invoke<string>("sftp_download_file", {
+        deviceId: device.deviceId,
+        remotePath: entry.path,
+        fileName: entry.name,
+      });
+      setDownloadedPaths((prev) => {
+        const next = new Map(prev);
+        next.set(entry.path, savedLocalPath);
+        return next;
+      });
+    } catch (err) {
+      setDownloadErrors((prev) => {
+        const next = new Map(prev);
+        next.set(entry.path, typeof err === "string" ? err : String(err));
+        return next;
+      });
+    } finally {
+      setDownloadingPaths((prev) => {
+        const next = new Set(prev);
+        next.delete(entry.path);
+        return next;
+      });
+    }
+  };
+
+  const renderFileEntryIcon = (entry: SftpFileEntry) => {
+    if (entry.isDir) {
+      return (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/12 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400">
+          <Folder size={17} weight="fill" />
+        </div>
+      );
+    }
+    const ext = entry.name.includes(".")
+      ? (entry.name.split(".").pop()?.toLowerCase() ?? "")
+      : "";
+
+    if (
+      [
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "webp",
+        "heic",
+        "heif",
+        "avif",
+        "svg",
+        "bmp",
+        "dng",
+        "raw",
+      ].includes(ext)
+    ) {
+      return (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-500/12 text-purple-600 dark:bg-purple-500/15 dark:text-purple-400">
+          <FileImage size={17} weight="duotone" />
+        </div>
+      );
+    }
+    if (
+      ["mp4", "mov", "mkv", "webm", "avi", "3gp", "m4v", "ts"].includes(ext)
+    ) {
+      return (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/12 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400">
+          <FileVideo size={17} weight="duotone" />
+        </div>
+      );
+    }
+    if (
+      ["mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "wma"].includes(ext)
+    ) {
+      return (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-500/12 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400">
+          <FileAudio size={17} weight="duotone" />
+        </div>
+      );
+    }
+    if (ext === "pdf") {
+      return (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/12 text-red-600 dark:bg-red-500/15 dark:text-red-400">
+          <FilePdf size={17} weight="duotone" />
+        </div>
+      );
+    }
+    if (
+      [
+        "zip",
+        "tar",
+        "gz",
+        "tgz",
+        "7z",
+        "rar",
+        "xz",
+        "apk",
+        "aab",
+        "dmg",
+      ].includes(ext)
+    ) {
+      return (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500/12 text-orange-600 dark:bg-orange-500/15 dark:text-orange-400">
+          <FileArchive size={17} weight="duotone" />
+        </div>
+      );
+    }
+    if (
+      [
+        "txt",
+        "md",
+        "json",
+        "csv",
+        "xml",
+        "yaml",
+        "yml",
+        "log",
+        "doc",
+        "docx",
+        "rtf",
+      ].includes(ext)
+    ) {
+      return (
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-500/12 text-sky-600 dark:bg-sky-500/15 dark:text-sky-400">
+          <FileText size={17} weight="duotone" />
+        </div>
+      );
+    }
+    return (
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-black/[0.05] text-zinc-600 dark:bg-white/[0.07] dark:text-zinc-300">
+        <File size={17} weight="duotone" />
+      </div>
+    );
+  };
+
   useEffect(() => {
-    if (!isRemoteInputOpen || !device.reachable || device.pairState !== "Paired") {
+    if (
+      !isRemoteInputOpen ||
+      !device.reachable ||
+      device.pairState !== "Paired"
+    ) {
       return;
     }
 
@@ -261,18 +556,21 @@ export function DeviceControlView({
         const elapsed = nowPlaying.isPlaying ? Math.max(0, now - opt.atMs) : 0;
         return Math.min(
           nowPlaying.lengthMs,
-          Math.max(0, opt.targetMs + elapsed)
+          Math.max(0, opt.targetMs + elapsed),
         );
       }
 
       if (!nowPlaying.isPlaying) {
-        return Math.min(nowPlaying.lengthMs, Math.max(0, nowPlaying.positionMs));
+        return Math.min(
+          nowPlaying.lengthMs,
+          Math.max(0, nowPlaying.positionMs),
+        );
       }
       const baseTime = nowPlaying.positionUpdatedAtMs || now;
       const elapsed = Math.max(0, now - baseTime);
       return Math.min(
         nowPlaying.lengthMs,
-        Math.max(0, nowPlaying.positionMs + elapsed)
+        Math.max(0, nowPlaying.positionMs + elapsed),
       );
     };
 
@@ -280,7 +578,7 @@ export function DeviceControlView({
       const posMs = computePosMs();
       const pct = Math.min(
         100,
-        Math.max(0, (posMs / nowPlaying.lengthMs) * 100)
+        Math.max(0, (posMs / nowPlaying.lengthMs) * 100),
       );
       if (!isAnimatingSeekRef.current) {
         progressPctMv.set(pct);
@@ -303,15 +601,7 @@ export function DeviceControlView({
     rafId = requestAnimationFrame(tick);
 
     return () => cancelAnimationFrame(rafId);
-  }, [
-    nowPlaying?.player,
-    nowPlaying?.title,
-    nowPlaying?.positionMs,
-    nowPlaying?.positionUpdatedAtMs,
-    nowPlaying?.isPlaying,
-    nowPlaying?.lengthMs,
-    progressPctMv,
-  ]);
+  }, [nowPlaying, progressPctMv]);
 
   const handlePickFilesToSend = async () => {
     if (!device.reachable || device.pairState !== "Paired") {
@@ -346,7 +636,7 @@ export function DeviceControlView({
         t.deviceId === device.deviceId &&
         t.kind === "File" &&
         t.status === "Completed" &&
-        Date.now() - t.timestampMs < 2400
+        Date.now() - t.timestampMs < 2400,
     );
     if (!hasRecentCompleted) return;
     const timer = setTimeout(() => setNowTickMs(Date.now()), 2300);
@@ -376,7 +666,7 @@ export function DeviceControlView({
     const rect = bar.getBoundingClientRect();
     const ratio = Math.min(
       1,
-      Math.max(0, (e.clientX - rect.left) / rect.width)
+      Math.max(0, (e.clientX - rect.left) / rect.width),
     );
     const targetMs = Math.round(ratio * device.nowPlaying.lengthMs);
     const targetPct = ratio * 100;
@@ -537,173 +827,171 @@ export function DeviceControlView({
 
       {/* Conditionally Rendered Now Playing Music Section */}
       <AnimatePresence initial={false}>
-        {device.reachable &&
-          device.nowPlaying &&
-          device.nowPlaying.title && (
-            <motion.div
-              key="now-playing-card"
-              initial={{
-                opacity: 0,
-                height: 0,
-                marginTop: 0,
-                y: -6,
-                scale: 0.98,
-              }}
-              animate={{
-                opacity: 1,
-                height: "auto",
-                marginTop: 24,
-                y: 0,
-                scale: 1,
-              }}
-              exit={{
-                opacity: 0,
-                height: 0,
-                marginTop: 0,
-                y: -6,
-                scale: 0.98,
-              }}
-              transition={{
-                height: {
-                  type: "spring",
-                  stiffness: 380,
-                  damping: 34,
-                },
-                marginTop: {
-                  type: "spring",
-                  stiffness: 380,
-                  damping: 34,
-                },
-                opacity: { duration: 0.2, ease: "easeOut" },
-                y: {
-                  type: "spring",
-                  stiffness: 420,
-                  damping: 32,
-                },
-                scale: {
-                  type: "spring",
-                  stiffness: 420,
-                  damping: 32,
-                },
-              }}
-              className="overflow-hidden"
-            >
-              <div className="relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-black/10 bg-white/60 p-4 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04]">
-                <div className="relative z-10 flex items-center justify-between gap-4">
-                  <div className="flex min-w-0 items-center gap-3.5">
-                    {/* Crisp Album Artwork Thumbnail (or MusicNotes fallback) */}
-                    <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-emerald-500/12 text-emerald-600 shadow-sm ring-1 ring-black/10 dark:bg-emerald-500/15 dark:text-emerald-400 dark:ring-white/15">
-                      {artworkSrc ? (
-                        <motion.img
-                          key={artworkSrc}
-                          src={artworkSrc}
-                          alt={device.nowPlaying.title}
-                          initial={{ opacity: 0, scale: 0.92 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ duration: 0.25 }}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <MusicNotes size={20} weight="fill" />
-                      )}
-                    </div>
-
-                    <div className="flex min-w-0 flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-[14px] font-semibold text-zinc-900 dark:text-zinc-100">
-                          {device.nowPlaying.title}
-                        </span>
-                        {device.nowPlaying.player && (
-                          <span className="shrink-0 rounded-md bg-black/[0.07] px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-700 backdrop-blur-md dark:bg-white/[0.10] dark:text-zinc-300">
-                            {device.nowPlaying.player}
-                          </span>
-                        )}
-                      </div>
-
-                      <span className="mt-0.5 truncate text-[12.5px] text-zinc-600 dark:text-zinc-400">
-                        {[device.nowPlaying.artist, device.nowPlaying.album]
-                          .filter(Boolean)
-                          .join(" — ") || "Playing on device"}
-                      </span>
-                    </div>
+        {device.reachable && device.nowPlaying && device.nowPlaying.title && (
+          <motion.div
+            key="now-playing-card"
+            initial={{
+              opacity: 0,
+              height: 0,
+              marginTop: 0,
+              y: -6,
+              scale: 0.98,
+            }}
+            animate={{
+              opacity: 1,
+              height: "auto",
+              marginTop: 24,
+              y: 0,
+              scale: 1,
+            }}
+            exit={{
+              opacity: 0,
+              height: 0,
+              marginTop: 0,
+              y: -6,
+              scale: 0.98,
+            }}
+            transition={{
+              height: {
+                type: "spring",
+                stiffness: 380,
+                damping: 34,
+              },
+              marginTop: {
+                type: "spring",
+                stiffness: 380,
+                damping: 34,
+              },
+              opacity: { duration: 0.2, ease: "easeOut" },
+              y: {
+                type: "spring",
+                stiffness: 420,
+                damping: 32,
+              },
+              scale: {
+                type: "spring",
+                stiffness: 420,
+                damping: 32,
+              },
+            }}
+            className="overflow-hidden"
+          >
+            <div className="relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-black/10 bg-white/60 p-4 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04]">
+              <div className="relative z-10 flex items-center justify-between gap-4">
+                <div className="flex min-w-0 items-center gap-3.5">
+                  {/* Crisp Album Artwork Thumbnail (or MusicNotes fallback) */}
+                  <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-emerald-500/12 text-emerald-600 shadow-sm ring-1 ring-black/10 dark:bg-emerald-500/15 dark:text-emerald-400 dark:ring-white/15">
+                    {artworkSrc ? (
+                      <motion.img
+                        key={artworkSrc}
+                        src={artworkSrc}
+                        alt={device.nowPlaying.title}
+                        initial={{ opacity: 0, scale: 0.92 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.25 }}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <MusicNotes size={20} weight="fill" />
+                    )}
                   </div>
 
-                  {/* Media Playback Controls */}
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <motion.button
-                      type="button"
-                      whileHover={{ scale: 1.08 }}
-                      whileTap={{ scale: 0.92 }}
-                      disabled={!device.nowPlaying.canGoPrevious}
-                      onClick={() => handleMediaAction("Previous")}
-                      className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-zinc-700 transition-colors hover:bg-black/[0.08] hover:text-zinc-950 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/[0.10] dark:hover:text-white"
-                      title="Previous Track"
-                    >
-                      <SkipBack size={16} weight="fill" />
-                    </motion.button>
-
-                    <motion.button
-                      type="button"
-                      whileHover={{ scale: 1.08 }}
-                      whileTap={{ scale: 0.92 }}
-                      onClick={() => handleMediaAction("PlayPause")}
-                      className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-                      title={device.nowPlaying.isPlaying ? "Pause" : "Play"}
-                    >
-                      {device.nowPlaying.isPlaying ? (
-                        <Pause size={16} weight="fill" />
-                      ) : (
-                        <Play size={16} weight="fill" />
+                  <div className="flex min-w-0 flex-col">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[14px] font-semibold text-zinc-900 dark:text-zinc-100">
+                        {device.nowPlaying.title}
+                      </span>
+                      {device.nowPlaying.player && (
+                        <span className="shrink-0 rounded-md bg-black/[0.07] px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-700 backdrop-blur-md dark:bg-white/[0.10] dark:text-zinc-300">
+                          {device.nowPlaying.player}
+                        </span>
                       )}
-                    </motion.button>
+                    </div>
 
-                    <motion.button
-                      type="button"
-                      whileHover={{ scale: 1.08 }}
-                      whileTap={{ scale: 0.92 }}
-                      disabled={!device.nowPlaying.canGoNext}
-                      onClick={() => handleMediaAction("Next")}
-                      className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-zinc-700 transition-colors hover:bg-black/[0.08] hover:text-zinc-950 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/[0.10] dark:hover:text-white"
-                      title="Next Track"
-                    >
-                      <SkipForward size={16} weight="fill" />
-                    </motion.button>
+                    <span className="mt-0.5 truncate text-[12.5px] text-zinc-600 dark:text-zinc-400">
+                      {[device.nowPlaying.artist, device.nowPlaying.album]
+                        .filter(Boolean)
+                        .join(" — ") || "Playing on device"}
+                    </span>
                   </div>
                 </div>
 
-                {/* Interactive Seek Progress Bar */}
-                {device.nowPlaying.lengthMs > 0 && (
-                  <div className="relative z-10 flex items-center gap-2.5 pt-0.5 text-[11px] font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
-                    <span className="w-8 text-left">
-                      {formatDurationMs(displaySecs * 1000)}
-                    </span>
+                {/* Media Playback Controls */}
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.08 }}
+                    whileTap={{ scale: 0.92 }}
+                    disabled={!device.nowPlaying.canGoPrevious}
+                    onClick={() => handleMediaAction("Previous")}
+                    className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-zinc-700 transition-colors hover:bg-black/[0.08] hover:text-zinc-950 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/[0.10] dark:hover:text-white"
+                    title="Previous Track"
+                  >
+                    <SkipBack size={16} weight="fill" />
+                  </motion.button>
 
-                    <div
-                      ref={seekBarRef}
-                      onClick={handleSeekClick}
-                      className="group relative flex flex-1 cursor-pointer items-center py-2"
-                    >
-                      <div className="relative h-1 w-full overflow-hidden rounded-full bg-black/[0.10] dark:bg-white/[0.12]">
-                        <motion.div
-                          style={{ width: progressPctStyle }}
-                          className="h-full rounded-full bg-zinc-800 dark:bg-zinc-200"
-                        />
-                      </div>
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.08 }}
+                    whileTap={{ scale: 0.92 }}
+                    onClick={() => handleMediaAction("PlayPause")}
+                    className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                    title={device.nowPlaying.isPlaying ? "Pause" : "Play"}
+                  >
+                    {device.nowPlaying.isPlaying ? (
+                      <Pause size={16} weight="fill" />
+                    ) : (
+                      <Play size={16} weight="fill" />
+                    )}
+                  </motion.button>
 
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.08 }}
+                    whileTap={{ scale: 0.92 }}
+                    disabled={!device.nowPlaying.canGoNext}
+                    onClick={() => handleMediaAction("Next")}
+                    className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-zinc-700 transition-colors hover:bg-black/[0.08] hover:text-zinc-950 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/[0.10] dark:hover:text-white"
+                    title="Next Track"
+                  >
+                    <SkipForward size={16} weight="fill" />
+                  </motion.button>
+                </div>
+              </div>
+
+              {/* Interactive Seek Progress Bar */}
+              {device.nowPlaying.lengthMs > 0 && (
+                <div className="relative z-10 flex items-center gap-2.5 pt-0.5 text-[11px] font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
+                  <span className="w-8 text-left">
+                    {formatDurationMs(displaySecs * 1000)}
+                  </span>
+
+                  <div
+                    ref={seekBarRef}
+                    onClick={handleSeekClick}
+                    className="group relative flex flex-1 cursor-pointer items-center py-2"
+                  >
+                    <div className="relative h-1 w-full overflow-hidden rounded-full bg-black/[0.10] dark:bg-white/[0.12]">
                       <motion.div
-                        style={{ left: progressPctStyle }}
-                        className="pointer-events-none absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-800 opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:bg-zinc-200"
+                        style={{ width: progressPctStyle }}
+                        className="h-full rounded-full bg-zinc-800 dark:bg-zinc-200"
                       />
                     </div>
 
-                    <span className="w-8 text-right">
-                      {formatDurationMs(device.nowPlaying.lengthMs)}
-                    </span>
+                    <motion.div
+                      style={{ left: progressPctStyle }}
+                      className="pointer-events-none absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-800 opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:bg-zinc-200"
+                    />
                   </div>
-                )}
-              </div>
-            </motion.div>
-          )}
+
+                  <span className="w-8 text-right">
+                    {formatDurationMs(device.nowPlaying.lengthMs)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* Sleek File Drop Zone */}
@@ -798,10 +1086,10 @@ export function DeviceControlView({
         {/* Per-file transfer progress bars inside the drop card */}
         {(() => {
           const deviceFileTransfers = transfers.filter(
-            (t) => t.deviceId === device.deviceId && t.kind === "File"
+            (t) => t.deviceId === device.deviceId && t.kind === "File",
           );
           const anyInProgress = deviceFileTransfers.some(
-            (t) => t.status === "InProgress"
+            (t) => t.status === "InProgress",
           );
           const visibleTransfers = deviceFileTransfers
             .filter(
@@ -810,7 +1098,7 @@ export function DeviceControlView({
                 (t.status === "Completed" &&
                   (anyInProgress
                     ? nowTickMs - t.timestampMs < 15000
-                    : nowTickMs - t.timestampMs < 2200))
+                    : nowTickMs - t.timestampMs < 2200)),
             )
             .slice(0, 6);
 
@@ -827,8 +1115,8 @@ export function DeviceControlView({
                         ? Math.min(
                             100,
                             Math.round(
-                              (item.transferredBytes / item.totalBytes) * 100
-                            )
+                              (item.transferredBytes / item.totalBytes) * 100,
+                            ),
                           )
                         : 0;
                   const isDone = item.status === "Completed";
@@ -1003,7 +1291,7 @@ export function DeviceControlView({
               invoke("ring_device", { deviceId: device.deviceId }).catch(
                 (err) => {
                   console.error("Failed to ring device:", err);
-                }
+                },
               );
             }}
             animate={
@@ -1181,6 +1469,420 @@ export function DeviceControlView({
             </AnimatePresence>
           </Dialog.Root>
         </div>
+
+        {/* 4th Quick Action (full-width below grid-cols-3): Browse files SFTP Radix Dialog */}
+        <Dialog.Root
+          open={device.reachable && isFileBrowserOpen}
+          onOpenChange={(nextOpen) => {
+            setIsFileBrowserOpen(nextOpen);
+            if (nextOpen && !sftpData && !isSftpLoading) {
+              loadSftpDirectory();
+            }
+          }}
+        >
+          <Dialog.Trigger asChild>
+            <motion.button
+              type="button"
+              onClick={() => {
+                if (device.reachable && device.pairState === "Paired") {
+                  setIsFileBrowserOpen(true);
+                  if (!sftpData && !isSftpLoading) {
+                    loadSftpDirectory();
+                  }
+                }
+              }}
+              whileHover={device.reachable ? { scale: 1.008 } : undefined}
+              whileTap={device.reachable ? { scale: 0.992 } : undefined}
+              transition={{
+                type: "spring",
+                stiffness: 450,
+                damping: 28,
+              }}
+              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/12 bg-black/[0.02] px-4 py-2.5 text-[13.5px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.05] data-[state=open]:border-black/25 data-[state=open]:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05] dark:data-[state=open]:border-white/25 dark:data-[state=open]:bg-white/[0.07]"
+            >
+              <FolderOpen size={16} weight="regular" />
+              <span>Browse files</span>
+            </motion.button>
+          </Dialog.Trigger>
+
+          <AnimatePresence>
+            {device.reachable && isFileBrowserOpen && (
+              <Dialog.Portal forceMount container={rightPaneContainer}>
+                <Dialog.Overlay asChild forceMount>
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className="absolute inset-0 z-40 bg-black/35 backdrop-blur-xs dark:bg-black/55"
+                  />
+                </Dialog.Overlay>
+
+                <Dialog.Content asChild forceMount>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 480,
+                      damping: 34,
+                    }}
+                    className="absolute top-1/2 left-1/2 z-50 flex h-[440px] w-[90%] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-black/12 bg-white shadow-2xl outline-none dark:border-white/15 dark:bg-zinc-900"
+                  >
+                    {/* Dialog Header: Back + Breadcrumbs + Refresh + Close */}
+                    <div className="flex items-center justify-between gap-2 border-b border-black/8 px-4 py-3 dark:border-white/10">
+                      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                        <motion.button
+                          type="button"
+                          disabled={!canSftpGoBack || isSftpLoading}
+                          whileHover={
+                            canSftpGoBack && !isSftpLoading
+                              ? { scale: 1.06 }
+                              : undefined
+                          }
+                          whileTap={
+                            canSftpGoBack && !isSftpLoading
+                              ? { scale: 0.94 }
+                              : undefined
+                          }
+                          onClick={handleSftpGoBack}
+                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                            canSftpGoBack && !isSftpLoading
+                              ? "cursor-pointer text-zinc-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/[0.08]"
+                              : "cursor-default text-zinc-300 dark:text-zinc-600"
+                          }`}
+                          title="Back"
+                        >
+                          <ArrowLeft size={15} weight="bold" />
+                        </motion.button>
+
+                        <Dialog.Title className="sr-only">
+                          Browse files on {device.deviceName}
+                        </Dialog.Title>
+                        <Dialog.Description className="sr-only">
+                          Browse folders and download files from{" "}
+                          {device.deviceName}
+                        </Dialog.Description>
+
+                        {/* Scrollable Breadcrumb Bar */}
+                        <div
+                          ref={breadcrumbScrollRef}
+                          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                        >
+                          {sftpBreadcrumbs.length > 0 ? (
+                            sftpBreadcrumbs.map((crumb, idx) => {
+                              const isLast = idx === sftpBreadcrumbs.length - 1;
+                              return (
+                                <div
+                                  key={`${crumb.path}-${idx}`}
+                                  className="flex shrink-0 items-center gap-1"
+                                >
+                                  {idx > 0 && (
+                                    <CaretRight
+                                      size={11}
+                                      weight="bold"
+                                      className="text-zinc-400 dark:text-zinc-500"
+                                    />
+                                  )}
+                                  <button
+                                    type="button"
+                                    disabled={isLast || isSftpLoading}
+                                    onClick={() => {
+                                      if (!isLast) {
+                                        loadSftpDirectory(crumb.path);
+                                      }
+                                    }}
+                                    className={`rounded-md px-1.5 py-0.5 text-[13px] transition-colors ${
+                                      isLast
+                                        ? "cursor-default font-semibold text-zinc-900 dark:text-zinc-100"
+                                        : "cursor-pointer font-medium text-zinc-500 hover:bg-black/[0.05] hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-white/[0.07] dark:hover:text-zinc-200"
+                                    }`}
+                                  >
+                                    {crumb.label}
+                                  </button>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <span className="px-1.5 text-[13.5px] font-semibold text-zinc-900 dark:text-zinc-100">
+                              {device.deviceName} files
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-1">
+                        <motion.button
+                          type="button"
+                          disabled={isSftpLoading}
+                          whileHover={
+                            !isSftpLoading ? { scale: 1.06 } : undefined
+                          }
+                          whileTap={
+                            !isSftpLoading ? { scale: 0.94 } : undefined
+                          }
+                          onClick={() =>
+                            loadSftpDirectory(sftpData?.currentPath)
+                          }
+                          className={`flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-black/[0.06] hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-white/[0.08] dark:hover:text-zinc-200 ${
+                            isSftpLoading
+                              ? "cursor-default opacity-60"
+                              : "cursor-pointer"
+                          }`}
+                          title="Refresh folder"
+                        >
+                          <ArrowsClockwise
+                            size={15}
+                            weight="bold"
+                            className={isSftpLoading ? "animate-spin" : ""}
+                          />
+                        </motion.button>
+
+                        <Dialog.Close asChild>
+                          <motion.button
+                            type="button"
+                            whileHover={{ scale: 1.06 }}
+                            whileTap={{ scale: 0.94 }}
+                            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-black/[0.06] hover:text-zinc-700 dark:hover:bg-white/[0.08] dark:hover:text-zinc-200"
+                            aria-label="Close"
+                          >
+                            <X size={15} weight="bold" />
+                          </motion.button>
+                        </Dialog.Close>
+                      </div>
+                    </div>
+
+                    {/* Dialog Body */}
+                    <div className="flex-1 overflow-y-auto p-2.5">
+                      {isSftpLoading && !sftpData ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-2.5 px-6 text-center">
+                          <CircleNotch
+                            size={24}
+                            weight="bold"
+                            className="animate-spin text-blue-600 dark:text-blue-400"
+                          />
+                          <p className="text-[13px] font-medium text-zinc-700 dark:text-zinc-200">
+                            Connecting to {device.deviceName} storage...
+                          </p>
+                        </div>
+                      ) : sftpData?.unconfiguredMessage ? (
+                        <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/12 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400">
+                            <FolderLock size={24} weight="duotone" />
+                          </div>
+                          <p className="mt-3 text-[13.5px] font-semibold text-zinc-800 dark:text-zinc-100">
+                            Storage access not configured
+                          </p>
+                          <p className="mt-1.5 max-w-xs text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                            Open{" "}
+                            <span className="font-medium text-zinc-700 dark:text-zinc-200">
+                              KDE Connect
+                            </span>{" "}
+                            on {device.deviceName} →{" "}
+                            <span className="font-medium text-zinc-700 dark:text-zinc-200">
+                              Plugin settings
+                            </span>{" "}
+                            →{" "}
+                            <span className="font-medium text-zinc-700 dark:text-zinc-200">
+                              Filesystem expose
+                            </span>{" "}
+                            and add a storage location.
+                          </p>
+                          <motion.button
+                            type="button"
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => loadSftpDirectory()}
+                            className="mt-4 cursor-pointer rounded-xl border border-black/12 bg-black/[0.03] px-4 py-1.5 text-xs font-medium text-zinc-800 transition-colors hover:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:bg-white/[0.09]"
+                          >
+                            Retry
+                          </motion.button>
+                        </div>
+                      ) : sftpError ? (
+                        <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/12 text-red-600 dark:bg-red-500/15 dark:text-red-400">
+                            <WarningCircle size={24} weight="duotone" />
+                          </div>
+                          <p className="mt-3 text-[13.5px] font-semibold text-zinc-800 dark:text-zinc-100">
+                            Couldn&apos;t load files
+                          </p>
+                          <p className="mt-1 max-w-xs text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                            {sftpError}
+                          </p>
+                          <motion.button
+                            type="button"
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() =>
+                              loadSftpDirectory(sftpData?.currentPath)
+                            }
+                            className="mt-4 cursor-pointer rounded-xl border border-black/12 bg-black/[0.03] px-4 py-1.5 text-xs font-medium text-zinc-800 transition-colors hover:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:bg-white/[0.09]"
+                          >
+                            Retry
+                          </motion.button>
+                        </div>
+                      ) : sftpData && sftpData.entries.length === 0 ? (
+                        <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-black/[0.04] text-zinc-400 dark:bg-white/[0.05] dark:text-zinc-500">
+                            <FolderOpen size={22} weight="regular" />
+                          </div>
+                          <p className="mt-2.5 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">
+                            This folder is empty
+                          </p>
+                        </div>
+                      ) : (
+                        <div
+                          className={`flex flex-col gap-0.5 transition-opacity duration-150 ${
+                            isSftpLoading
+                              ? "pointer-events-none opacity-60"
+                              : ""
+                          }`}
+                        >
+                          {sftpData?.entries.map((entry) => {
+                            const isDownloading = downloadingPaths.has(
+                              entry.path,
+                            );
+                            const savedLocalPath = downloadedPaths.get(
+                              entry.path,
+                            );
+                            const dlError = downloadErrors.get(entry.path);
+                            const formattedDate = formatShortDate(
+                              entry.modifiedSecs,
+                            );
+
+                            if (entry.isDir) {
+                              return (
+                                <button
+                                  key={entry.path}
+                                  type="button"
+                                  onClick={() => loadSftpDirectory(entry.path)}
+                                  className="group flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
+                                >
+                                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                                    {renderFileEntryIcon(entry)}
+                                    <div className="flex min-w-0 flex-1 flex-col">
+                                      <span className="truncate text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
+                                        {entry.name}
+                                      </span>
+                                      {formattedDate && (
+                                        <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                                          {formattedDate}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <CaretRight
+                                    size={14}
+                                    weight="bold"
+                                    className="shrink-0 text-zinc-300 transition-transform group-hover:translate-x-0.5 group-hover:text-zinc-500 dark:text-zinc-600 dark:group-hover:text-zinc-400"
+                                  />
+                                </button>
+                              );
+                            }
+
+                            return (
+                              <div
+                                key={entry.path}
+                                className="flex items-center justify-between gap-3 rounded-xl px-2.5 py-2 transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+                              >
+                                <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                                  {renderFileEntryIcon(entry)}
+                                  <div className="flex min-w-0 flex-1 flex-col">
+                                    <span className="truncate text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
+                                      {entry.name}
+                                    </span>
+                                    <span
+                                      className={`truncate text-[11px] ${
+                                        dlError
+                                          ? "text-red-500 dark:text-red-400"
+                                          : "text-zinc-400 dark:text-zinc-500"
+                                      }`}
+                                    >
+                                      {dlError
+                                        ? `Download failed: ${dlError}`
+                                        : `${formatFileSize(entry.size)}${
+                                            formattedDate
+                                              ? ` · ${formattedDate}`
+                                              : ""
+                                          }`}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {isDownloading ? (
+                                  <div
+                                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400"
+                                    title="Downloading..."
+                                  >
+                                    <CircleNotch
+                                      size={15}
+                                      weight="bold"
+                                      className="animate-spin"
+                                    />
+                                  </div>
+                                ) : savedLocalPath ? (
+                                  <motion.button
+                                    type="button"
+                                    whileHover={{ scale: 1.06 }}
+                                    whileTap={{ scale: 0.94 }}
+                                    onClick={() => {
+                                      revealItemInDir(savedLocalPath).catch(
+                                        () => {},
+                                      );
+                                    }}
+                                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-600 transition-colors hover:bg-emerald-500/20 dark:bg-emerald-500/15 dark:text-emerald-400 dark:hover:bg-emerald-500/25"
+                                    title="Saved — click to reveal in Finder"
+                                  >
+                                    <Check size={15} weight="bold" />
+                                  </motion.button>
+                                ) : (
+                                  <motion.button
+                                    type="button"
+                                    whileHover={{ scale: 1.06 }}
+                                    whileTap={{ scale: 0.94 }}
+                                    onClick={() => handleSftpDownload(entry)}
+                                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-black/10 bg-black/[0.02] text-zinc-600 transition-colors hover:border-black/20 hover:bg-black/[0.06] hover:text-zinc-900 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-white/[0.08] dark:hover:text-zinc-100"
+                                    title="Download file"
+                                  >
+                                    <DownloadSimple
+                                      size={15}
+                                      weight="regular"
+                                    />
+                                  </motion.button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Dialog Footer: Item count + Save folder */}
+                    <div className="flex items-center justify-between gap-2 border-t border-black/8 bg-black/[0.015] px-4 py-2 text-[11.5px] text-zinc-400 dark:border-white/10 dark:bg-white/[0.015] dark:text-zinc-500">
+                      <span>
+                        {sftpData && !sftpData.unconfiguredMessage
+                          ? `${sftpData.entries.length} ${
+                              sftpData.entries.length === 1 ? "item" : "items"
+                            }`
+                          : "Remote SFTP"}
+                      </span>
+                      <span className="truncate">
+                        Saves to{" "}
+                        <span className="font-medium text-zinc-600 dark:text-zinc-300">
+                          {device.saveLocation
+                            ?.split("/")
+                            .filter(Boolean)
+                            .pop() || "Downloads"}
+                        </span>
+                      </span>
+                    </div>
+                  </motion.div>
+                </Dialog.Content>
+              </Dialog.Portal>
+            )}
+          </AnimatePresence>
+        </Dialog.Root>
       </div>
 
       {/* Notifications Section */}
@@ -1255,7 +1957,7 @@ export function DeviceControlView({
                             type="button"
                             onClick={() => {
                               openUrl(
-                                "https://github.com/vsnthdev/Velquo/blob/main/docs/sensitive-notifications.md"
+                                "https://github.com/vsnthdev/Velquo/blob/main/docs/sensitive-notifications.md",
                               ).catch((err) => {
                                 console.error("Failed to open docs URL:", err);
                               });
@@ -1282,7 +1984,7 @@ export function DeviceControlView({
                               setCopiedNotifId(notif.id);
                               setTimeout(() => {
                                 setCopiedNotifId((prev) =>
-                                  prev === notif.id ? null : prev
+                                  prev === notif.id ? null : prev,
                                 );
                               }, 1800);
                             }}

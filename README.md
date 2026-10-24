@@ -39,6 +39,6 @@ bun run bundle
 ```
 
 The built artifacts are output to:
+
 - **App Bundle:** `src-tauri/target/release/bundle/macos/Velquo.app`
 - **DMG Installer:** `src-tauri/target/release/bundle/dmg/Velquo_0.1.0_aarch64.dmg`
-
