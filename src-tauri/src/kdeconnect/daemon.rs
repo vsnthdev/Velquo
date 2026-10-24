@@ -733,8 +733,7 @@ impl KdeConnectDaemon {
                     continue;
                 }
 
-                if let Ok(Some(text)) = tokio::task::spawn_blocking(read_macos_clipboard_text).await
-                {
+                if let Some(text) = read_macos_clipboard_text() {
                     let should_broadcast = {
                         let mut state = daemon_clip.clipboard_state.lock().unwrap();
                         if state.last_content == text {
@@ -2853,21 +2852,13 @@ impl KdeConnectDaemon {
     }
 
     pub fn copy_text_to_clipboard(self: &Arc<Self>, text: &str) -> Result<()> {
-        let owned = text.to_string();
-        {
-            let mut state = self.clipboard_state.lock().unwrap();
-            state.last_content = owned.clone();
-            state.last_timestamp_ms = current_millis();
+        let new_count = write_macos_clipboard_text(text);
+        let mut state = self.clipboard_state.lock().unwrap();
+        state.last_content = text.to_string();
+        state.last_timestamp_ms = current_millis();
+        if let Some(cnt) = new_count {
+            state.last_change_count = cnt;
         }
-        let daemon = Arc::clone(self);
-        tauri::async_runtime::spawn(async move {
-            if let Ok(Some(new_count)) =
-                tokio::task::spawn_blocking(move || write_macos_clipboard_text(&owned)).await
-            {
-                let mut state = daemon.clipboard_state.lock().unwrap();
-                state.last_change_count = new_count;
-            }
-        });
         Ok(())
     }
 
@@ -3149,6 +3140,7 @@ impl KdeConnectDaemon {
         let incoming_is_generic_summary = Self::is_generic_summary_placeholder(&notif_item);
 
         let mut is_new_or_changed = false;
+        let mut is_new_otp = false;
         if let Ok(mut devices) = self.devices.lock() {
             if let Some(entry) = devices.get_mut(device_id) {
                 // If this incoming notification is a generic group-summary placeholder (`|null|`)
@@ -3185,9 +3177,15 @@ impl KdeConnectDaemon {
                     {
                         is_new_or_changed = true;
                     }
+                    if notif_item.otp_code.is_some() && existing.otp_code != notif_item.otp_code {
+                        is_new_otp = true;
+                    }
                     *existing = notif_item;
                 } else {
                     is_new_or_changed = true;
+                    if notif_item.otp_code.is_some() {
+                        is_new_otp = true;
+                    }
                     entry.view.notifications.insert(0, notif_item);
                 }
 
@@ -3203,23 +3201,63 @@ impl KdeConnectDaemon {
 
         self.notify_ui();
 
-        // For live, non-silent notifications, show a native macOS notification and auto-copy OTP if detected
-        if is_new_or_changed && !is_request_answer && !is_silent {
-            let notif_heading = if !app_name.is_empty() {
-                format!("{} • {}", app_name, device_name)
-            } else {
-                device_name.to_string()
-            };
-            let notif_body = if !title.is_empty() && !text.is_empty() && title != app_name {
-                format!("{}: {}", title, text)
-            } else if !text.is_empty() {
-                text.clone()
-            } else if !ticker.is_empty() {
-                ticker.clone()
-            } else {
-                title.clone()
-            };
+        let notif_heading = if !app_name.is_empty() {
+            format!("{} • {}", app_name, device_name)
+        } else {
+            device_name.to_string()
+        };
+        let notif_body = if !title.is_empty() && !text.is_empty() && title != app_name {
+            format!("{}: {}", title, text)
+        } else if !text.is_empty() {
+            text.clone()
+        } else if !ticker.is_empty() {
+            ticker.clone()
+        } else {
+            title.clone()
+        };
 
+        // If an OTP is detected and auto-copy OTP is enabled for this device, always copy the OTP
+        // (regardless of `is_silent`) and show ONLY the "Copied OTP: {{otp}}" macOS system notification.
+        if let Some(ref code) = otp_code {
+            let is_recent_or_live =
+                !is_request_answer || (current_millis() - timestamp_ms).abs() <= 90_000;
+            if is_new_otp && is_recent_or_live && self.is_device_auto_copy_otp_allowed(device_id) {
+                log::info!(
+                    "[otp] Extracted OTP code '{}' from '{}' notification on '{}' (silent={}), auto-copying to Mac clipboard",
+                    code,
+                    app_name,
+                    device_name,
+                    is_silent
+                );
+                let _ = self.copy_text_to_clipboard(code);
+
+                let otp_notif_title = format!("Copied OTP: {}", code);
+                Self::show_macos_notification(
+                    &otp_notif_title,
+                    &notif_body,
+                    Some(device_id),
+                    Some(&raw_id_original),
+                    true,
+                );
+
+                if let Ok(guard) = self.app_handle.lock() {
+                    if let Some(app) = guard.as_ref() {
+                        let _ = app.emit(
+                            "velquo://ping",
+                            serde_json::json!({
+                                "deviceId": device_id,
+                                "deviceName": format!("Copied OTP: {}", code),
+                                "message": notif_body,
+                            }),
+                        );
+                    }
+                }
+                return;
+            }
+        }
+
+        // For non-OTP live, non-silent notifications, show the standard native macOS notification
+        if is_new_or_changed && !is_request_answer && !is_silent {
             Self::show_macos_notification(
                 &notif_heading,
                 &notif_body,
@@ -3227,30 +3265,6 @@ impl KdeConnectDaemon {
                 Some(&raw_id_original),
                 true,
             );
-
-            if let Some(code) = otp_code {
-                if self.is_device_auto_copy_otp_allowed(device_id) {
-                    log::info!(
-                        "[otp] Extracted OTP code '{}' from '{}' notification on '{}', auto-copying to Mac clipboard",
-                        code,
-                        app_name,
-                        device_name
-                    );
-                    let _ = self.copy_text_to_clipboard(&code);
-                    if let Ok(guard) = self.app_handle.lock() {
-                        if let Some(app) = guard.as_ref() {
-                            let _ = app.emit(
-                                "velquo://ping",
-                                serde_json::json!({
-                                    "deviceId": device_id,
-                                    "deviceName": format!("OTP Copied • {}", code),
-                                    "message": format!("Verification code from {} is ready to paste (⌘V)", if app_name.is_empty() { device_name } else { &app_name }),
-                                }),
-                            );
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -3339,19 +3353,17 @@ impl KdeConnectDaemon {
             state.last_timestamp_ms
         };
 
-        tauri::async_runtime::spawn(async move {
-            if let Ok(Some(text)) = tokio::task::spawn_blocking(read_macos_clipboard_text).await {
-                let ts = if existing_ts > 0 {
-                    existing_ts
-                } else {
-                    current_millis()
-                };
-                let pkt = NetworkPacket::clipboard_connect(&text, ts);
-                if let Ok(bytes) = pkt.serialize_line() {
-                    let _ = sender.send(bytes);
-                }
+        if let Some(text) = read_macos_clipboard_text() {
+            let ts = if existing_ts > 0 {
+                existing_ts
+            } else {
+                current_millis()
+            };
+            let pkt = NetworkPacket::clipboard_connect(&text, ts);
+            if let Ok(bytes) = pkt.serialize_line() {
+                let _ = sender.send(bytes);
             }
-        });
+        }
     }
 
     pub fn set_device_clipboard_sync(&self, device_id: &str, enabled: bool) -> Result<()> {
@@ -3484,16 +3496,10 @@ impl KdeConnectDaemon {
             text_to_write.len()
         );
 
-        let daemon = Arc::clone(self);
-        tokio::spawn(async move {
-            if let Ok(Some(new_count)) =
-                tokio::task::spawn_blocking(move || write_macos_clipboard_text(&text_to_write))
-                    .await
-            {
-                let mut state = daemon.clipboard_state.lock().unwrap();
-                state.last_change_count = new_count;
-            }
-        });
+        if let Some(new_count) = write_macos_clipboard_text(&text_to_write) {
+            let mut state = self.clipboard_state.lock().unwrap();
+            state.last_change_count = new_count;
+        }
     }
 
     pub fn has_online_paired_device(&self) -> bool {
