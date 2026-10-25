@@ -82,9 +82,9 @@ const repoBaseUrl = (
     pkg.homepage || "https://github.com/vsnthdev/Velquo"
 ).replace(/\/+$/, "");
 
-// 1. Update package.json
+// 1. Update package.json (4-space indentation)
 pkg.version = nextVersion;
-await Bun.write(pkgFile, `${JSON.stringify(pkg, null, 2)}\n`);
+await Bun.write(pkgFile, `${JSON.stringify(pkg, null, 4)}\n`);
 
 // 2. Update src-tauri/Cargo.toml [package] version
 const cargoTomlText = await cargoTomlFile.text();
@@ -101,12 +101,16 @@ if (!(await keyFile.exists())) {
     process.exit(1);
 }
 const signingPrivateKey = (await keyFile.text()).trim();
-Bun.env.TAURI_SIGNING_PRIVATE_KEY = signingPrivateKey;
-Bun.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "";
+const spawnEnv: Record<string, string | undefined> = {
+    ...(Bun.env as unknown as Record<string, string | undefined>),
+    TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "",
+    TAURI_SIGNING_PRIVATE_KEY: signingPrivateKey,
+};
 
 console.log(`\n==> Building and signing release bundle for v${nextVersion}...`);
 const bundleProc = Bun.spawn(["bun", "run", "bundle"], {
     cwd: rootPath,
+    env: spawnEnv,
     stdio: ["inherit", "inherit", "inherit"],
 });
 
