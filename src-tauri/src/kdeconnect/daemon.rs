@@ -1967,15 +1967,19 @@ impl KdeConnectDaemon {
             return;
         }
 
-        log::info!(
-            "[packet-in] From '{}' ({}): type='{}' body={} payloadSize={:?} transferInfo={:?}",
-            device_name,
-            device_id,
-            packet.packet_type,
-            serde_json::to_string(&packet.body).unwrap_or_default(),
-            packet.payload_size,
-            packet.payload_transfer_info
-        );
+        if packet.packet_type != PACKET_TYPE_MOUSEPAD_REQUEST
+            && packet.packet_type != PACKET_TYPE_PRESENTER
+        {
+            log::info!(
+                "[packet-in] From '{}' ({}): type='{}' body={} payloadSize={:?} transferInfo={:?}",
+                device_name,
+                device_id,
+                packet.packet_type,
+                serde_json::to_string(&packet.body).unwrap_or_default(),
+                packet.payload_size,
+                packet.payload_transfer_info
+            );
+        }
 
         match packet.packet_type.as_str() {
             PACKET_TYPE_PAIR => {
@@ -2431,12 +2435,14 @@ impl KdeConnectDaemon {
         sender
             .send(bytes)
             .map_err(|_| anyhow!("Failed to send packet to device channel"))?;
-        log::info!(
-            "[packet-out] Sent '{}' to '{}' ({})",
-            packet.packet_type,
-            entry.view.device_name,
-            device_id
-        );
+        if packet.packet_type != PACKET_TYPE_MOUSEPAD_REQUEST {
+            log::info!(
+                "[packet-out] Sent '{}' to '{}' ({})",
+                packet.packet_type,
+                entry.view.device_name,
+                device_id
+            );
+        }
         Ok(())
     }
 

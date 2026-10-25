@@ -7,7 +7,7 @@
 - [x] **Cap `self.transfers` history length (`src-tauri/src/kdeconnect/daemon.rs:4825`)** — `upsert_transfer` inserts every file, URL, and text transfer into `self.transfers` (`Vec<TransferItem>`) without ever truncating old entries. Over long menu-bar sessions, this vector grows unboundedly in memory and inflates every `get_app_snapshot` IPC response.
 - [x] **Cap per-device `album_art_cache` size (`src-tauri/src/kdeconnect/daemon.rs:3916`)** — `DeviceEntry.album_art_cache` (`HashMap<String, String>`) stores 100–300 KB base64 data URLs for every track played on the phone and never evicts old entries while the device remains connected.
 - [x] **Cap frontend `itunesArtCache` size (`src/utils/format.ts:2`)** — `itunesArtCache` (`Map<string, string | null>`) grows without an upper bound across long sessions.
-- [ ] **Skip verbose `INFO` packet-body serialization on high-frequency `mousepad.request` packets (`src-tauri/src/kdeconnect/daemon.rs:1928`)** — `handle_incoming_packet` serializes `packet.body` to JSON and logs it at `INFO` level on every packet, including 60–120 Hz trackpad movement (`dx`/`dy`) packets from the phone, causing heavy disk I/O and log churn during remote trackpad use.
+- [x] **Skip verbose `INFO` packet-body serialization on high-frequency `mousepad.request` packets (`src-tauri/src/kdeconnect/daemon.rs:1928`)** — `handle_incoming_packet` serializes `packet.body` to JSON and logs it at `INFO` level on every packet, including 60–120 Hz trackpad movement (`dx`/`dy`) packets from the phone, causing heavy disk I/O and log churn during remote trackpad use.
 
 ## Performance Optimizations
 
