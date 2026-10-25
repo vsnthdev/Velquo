@@ -476,6 +476,9 @@ fn restart_app(app: AppHandle) {
     app.restart();
 }
 
+#[derive(Default)]
+struct PendingUpdateState(std::sync::Mutex<Option<tauri_plugin_updater::Update>>);
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateMetadataDto {
@@ -487,10 +490,30 @@ struct UpdateMetadataDto {
     raw_json: serde_json::Value,
 }
 
+fn register_update_in_webview(
+    webview: &tauri::Webview,
+    update: tauri_plugin_updater::Update,
+) -> UpdateMetadataDto {
+    let date = update
+        .raw_json
+        .get("pub_date")
+        .and_then(|v| v.as_str())
+        .map(ToOwned::to_owned);
+    UpdateMetadataDto {
+        current_version: update.current_version.clone(),
+        version: update.version.clone(),
+        date,
+        body: update.body.clone(),
+        raw_json: update.raw_json.clone(),
+        rid: webview.resources_table().add(update),
+    }
+}
+
 #[tauri::command]
 async fn check_for_update(
     webview: tauri::Webview,
     timeout: Option<u64>,
+    pending_state: State<'_, PendingUpdateState>,
 ) -> Result<Option<UpdateMetadataDto>, String> {
     use tauri_plugin_updater::UpdaterExt;
 
@@ -506,23 +529,71 @@ async fn check_for_update(
     let update = updater.check().await.map_err(|e| e.to_string())?;
 
     if let Some(update) = update {
-        let date = update
-            .raw_json
-            .get("pub_date")
-            .and_then(|v| v.as_str())
-            .map(ToOwned::to_owned);
-        let metadata = UpdateMetadataDto {
-            current_version: update.current_version.clone(),
-            version: update.version.clone(),
-            date,
-            body: update.body.clone(),
-            raw_json: update.raw_json.clone(),
-            rid: webview.resources_table().add(update),
-        };
-        Ok(Some(metadata))
+        if let Ok(mut guard) = pending_state.0.lock() {
+            *guard = Some(update.clone());
+        }
+        Ok(Some(register_update_in_webview(&webview, update)))
     } else {
+        if let Ok(mut guard) = pending_state.0.lock() {
+            *guard = None;
+        }
         Ok(None)
     }
+}
+
+#[tauri::command]
+async fn get_pending_update(
+    webview: tauri::Webview,
+    pending_state: State<'_, PendingUpdateState>,
+) -> Result<Option<UpdateMetadataDto>, String> {
+    let cached = pending_state.0.lock().ok().and_then(|g| g.clone());
+    if let Some(update) = cached {
+        return Ok(Some(register_update_in_webview(&webview, update)));
+    }
+    check_for_update(webview, Some(20000), pending_state).await
+}
+
+#[tauri::command]
+async fn open_updater_window(app: AppHandle) -> Result<(), String> {
+    let label = "updater";
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        let _ = app.show();
+        macos_notify::refresh_macos_dock_icon(&app);
+    }
+
+    if let Some(existing) = app.get_webview_window(label) {
+        let _ = existing.unminimize();
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        let _ = app.emit("velquo://update-available", ());
+        log::info!("[updater-window] Focused existing updater window");
+        return Ok(());
+    }
+
+    let url = "index.html?window=updater";
+    let builder = tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::App(url.into()))
+        .title("Velquo — Software Update")
+        .inner_size(860.0, 560.0)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(true)
+        .closable(true)
+        .decorations(true)
+        .center();
+
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true);
+
+    let window = builder.build().map_err(|e| e.to_string())?;
+    let _ = window.show();
+    let _ = window.set_focus();
+    log::info!("[updater-window] Spawned non-resizable updater window (860x560)");
+    Ok(())
 }
 
 #[tauri::command]
@@ -939,6 +1010,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(daemon)
+        .manage(PendingUpdateState::default())
         .invoke_handler(tauri::generate_handler![
             get_app_snapshot,
             broadcast_discovery,
@@ -972,6 +1044,8 @@ pub fn run() {
             quit_app,
             restart_app,
             check_for_update,
+            get_pending_update,
+            open_updater_window,
             focus_main_window,
         ])
         .setup(move |app| {

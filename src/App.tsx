@@ -3,9 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "./components/Sidebar";
 import { DevicePage } from "./pages/DevicePage";
 import { itunesArtCache } from "./utils/format";
-import { Update } from "@tauri-apps/plugin-updater";
 import { motion, AnimatePresence } from "motion/react";
-import { UpdateModal } from "./components/UpdateModal";
 import { PairDevicePage } from "./pages/PairDevicePage";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AppSettingsPage } from "./pages/AppSettingsPage";
@@ -46,8 +44,6 @@ export default function App() {
         notificationId: string;
         seq: number;
     } | null>(null);
-    const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
-    const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
 
     const dropZoneRef = useRef<HTMLDivElement | null>(null);
     const selectedDeviceRef = useRef<DeviceView | null>(null);
@@ -67,21 +63,18 @@ export default function App() {
                     rid: number;
                     version: string;
                 } | null>("check_for_update", { timeout: 20000 });
-                const update = metadata ? new Update(metadata) : null;
-                if (!update) {
+                if (!metadata) {
                     return "up-to-date";
                 }
 
                 const skippedVersion = localStorage.getItem(
                     "velquo.skippedUpdateVersion",
                 );
-                if (!force && skippedVersion == update.version) {
+                if (!force && skippedVersion == metadata.version) {
                     return "up-to-date";
                 }
 
-                setAvailableUpdate(update);
-                setIsUpdateModalOpen(true);
-                invoke("focus_main_window").catch(() => {});
+                await invoke("open_updater_window");
                 return "update-found";
             } catch (err) {
                 console.debug("[updater] Update check finished:", err);
@@ -641,17 +634,6 @@ export default function App() {
                         )}
                     </AnimatePresence>
                 </main>
-
-                <UpdateModal
-                    update={availableUpdate}
-                    open={isUpdateModalOpen}
-                    onOpenChange={setIsUpdateModalOpen}
-                    onSkipVersion={(version) => {
-                        localStorage.setItem("velquo.skippedUpdateVersion", version);
-                        setIsUpdateModalOpen(false);
-                    }}
-                    rightPaneContainer={rightPaneEl}
-                />
             </div>
         </div>
     );
