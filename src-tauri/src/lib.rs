@@ -6,7 +6,7 @@ pub mod macos_notify;
 use crate::kdeconnect::daemon::{DeviceView, HostInfo, KdeConnectDaemon, TransferItem};
 use crate::kdeconnect::packet::NetworkPacket;
 use crate::kdeconnect::sftp::SftpBrowseResponse;
-use crate::logger::{AppLogger, LogEntry};
+use crate::logger::AppLogger;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,7 +20,6 @@ pub struct AppSnapshot {
     pub host: HostInfo,
     pub devices: Vec<DeviceView>,
     pub transfers: Vec<TransferItem>,
-    pub logs: Vec<LogEntry>,
 }
 
 #[tauri::command]
@@ -29,7 +28,6 @@ fn get_app_snapshot(daemon: State<'_, Arc<KdeConnectDaemon>>) -> AppSnapshot {
         host: daemon.get_host_info(),
         devices: daemon.get_devices_list(),
         transfers: daemon.get_transfers_list(),
-        logs: AppLogger::get_entries(),
     }
 }
 
@@ -464,12 +462,6 @@ async fn sftp_delete_entry(
             );
             msg
         })
-}
-
-#[tauri::command]
-fn clear_logs() {
-    AppLogger::clear_entries();
-    log::info!("[ui] Logs cleared");
 }
 
 #[tauri::command]
@@ -928,7 +920,6 @@ pub fn run() {
             sftp_download_file,
             sftp_delete_entry,
             open_file_browser_window,
-            clear_logs,
             quit_app,
             restart_app,
             focus_main_window,
@@ -940,7 +931,6 @@ pub fn run() {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
 
-            AppLogger::set_app_handle(app.handle().clone());
             daemon_for_setup.set_app_handle(app.handle().clone());
             #[cfg(target_os = "macos")]
             macos_notify::init_macos_notifications(

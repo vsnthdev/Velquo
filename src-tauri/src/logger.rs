@@ -1,24 +1,11 @@
 use chrono::Local;
 use log::{Level, LevelFilter, Log, Metadata, Record};
-use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
-use tauri::{AppHandle, Emitter};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogEntry {
-    pub timestamp: String,
-    pub level: String,
-    pub target: String,
-    pub message: String,
-}
+use std::sync::{Mutex, OnceLock};
 
 pub struct AppLogger {
-    entries: Arc<Mutex<VecDeque<LogEntry>>>,
-    app_handle: Arc<Mutex<Option<AppHandle>>>,
     log_file: Mutex<Option<File>>,
 }
 
@@ -39,39 +26,12 @@ impl AppLogger {
             .ok();
 
         let logger = LOGGER.get_or_init(|| AppLogger {
-            entries: Arc::new(Mutex::new(VecDeque::with_capacity(500))),
-            app_handle: Arc::new(Mutex::new(None)),
             log_file: Mutex::new(opened_file),
         });
 
         let _ = log::set_logger(logger);
         log::set_max_level(LevelFilter::Debug);
         log_file_path
-    }
-
-    pub fn set_app_handle(handle: AppHandle) {
-        if let Some(logger) = LOGGER.get() {
-            if let Ok(mut guard) = logger.app_handle.lock() {
-                *guard = Some(handle);
-            }
-        }
-    }
-
-    pub fn get_entries() -> Vec<LogEntry> {
-        if let Some(logger) = LOGGER.get() {
-            if let Ok(guard) = logger.entries.lock() {
-                return guard.iter().cloned().collect();
-            }
-        }
-        Vec::new()
-    }
-
-    pub fn clear_entries() {
-        if let Some(logger) = LOGGER.get() {
-            if let Ok(mut guard) = logger.entries.lock() {
-                guard.clear();
-            }
-        }
     }
 }
 
@@ -104,26 +64,6 @@ impl Log for AppLogger {
         if let Ok(mut file_guard) = self.log_file.lock() {
             if let Some(file) = file_guard.as_mut() {
                 let _ = writeln!(file, "[{}] {:5} [{}] {}", timestamp, level, target, message);
-            }
-        }
-
-        let entry = LogEntry {
-            timestamp,
-            level,
-            target,
-            message,
-        };
-
-        if let Ok(mut guard) = self.entries.lock() {
-            if guard.len() >= 400 {
-                guard.pop_front();
-            }
-            guard.push_back(entry.clone());
-        }
-
-        if let Ok(guard) = self.app_handle.lock() {
-            if let Some(app) = guard.as_ref() {
-                let _ = app.emit("velquo://log", entry);
             }
         }
     }
