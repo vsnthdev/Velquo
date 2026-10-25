@@ -1,61 +1,65 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Velquo",
-  "mainBinaryName": "Velquo",
-  "identifier": "dev.vsnth.velquo",
-  "build": {
-    "beforeDevCommand": "bun run dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
-    "frontendDist": "../dist"
-  },
-  "app": {
-    "macOSPrivateApi": true,
-    "windows": [
-      {
-        "label": "main",
-        "title": "Velquo",
-        "width": 860,
-        "height": 560,
-        "center": true,
-        "resizable": false,
-        "maximizable": false,
-        "minimizable": true,
-        "closable": true,
-        "decorations": true,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true,
-        "transparent": true,
-        "alwaysOnTop": false,
-        "visible": false
-      }
-    ],
-    "security": {
-      "csp": null
-    }
-  },
-  "bundle": {
-    "active": true,
-    "createUpdaterArtifacts": true,
-    "targets": ["app", "dmg"],
-    "macOS": {
-      "minimumSystemVersion": "12.0",
-      "signingIdentity": "-"
+    "$schema": "https://schema.tauri.app/config/2",
+    "productName": "Velquo",
+    "mainBinaryName": "Velquo",
+    "identifier": "dev.vsnth.velquo",
+    "build": {
+        "beforeDevCommand": "bun run dev",
+        "devUrl": "http://localhost:1420",
+        "beforeBuildCommand": "bun run build",
+        "frontendDist": "../dist"
     },
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ]
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJCRTIwODQxMjVCMTM5MjMKUldRak9iRWxRUWppdS93TzZSeXJCVzE5WUNLVkRZOEkweEh3NHlMYUtNOUF0UUhXdkMwTi9yanIK",
-      "endpoints": [
-        "https://github.com/vsnthdev/Velquo/releases/latest/download/latest.json"
-      ]
+    "app": {
+        "macOSPrivateApi": true,
+        "windows": [
+            {
+                "label": "main",
+                "title": "Velquo",
+                "width": 860,
+                "height": 560,
+                "center": true,
+                "resizable": false,
+                "maximizable": false,
+                "minimizable": true,
+                "closable": true,
+                "decorations": true,
+                "titleBarStyle": "Overlay",
+                "hiddenTitle": true,
+                "transparent": true,
+                "alwaysOnTop": false,
+                "visible": false
+            }
+        ],
+        "security": {
+            "csp": null
+        }
+    },
+    "bundle": {
+        "active": true,
+        "createUpdaterArtifacts": true,
+        "targets": [
+            "app",
+            "dmg"
+        ],
+        "macOS": {
+            "minimumSystemVersion": "12.0",
+            "signingIdentity": "-"
+        },
+        "icon": [
+            "icons/32x32.png",
+            "icons/128x128.png",
+            "icons/128x128@2x.png",
+            "icons/icon.icns",
+            "icons/icon.ico"
+        ]
+    },
+    "plugins": {
+        "updater": {
+            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJCRTIwODQxMjVCMTM5MjMKUldRak9iRWxRUWppdS93TzZSeXJCVzE5WUNLVkRZOEkweEh3NHlMYUtNOUF0UUhXdkMwTi9yanIK",
+            "endpoints": [
+                "https://github.com/vsnthdev/Velquo/releases/latest/download/latest.json",
+                "https://raw.githubusercontent.com/vsnthdev/Velquo/main/latest.json"
+            ]
+        }
     }
-  }
 }

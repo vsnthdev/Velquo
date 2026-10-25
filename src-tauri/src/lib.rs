@@ -476,6 +476,55 @@ fn restart_app(app: AppHandle) {
     app.restart();
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateMetadataDto {
+    rid: tauri::ResourceId,
+    current_version: String,
+    version: String,
+    date: Option<String>,
+    body: Option<String>,
+    raw_json: serde_json::Value,
+}
+
+#[tauri::command]
+async fn check_for_update(
+    webview: tauri::Webview,
+    timeout: Option<u64>,
+) -> Result<Option<UpdateMetadataDto>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let mut builder = webview
+        .updater_builder()
+        .configure_client(|client| client.connect_timeout(std::time::Duration::from_secs(8)));
+
+    if let Some(timeout_ms) = timeout {
+        builder = builder.timeout(std::time::Duration::from_millis(timeout_ms));
+    }
+
+    let updater = builder.build().map_err(|e| e.to_string())?;
+    let update = updater.check().await.map_err(|e| e.to_string())?;
+
+    if let Some(update) = update {
+        let date = update
+            .raw_json
+            .get("pub_date")
+            .and_then(|v| v.as_str())
+            .map(ToOwned::to_owned);
+        let metadata = UpdateMetadataDto {
+            current_version: update.current_version.clone(),
+            version: update.version.clone(),
+            date,
+            body: update.body.clone(),
+            raw_json: update.raw_json.clone(),
+            rid: webview.resources_table().add(update),
+        };
+        Ok(Some(metadata))
+    } else {
+        Ok(None)
+    }
+}
+
 #[tauri::command]
 fn focus_main_window(app: AppHandle) {
     open_main_window(&app);
@@ -922,6 +971,7 @@ pub fn run() {
             open_file_browser_window,
             quit_app,
             restart_app,
+            check_for_update,
             focus_main_window,
         ])
         .setup(move |app| {

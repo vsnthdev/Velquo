@@ -3,13 +3,13 @@ import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "./components/Sidebar";
 import { DevicePage } from "./pages/DevicePage";
 import { itunesArtCache } from "./utils/format";
+import { Update } from "@tauri-apps/plugin-updater";
 import { motion, AnimatePresence } from "motion/react";
 import { UpdateModal } from "./components/UpdateModal";
 import { PairDevicePage } from "./pages/PairDevicePage";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AppSettingsPage } from "./pages/AppSettingsPage";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { check, type Update } from "@tauri-apps/plugin-updater";
 import type {
     ActiveView,
     DeviceView,
@@ -59,7 +59,15 @@ export default function App() {
             force: boolean,
         ): Promise<"update-found" | "up-to-date" | "error"> => {
             try {
-                const update = await check({ timeout: 20000 });
+                const metadata = await invoke<{
+                    body?: string;
+                    currentVersion: string;
+                    date?: string;
+                    rawJson: Record<string, unknown>;
+                    rid: number;
+                    version: string;
+                } | null>("check_for_update", { timeout: 20000 });
+                const update = metadata ? new Update(metadata) : null;
                 if (!update) {
                     return "up-to-date";
                 }
