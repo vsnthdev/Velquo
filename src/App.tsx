@@ -1,661 +1,664 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { check, type Update } from "@tauri-apps/plugin-updater";
-import { AnimatePresence, motion } from "motion/react";
-import {
-  type MouseEvent,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { PingToast } from "./components/PingToast";
 import { Sidebar } from "./components/Sidebar";
-import { UpdateModal } from "./components/UpdateModal";
-import { AppSettingsPage } from "./pages/AppSettingsPage";
 import { DevicePage } from "./pages/DevicePage";
-import { PairDevicePage } from "./pages/PairDevicePage";
-import type {
-  ActiveView,
-  AppSnapshot,
-  DeviceView,
-  PingToastData,
-  TransferItem,
-} from "./types";
 import { itunesArtCache } from "./utils/format";
+import { PingToast } from "./components/PingToast";
+import { motion, AnimatePresence } from "motion/react";
+import { UpdateModal } from "./components/UpdateModal";
+import { PairDevicePage } from "./pages/PairDevicePage";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { AppSettingsPage } from "./pages/AppSettingsPage";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import {
+    useRef,
+    useState,
+    useEffect,
+    useCallback,
+    type MouseEvent,
+} from "react";
+import type {
+    ActiveView,
+    DeviceView,
+    AppSnapshot,
+    TransferItem,
+    PingToastData,
+} from "./types";
 
 export default function App() {
-  const [devices, setDevices] = useState<DeviceView[]>([]);
-  const [transfers, setTransfers] = useState<TransferItem[]>([]);
-  const [activeView, setActiveView] = useState<ActiveView>({
-    kind: "device",
-    deviceId: "",
-    subview: "control",
-  });
-  const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
-  const [justDroppedCount, setJustDroppedCount] = useState<number>(0);
-  const [pingToast, setPingToast] = useState<PingToastData | null>(null);
-  const [fallbackArtworkUrl, setFallbackArtworkUrl] = useState<string | null>(
-    null,
-  );
-  const [ignoreWhatsappConversations, setIgnoreWhatsappConversations] =
-    useState<boolean>(true);
-  const [rightPaneEl, setRightPaneEl] = useState<HTMLDivElement | null>(null);
-  const [openAddCommandSignal, setOpenAddCommandSignal] = useState<number>(0);
-  const [highlightedNotification, setHighlightedNotification] = useState<{
-    deviceId: string;
-    notificationId: string;
-    seq: number;
-  } | null>(null);
-  const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
-  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
-
-  const dropZoneRef = useRef<HTMLDivElement | null>(null);
-  const selectedDeviceRef = useRef<DeviceView | null>(null);
-  const activeViewRef = useRef<ActiveView>(activeView);
-  activeViewRef.current = activeView;
-  const prevPairedIdsRef = useRef<Set<string>>(new Set());
-
-  const runUpdateCheck = useCallback(
-    async (
-      force: boolean,
-    ): Promise<"update-found" | "up-to-date" | "error"> => {
-      try {
-        const update = await check({ timeout: 20000 });
-        if (!update) {
-          return "up-to-date";
-        }
-
-        const skippedVersion = localStorage.getItem(
-          "velquo.skippedUpdateVersion",
-        );
-        if (!force && skippedVersion === update.version) {
-          return "up-to-date";
-        }
-
-        setAvailableUpdate(update);
-        setIsUpdateModalOpen(true);
-        invoke("focus_main_window").catch(() => {});
-        return "update-found";
-      } catch (err) {
-        console.debug("[updater] Update check finished:", err);
-        return "error";
-      }
-    },
-    [],
-  );
-
-  // Automatic background update check shortly after launch and every 8 hours
-  useEffect(() => {
-    const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
-    const initialTimer = setTimeout(() => {
-      runUpdateCheck(false);
-    }, 10000);
-
-    const intervalTimer = setInterval(() => {
-      runUpdateCheck(false);
-    }, EIGHT_HOURS_MS);
-
-    return () => {
-      clearTimeout(initialTimer);
-      clearInterval(intervalTimer);
-    };
-  }, [runUpdateCheck]);
-
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    let unlistenPing: (() => void) | undefined;
-    let pingTimer: ReturnType<typeof setTimeout> | undefined;
-
-    async function loadDevices() {
-      try {
-        const snap = await invoke<AppSnapshot>("get_app_snapshot");
-        if (disposed) return;
-        setDevices(snap.devices);
-        setTransfers(snap.transfers || []);
-        if (typeof snap.host?.ignoreWhatsappConversations === "boolean") {
-          setIgnoreWhatsappConversations(snap.host.ignoreWhatsappConversations);
-        }
-
-        const paired = snap.devices.filter((d) => d.pairState === "Paired");
-        const newlyPaired = paired.find(
-          (d) => !prevPairedIdsRef.current.has(d.deviceId),
-        );
-        prevPairedIdsRef.current = new Set(paired.map((d) => d.deviceId));
-
-        setActiveView((prev) => {
-          // If the user is on the Pair New Device page and a device just finished pairing, open it immediately!
-          if (prev.kind === "pair-device" && newlyPaired) {
-            return {
-              kind: "device",
-              deviceId: newlyPaired.deviceId,
-              subview: "control",
-            };
-          }
-          if (prev.kind !== "device") {
-            return prev;
-          }
-          if (
-            prev.deviceId &&
-            paired.some((d) => d.deviceId === prev.deviceId)
-          ) {
-            return prev;
-          }
-          if (paired.length > 0) {
-            return {
-              kind: "device",
-              deviceId: paired[0].deviceId,
-              subview: "control",
-            };
-          }
-          return { kind: "pair-device" };
-        });
-      } catch (err) {
-        console.error("Failed to load devices:", err);
-      }
-    }
-
-    loadDevices();
-
-    listen("velquo://state-updated", () => {
-      loadDevices();
-    }).then((fn) => {
-      if (disposed) {
-        fn();
-      } else {
-        unlisten = fn;
-      }
-    });
-
-    listen<{ deviceId: string; deviceName: string; message: string }>(
-      "velquo://ping",
-      (event) => {
-        if (disposed) return;
-        setPingToast({
-          deviceName: event.payload.deviceName,
-          message: event.payload.message,
-        });
-        if (pingTimer) clearTimeout(pingTimer);
-        pingTimer = setTimeout(() => setPingToast(null), 4000);
-      },
-    ).then((fn) => {
-      if (disposed) {
-        fn();
-      } else {
-        unlistenPing = fn;
-      }
-    });
-
-    let unlistenSetup: (() => void) | undefined;
-    listen<{ deviceId: string }>("velquo://open-runcommand-setup", (event) => {
-      if (disposed) return;
-      setActiveView({
+    const [devices, setDevices] = useState<DeviceView[]>([]);
+    const [transfers, setTransfers] = useState<TransferItem[]>([]);
+    const [activeView, setActiveView] = useState<ActiveView>({
+        deviceId: "",
         kind: "device",
-        deviceId: event.payload.deviceId,
-        subview: "settings",
-      });
-      setOpenAddCommandSignal((prev) => prev + 1);
-    }).then((fn) => {
-      if (disposed) {
-        fn();
-      } else {
-        unlistenSetup = fn;
-      }
+        subview: "control",
     });
+    const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
+    const [justDroppedCount, setJustDroppedCount] = useState<number>(0);
+    const [pingToast, setPingToast] = useState<PingToastData | null>(null);
+    const [fallbackArtworkUrl, setFallbackArtworkUrl] = useState<string | null>(
+        null,
+    );
+    const [ignoreWhatsappConversations, setIgnoreWhatsappConversations] =
+        useState<boolean>(true);
+    const [rightPaneEl, setRightPaneEl] = useState<HTMLDivElement | null>(null);
+    const [openAddCommandSignal, setOpenAddCommandSignal] = useState<number>(0);
+    const [highlightedNotification, setHighlightedNotification] = useState<{
+        deviceId: string;
+        notificationId: string;
+        seq: number;
+    } | null>(null);
+    const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
+    const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
 
-    let unlistenTrayNav: (() => void) | undefined;
-    listen<{ view: string; deviceId?: string }>(
-      "velquo://tray-navigate",
-      (event) => {
-        if (disposed) return;
-        if (event.payload.view === "pair-device") {
-          setActiveView({ kind: "pair-device" });
-        } else if (event.payload.view === "device" && event.payload.deviceId) {
-          setActiveView({
-            kind: "device",
-            deviceId: event.payload.deviceId,
-            subview: "control",
-          });
+    const dropZoneRef = useRef<HTMLDivElement | null>(null);
+    const selectedDeviceRef = useRef<DeviceView | null>(null);
+    const activeViewRef = useRef<ActiveView>(activeView);
+    const prevPairedIdsRef = useRef<Set<string>>(new Set());
+
+    const runUpdateCheck = useCallback(
+        async (
+            force: boolean,
+        ): Promise<"update-found" | "up-to-date" | "error"> => {
+            try {
+                const update = await check({ timeout: 20000 });
+                if (!update) {
+                    return "up-to-date";
+                }
+
+                const skippedVersion = localStorage.getItem(
+                    "velquo.skippedUpdateVersion",
+                );
+                if (!force && skippedVersion === update.version) {
+                    return "up-to-date";
+                }
+
+                setAvailableUpdate(update);
+                setIsUpdateModalOpen(true);
+                invoke("focus_main_window").catch(() => {});
+                return "update-found";
+            } catch (err) {
+                console.debug("[updater] Update check finished:", err);
+                return "error";
+            }
+        },
+        [],
+    );
+
+    // Automatic background update check shortly after launch and every 8 hours
+    useEffect(() => {
+        const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
+        const initialTimer = setTimeout(() => {
+            runUpdateCheck(false);
+        }, 10000);
+
+        const intervalTimer = setInterval(() => {
+            runUpdateCheck(false);
+        }, EIGHT_HOURS_MS);
+
+        return () => {
+            clearTimeout(initialTimer);
+            clearInterval(intervalTimer);
+        };
+    }, [runUpdateCheck]);
+
+    useEffect(() => {
+        let disposed = false;
+        let unlisten: (() => void) | undefined;
+        let unlistenPing: (() => void) | undefined;
+        let pingTimer: ReturnType<typeof setTimeout> | undefined;
+
+        async function loadDevices() {
+            try {
+                const snap = await invoke<AppSnapshot>("get_app_snapshot");
+                if (disposed) return;
+                setDevices(snap.devices);
+                setTransfers(snap.transfers || []);
+                if (typeof snap.host?.ignoreWhatsappConversations === "boolean") {
+                    setIgnoreWhatsappConversations(snap.host.ignoreWhatsappConversations);
+                }
+
+                const paired = snap.devices.filter((d) => d.pairState === "Paired");
+                const newlyPaired = paired.find(
+                    (d) => !prevPairedIdsRef.current.has(d.deviceId),
+                );
+                prevPairedIdsRef.current = new Set(paired.map((d) => d.deviceId));
+
+                setActiveView((prev) => {
+                    // If the user is on the Pair New Device page and a device just finished pairing, open it immediately!
+                    if (prev.kind === "pair-device" && newlyPaired) {
+                        return {
+                            kind: "device",
+                            subview: "control",
+                            deviceId: newlyPaired.deviceId,
+                        };
+                    }
+                    if (prev.kind !== "device") {
+                        return prev;
+                    }
+                    if (
+                        prev.deviceId &&
+            paired.some((d) => d.deviceId === prev.deviceId)
+                    ) {
+                        return prev;
+                    }
+                    if (paired.length > 0) {
+                        return {
+                            kind: "device",
+                            subview: "control",
+                            deviceId: paired[0].deviceId,
+                        };
+                    }
+                    return { kind: "pair-device" };
+                });
+            } catch (err) {
+                console.error("Failed to load devices:", err);
+            }
         }
-      },
-    ).then((fn) => {
-      if (disposed) {
-        fn();
-      } else {
-        unlistenTrayNav = fn;
-      }
-    });
 
-    let unlistenFocusNotif: (() => void) | undefined;
-    listen<{ deviceId: string; notificationId?: string | null }>(
-      "velquo://focus-notification",
-      (event) => {
-        if (disposed) return;
-        const { deviceId, notificationId } = event.payload;
-        if (!deviceId) return;
-        setActiveView({
-          kind: "device",
-          deviceId,
-          subview: "control",
+        loadDevices();
+
+        listen("velquo://state-updated", () => {
+            loadDevices();
+        }).then((fn) => {
+            if (disposed) {
+                fn();
+            } else {
+                unlisten = fn;
+            }
         });
-        if (notificationId) {
-          setHighlightedNotification((prev) => ({
-            deviceId,
-            notificationId,
-            seq: (prev?.seq ?? 0) + 1,
-          }));
-        }
-      },
-    ).then((fn) => {
-      if (disposed) {
-        fn();
-      } else {
-        unlistenFocusNotif = fn;
-      }
-    });
 
-    return () => {
-      disposed = true;
-      if (unlisten) unlisten();
-      if (unlistenPing) unlistenPing();
-      if (unlistenSetup) unlistenSetup();
-      if (unlistenTrayNav) unlistenTrayNav();
-      if (unlistenFocusNotif) unlistenFocusNotif();
-      if (pingTimer) clearTimeout(pingTimer);
-    };
-  }, []);
+        listen<{ deviceId: string; deviceName: string; message: string }>(
+            "velquo://ping",
+            (event) => {
+                if (disposed) return;
+                setPingToast({
+                    message: event.payload.message,
+                    deviceName: event.payload.deviceName,
+                });
+                if (pingTimer) clearTimeout(pingTimer);
+                pingTimer = setTimeout(() => setPingToast(null), 4000);
+            },
+        ).then((fn) => {
+            if (disposed) {
+                fn();
+            } else {
+                unlistenPing = fn;
+            }
+        });
 
-  const pairedDevices = devices.filter((d) => d.pairState === "Paired");
-  const unpairedDevices = devices.filter(
-    (d) => d.pairState !== "Paired" && d.reachable,
-  );
+        let unlistenSetup: (() => void) | undefined;
+        listen<{ deviceId: string }>("velquo://open-runcommand-setup", (event) => {
+            if (disposed) return;
+            setActiveView({
+                kind: "device",
+                subview: "settings",
+                deviceId: event.payload.deviceId,
+            });
+            setOpenAddCommandSignal((prev) => prev + 1);
+        }).then((fn) => {
+            if (disposed) {
+                fn();
+            } else {
+                unlistenSetup = fn;
+            }
+        });
 
-  const selectedDevice =
-    activeView.kind === "device"
-      ? (pairedDevices.find((d) => d.deviceId === activeView.deviceId) ??
+        let unlistenTrayNav: (() => void) | undefined;
+        listen<{ view: string; deviceId?: string }>(
+            "velquo://tray-navigate",
+            (event) => {
+                if (disposed) return;
+                if (event.payload.view === "pair-device") {
+                    setActiveView({ kind: "pair-device" });
+                } else if (event.payload.view === "device" && event.payload.deviceId) {
+                    setActiveView({
+                        kind: "device",
+                        subview: "control",
+                        deviceId: event.payload.deviceId,
+                    });
+                }
+            },
+        ).then((fn) => {
+            if (disposed) {
+                fn();
+            } else {
+                unlistenTrayNav = fn;
+            }
+        });
+
+        let unlistenFocusNotif: (() => void) | undefined;
+        listen<{ deviceId: string; notificationId?: string | null }>(
+            "velquo://focus-notification",
+            (event) => {
+                if (disposed) return;
+                const { deviceId, notificationId } = event.payload;
+                if (!deviceId) return;
+                setActiveView({
+                    deviceId,
+                    kind: "device",
+                    subview: "control",
+                });
+                if (notificationId) {
+                    setHighlightedNotification((prev) => ({
+                        deviceId,
+                        notificationId,
+                        seq: (prev?.seq ?? 0) + 1,
+                    }));
+                }
+            },
+        ).then((fn) => {
+            if (disposed) {
+                fn();
+            } else {
+                unlistenFocusNotif = fn;
+            }
+        });
+
+        return () => {
+            disposed = true;
+            if (unlisten) unlisten();
+            if (unlistenPing) unlistenPing();
+            if (unlistenSetup) unlistenSetup();
+            if (unlistenTrayNav) unlistenTrayNav();
+            if (unlistenFocusNotif) unlistenFocusNotif();
+            if (pingTimer) clearTimeout(pingTimer);
+        };
+    }, []);
+
+    const pairedDevices = devices.filter((d) => d.pairState === "Paired");
+    const unpairedDevices = devices.filter(
+        (d) => d.pairState !== "Paired" && d.reachable,
+    );
+
+    const selectedDevice =
+        activeView.kind === "device"
+            ? (pairedDevices.find((d) => d.deviceId === activeView.deviceId) ??
         pairedDevices[0] ??
         null)
-      : null;
-  selectedDeviceRef.current = selectedDevice;
+            : null;
 
-  // Native Tauri drag-and-drop file listener scoped strictly to the drop zone bounding rect
-  useEffect(() => {
-    let disposed = false;
-    let unlistenDrop: (() => void) | undefined;
-    let lastDropAtMs = 0;
+    useEffect(() => {
+        activeViewRef.current = activeView;
+        selectedDeviceRef.current = selectedDevice;
+    }, [activeView, selectedDevice]);
 
-    const isInsideDropZone = (pos: { x: number; y: number }): boolean => {
-      const currentView = activeViewRef.current;
-      if (currentView.kind !== "device" || currentView.subview !== "control") {
-        return false;
-      }
-      const targetDevice = selectedDeviceRef.current;
-      if (
-        !targetDevice ||
+    // Native Tauri drag-and-drop file listener scoped strictly to the drop zone bounding rect
+    useEffect(() => {
+        let disposed = false;
+        let unlistenDrop: (() => void) | undefined;
+        let lastDropAtMs = 0;
+
+        const isInsideDropZone = (pos: { x: number; y: number }): boolean => {
+            const currentView = activeViewRef.current;
+            if (currentView.kind !== "device" || currentView.subview !== "control") {
+                return false;
+            }
+            const targetDevice = selectedDeviceRef.current;
+            if (
+                !targetDevice ||
         !targetDevice.reachable ||
         targetDevice.pairState !== "Paired"
-      ) {
-        return false;
-      }
-      const el = dropZoneRef.current;
-      if (!el) return false;
-      const rect = el.getBoundingClientRect();
-      return (
-        pos.x >= rect.left &&
+            ) {
+                return false;
+            }
+            const el = dropZoneRef.current;
+            if (!el) return false;
+            const rect = el.getBoundingClientRect();
+            return (
+                pos.x >= rect.left &&
         pos.x <= rect.right &&
         pos.y >= rect.top &&
         pos.y <= rect.bottom
-      );
-    };
+            );
+        };
 
-    getCurrentWebview()
-      .onDragDropEvent(async (event) => {
-        if (disposed) return;
-        if (event.payload.type === "enter" || event.payload.type === "over") {
-          setIsDraggingOver(isInsideDropZone(event.payload.position));
-        } else if (event.payload.type === "leave") {
-          setIsDraggingOver(false);
-        } else if (event.payload.type === "drop") {
-          const droppedInside = isInsideDropZone(event.payload.position);
-          setIsDraggingOver(false);
-          if (!droppedInside) {
-            return;
-          }
-          const now = Date.now();
-          if (now - lastDropAtMs < 250) {
-            return;
-          }
-          lastDropAtMs = now;
+        getCurrentWebview()
+            .onDragDropEvent(async (event) => {
+                if (disposed) return;
+                if (event.payload.type === "enter" || event.payload.type === "over") {
+                    setIsDraggingOver(isInsideDropZone(event.payload.position));
+                } else if (event.payload.type === "leave") {
+                    setIsDraggingOver(false);
+                } else if (event.payload.type === "drop") {
+                    const droppedInside = isInsideDropZone(event.payload.position);
+                    setIsDraggingOver(false);
+                    if (!droppedInside) {
+                        return;
+                    }
+                    const now = Date.now();
+                    if (now - lastDropAtMs < 250) {
+                        return;
+                    }
+                    lastDropAtMs = now;
 
-          const targetDevice = selectedDeviceRef.current;
-          if (
-            targetDevice &&
+                    const targetDevice = selectedDeviceRef.current;
+                    if (
+                        targetDevice &&
             targetDevice.reachable &&
             targetDevice.pairState === "Paired" &&
             event.payload.paths.length > 0
-          ) {
-            setJustDroppedCount(event.payload.paths.length);
-            setTimeout(() => setJustDroppedCount(0), 2200);
+                    ) {
+                        setJustDroppedCount(event.payload.paths.length);
+                        setTimeout(() => setJustDroppedCount(0), 2200);
+                        try {
+                            await invoke("send_files", {
+                                filePaths: event.payload.paths,
+                                deviceId: targetDevice.deviceId,
+                            });
+                        } catch (err) {
+                            console.error("Failed to send dropped files:", err);
+                        }
+                    }
+                }
+            })
+            .then((fn) => {
+                if (disposed) {
+                    fn();
+                } else {
+                    unlistenDrop = fn;
+                }
+            });
+
+        return () => {
+            disposed = true;
+            if (unlistenDrop) unlistenDrop();
+        };
+    }, []);
+
+    const nowPlaying = selectedDevice?.nowPlaying ?? null;
+    const nativeArtData = nowPlaying?.albumArtData ?? null;
+    const trackTitle = nowPlaying?.title ?? "";
+    const trackArtist = nowPlaying?.artist ?? "";
+    const trackAlbum = nowPlaying?.album ?? "";
+
+    // Fallback to iTunes Search API if KDE Connect hasn't provided native album art
+    useEffect(() => {
+        if (!trackTitle) {
+            setFallbackArtworkUrl(null);
+            return;
+        }
+
+        if (nativeArtData) {
+            setFallbackArtworkUrl(null);
+            return;
+        }
+
+        const queryKey = `${trackArtist} - ${trackTitle} - ${trackAlbum}`.trim();
+        if (itunesArtCache.has(queryKey)) {
+            setFallbackArtworkUrl(itunesArtCache.get(queryKey) ?? null);
+            return;
+        }
+
+        let cancelled = false;
+        const timer = setTimeout(async () => {
             try {
-              await invoke("send_files", {
-                deviceId: targetDevice.deviceId,
-                filePaths: event.payload.paths,
-              });
-            } catch (err) {
-              console.error("Failed to send dropped files:", err);
+                const searchTerm = [trackArtist, trackTitle]
+                    .filter(Boolean)
+                    .join(" ")
+                    .trim();
+                if (!searchTerm) return;
+
+                const resp = await fetch(
+                    `https://itunes.apple.com/search?term=${encodeURIComponent(
+                        searchTerm,
+                    )}&entity=song&limit=1`,
+                );
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const rawUrl: string | undefined = data?.results?.[0]?.artworkUrl100;
+                const hiResUrl = rawUrl
+                    ? rawUrl.replace("100x100bb", "300x300bb")
+                    : null;
+                itunesArtCache.set(queryKey, hiResUrl);
+                if (!cancelled) {
+                    setFallbackArtworkUrl(hiResUrl);
+                }
+            } catch {
+                // Ignore network errors on fallback lookup
             }
-          }
-        }
-      })
-      .then((fn) => {
-        if (disposed) {
-          fn();
-        } else {
-          unlistenDrop = fn;
-        }
-      });
+        }, 550);
 
-    return () => {
-      disposed = true;
-      if (unlistenDrop) unlistenDrop();
-    };
-  }, []);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [nativeArtData, trackTitle, trackArtist, trackAlbum]);
 
-  const nowPlaying = selectedDevice?.nowPlaying ?? null;
-  const nativeArtData = nowPlaying?.albumArtData ?? null;
-  const trackTitle = nowPlaying?.title ?? "";
-  const trackArtist = nowPlaying?.artist ?? "";
-  const trackAlbum = nowPlaying?.album ?? "";
-
-  // Fallback to iTunes Search API if KDE Connect hasn't provided native album art
-  useEffect(() => {
-    if (!trackTitle) {
-      setFallbackArtworkUrl(null);
-      return;
-    }
-
-    if (nativeArtData) {
-      setFallbackArtworkUrl(null);
-      return;
-    }
-
-    const queryKey = `${trackArtist} - ${trackTitle} - ${trackAlbum}`.trim();
-    if (itunesArtCache.has(queryKey)) {
-      setFallbackArtworkUrl(itunesArtCache.get(queryKey) ?? null);
-      return;
-    }
-
-    let cancelled = false;
-    const timer = setTimeout(async () => {
-      try {
-        const searchTerm = [trackArtist, trackTitle]
-          .filter(Boolean)
-          .join(" ")
-          .trim();
-        if (!searchTerm) return;
-
-        const resp = await fetch(
-          `https://itunes.apple.com/search?term=${encodeURIComponent(
-            searchTerm,
-          )}&entity=song&limit=1`,
-        );
-        if (!resp.ok) return;
-        const data = await resp.json();
-        const rawUrl: string | undefined = data?.results?.[0]?.artworkUrl100;
-        const hiResUrl = rawUrl
-          ? rawUrl.replace("100x100bb", "300x300bb")
-          : null;
-        itunesArtCache.set(queryKey, hiResUrl);
-        if (!cancelled) {
-          setFallbackArtworkUrl(hiResUrl);
-        }
-      } catch {
-        // Ignore network errors on fallback lookup
-      }
-    }, 550);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [nativeArtData, trackTitle, trackArtist, trackAlbum]);
-
-  const artworkSrc = nativeArtData || fallbackArtworkUrl;
-  const hasActiveMedia = Boolean(
-    activeView.kind === "device" &&
+    const artworkSrc = nativeArtData || fallbackArtworkUrl;
+    const hasActiveMedia = Boolean(
+        activeView.kind === "device" &&
     activeView.subview === "control" &&
     selectedDevice?.reachable &&
     selectedDevice?.nowPlaying?.title,
-  );
-  const hasArtworkBackdrop = Boolean(hasActiveMedia && artworkSrc);
+    );
+    const hasArtworkBackdrop = Boolean(hasActiveMedia && artworkSrc);
 
-  const handleDragMouseDown = (e: MouseEvent<HTMLDivElement>) => {
-    if (e.buttons === 1) {
-      getCurrentWindow().startDragging();
-    }
-  };
-
-  const handleFilesPicked = (count: number) => {
-    setJustDroppedCount(count);
-    setTimeout(() => setJustDroppedCount(0), 2200);
-  };
-
-  const handleUnpairDevice = async (deviceId: string) => {
-    try {
-      await invoke("unpair_device", { deviceId });
-      const remaining = pairedDevices.filter((d) => d.deviceId !== deviceId);
-      if (remaining.length > 0) {
-        setActiveView({
-          kind: "device",
-          deviceId: remaining[0].deviceId,
-          subview: "control",
-        });
-      } else {
-        setActiveView({ kind: "pair-device" });
-      }
-    } catch (err) {
-      console.error("Failed to unpair device:", err);
-    }
-  };
-
-  return (
-    <div className="relative flex h-screen w-screen select-none overflow-hidden bg-transparent text-zinc-900 dark:text-zinc-100">
-      {/* Top window drag region aligned with macOS traffic lights */}
-      <div
-        data-tauri-drag-region
-        onMouseDown={handleDragMouseDown}
-        className="fixed top-0 left-0 z-50 h-11 w-full"
-      />
-
-      {/* Animated Ping Notification Toast */}
-      <PingToast pingToast={pingToast} onDismiss={() => setPingToast(null)} />
-
-      {/* Left transparent/vibrant sidebar */}
-      <Sidebar
-        devices={pairedDevices}
-        activeView={activeView}
-        onSelectDevice={(deviceId) =>
-          setActiveView({
-            kind: "device",
-            deviceId,
-            subview: "control",
-          })
+    const handleDragMouseDown = (e: MouseEvent<HTMLDivElement>) => {
+        if (e.buttons === 1) {
+            getCurrentWindow().startDragging();
         }
-        onSelectAppSettings={() => setActiveView({ kind: "app-settings" })}
-        onSelectPairDevice={() => setActiveView({ kind: "pair-device" })}
-      />
+    };
 
-      {/* Right main content area */}
-      <div
-        ref={setRightPaneEl}
-        className="relative h-full flex-1 overflow-hidden bg-white dark:bg-zinc-900"
-      >
-        {/* Subtle bottom gray blur glow in Dark Theme ONLY when no music is playing (anchored to viewport bottom so scrolling never clips it) */}
-        <AnimatePresence>
-          {!hasActiveMedia && (
-            <motion.div
-              key="idle-bottom-blur-blob"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.45, ease: "easeOut" }}
-              style={{
-                background:
-                  "radial-gradient(ellipse 75% 80% at 82% 105%, rgba(113, 113, 122, 0.22) 0%, rgba(82, 82, 91, 0.10) 48%, rgba(24, 24, 27, 0) 100%)",
-              }}
-              className="pointer-events-none absolute inset-x-0 bottom-0 z-0 hidden h-[55%] dark:block"
+    const handleFilesPicked = (count: number) => {
+        setJustDroppedCount(count);
+        setTimeout(() => setJustDroppedCount(0), 2200);
+    };
+
+    const handleUnpairDevice = async (deviceId: string) => {
+        try {
+            await invoke("unpair_device", { deviceId });
+            const remaining = pairedDevices.filter((d) => d.deviceId !== deviceId);
+            if (remaining.length > 0) {
+                setActiveView({
+                    kind: "device",
+                    subview: "control",
+                    deviceId: remaining[0].deviceId,
+                });
+            } else {
+                setActiveView({ kind: "pair-device" });
+            }
+        } catch (err) {
+            console.error("Failed to unpair device:", err);
+        }
+    };
+
+    return (
+        <div className="relative flex h-screen w-screen select-none overflow-hidden bg-transparent text-zinc-900 dark:text-zinc-100">
+            {/* Top window drag region aligned with macOS traffic lights */}
+            <div
+                data-tauri-drag-region
+                onMouseDown={handleDragMouseDown}
+                className="fixed top-0 left-0 z-50 h-11 w-full"
             />
-          )}
-        </AnimatePresence>
 
-        <main className="relative z-10 h-full w-full overscroll-none overflow-x-hidden overflow-y-auto px-8 pt-10 pb-8">
-          {/* Top-to-50% Ambient Blurred Album Artwork Gradient for the Entire Right Section */}
-          <AnimatePresence>
-            {hasArtworkBackdrop && artworkSrc && (
-              <motion.div
-                key={artworkSrc}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-                style={{
-                  WebkitMaskImage:
-                    "linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 42%, rgba(0,0,0,0.35) 75%, rgba(0,0,0,0) 100%)",
-                  maskImage:
-                    "linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 42%, rgba(0,0,0,0.35) 75%, rgba(0,0,0,0) 100%)",
-                }}
-                className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[300px] overflow-hidden"
-              >
-                <img
-                  src={artworkSrc}
-                  alt=""
-                  className="h-full w-full scale-125 object-cover opacity-90 brightness-95 blur-2xl saturate-150 dark:opacity-75 dark:brightness-100"
-                />
-                {/* Subtle top scrim so pure white text always pops even on light album covers */}
-                <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/20 to-transparent dark:from-black/30 dark:via-transparent" />
-              </motion.div>
-            )}
-          </AnimatePresence>
+            {/* Animated Ping Notification Toast */}
+            <PingToast pingToast={pingToast} onDismiss={() => setPingToast(null)} />
 
-          <AnimatePresence mode="wait">
-            {activeView.kind === "device" && selectedDevice && (
-              <DevicePage
-                key={`device-${selectedDevice.deviceId}`}
-                device={selectedDevice}
-                transfers={transfers}
-                subview={activeView.subview}
-                onToggleSubview={() =>
-                  setActiveView((prev) =>
-                    prev.kind === "device"
-                      ? {
-                          ...prev,
-                          subview:
+            {/* Left transparent/vibrant sidebar */}
+            <Sidebar
+                devices={pairedDevices}
+                activeView={activeView}
+                onSelectDevice={(deviceId) =>
+                    setActiveView({
+                        deviceId,
+                        kind: "device",
+                        subview: "control",
+                    })
+                }
+                onSelectAppSettings={() => setActiveView({ kind: "app-settings" })}
+                onSelectPairDevice={() => setActiveView({ kind: "pair-device" })}
+            />
+
+            {/* Right main content area */}
+            <div
+                ref={setRightPaneEl}
+                className="relative h-full flex-1 overflow-hidden bg-white dark:bg-zinc-900"
+            >
+                {/* Subtle bottom gray blur glow in Dark Theme ONLY when no music is playing (anchored to viewport bottom so scrolling never clips it) */}
+                <AnimatePresence>
+                    {!hasActiveMedia && (
+                        <motion.div
+                            key="idle-bottom-blur-blob"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.45, ease: "easeOut" }}
+                            style={{
+                                background:
+                  "radial-gradient(ellipse 75% 80% at 82% 105%, rgba(113, 113, 122, 0.22) 0%, rgba(82, 82, 91, 0.10) 48%, rgba(24, 24, 27, 0) 100%)",
+                            }}
+                            className="pointer-events-none absolute inset-x-0 bottom-0 z-0 hidden h-[55%] dark:block"
+                        />
+                    )}
+                </AnimatePresence>
+
+                <main className="relative z-10 h-full w-full overscroll-none overflow-x-hidden overflow-y-auto px-8 pt-10 pb-8">
+                    {/* Top-to-50% Ambient Blurred Album Artwork Gradient for the Entire Right Section */}
+                    <AnimatePresence>
+                        {hasArtworkBackdrop && artworkSrc && (
+                            <motion.div
+                                key={artworkSrc}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.5, ease: "easeOut" }}
+                                style={{
+                                    maskImage:
+                    "linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 42%, rgba(0,0,0,0.35) 75%, rgba(0,0,0,0) 100%)",
+                                    WebkitMaskImage:
+                    "linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 42%, rgba(0,0,0,0.35) 75%, rgba(0,0,0,0) 100%)",
+                                }}
+                                className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[300px] overflow-hidden"
+                            >
+                                <img
+                                    src={artworkSrc}
+                                    alt=""
+                                    className="h-full w-full scale-125 object-cover opacity-90 brightness-95 blur-2xl saturate-150 dark:opacity-75 dark:brightness-100"
+                                />
+                                {/* Subtle top scrim so pure white text always pops even on light album covers */}
+                                <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/20 to-transparent dark:from-black/30 dark:via-transparent" />
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    <AnimatePresence mode="wait">
+                        {activeView.kind === "device" && selectedDevice && (
+                            <DevicePage
+                                key={`device-${selectedDevice.deviceId}`}
+                                device={selectedDevice}
+                                transfers={transfers}
+                                subview={activeView.subview}
+                                onToggleSubview={() =>
+                                    setActiveView((prev) =>
+                                        prev.kind === "device"
+                                            ? {
+                                                ...prev,
+                                                subview:
                             prev.subview === "control" ? "settings" : "control",
-                        }
-                      : prev,
-                  )
-                }
-                hasArtworkBackdrop={hasArtworkBackdrop}
-                artworkSrc={artworkSrc}
-                dropZoneRef={dropZoneRef}
-                isDraggingOver={isDraggingOver}
-                justDroppedCount={justDroppedCount}
-                onFilesPicked={handleFilesPicked}
-                fileSaveLocation={selectedDevice.saveLocation}
-                onChangeFileSaveLocation={(nextPath) =>
-                  invoke("set_device_save_location", {
-                    deviceId: selectedDevice.deviceId,
-                    saveLocation: nextPath,
-                  })
-                }
-                syncClipboard={selectedDevice.syncClipboard}
-                onToggleSyncClipboard={() =>
-                  invoke("set_device_clipboard_sync", {
-                    deviceId: selectedDevice.deviceId,
-                    enabled: !selectedDevice.syncClipboard,
-                  })
-                }
-                allowPresenter={selectedDevice.allowPresenter}
-                onTogglePresenter={() =>
-                  invoke("set_device_presenter", {
-                    deviceId: selectedDevice.deviceId,
-                    enabled: !selectedDevice.allowPresenter,
-                  })
-                }
-                syncNotifications={selectedDevice.syncNotifications}
-                onToggleNotifications={() =>
-                  invoke("set_device_notifications_sync", {
-                    deviceId: selectedDevice.deviceId,
-                    enabled: !selectedDevice.syncNotifications,
-                  })
-                }
-                autoCopyOtp={selectedDevice.autoCopyOtp}
-                onToggleAutoCopyOtp={() =>
-                  invoke("set_device_auto_copy_otp", {
-                    deviceId: selectedDevice.deviceId,
-                    enabled: !selectedDevice.autoCopyOtp,
-                  })
-                }
-                onAddRunCommand={async (name, command) => {
-                  await invoke("add_device_run_command", {
-                    deviceId: selectedDevice.deviceId,
-                    name,
-                    command,
-                  });
-                }}
-                onRemoveRunCommand={async (key) => {
-                  await invoke("remove_device_run_command", {
-                    deviceId: selectedDevice.deviceId,
-                    key,
-                  });
-                }}
-                rightPaneContainer={rightPaneEl}
-                openAddCommandSignal={openAddCommandSignal}
-                highlightedNotification={
-                  highlightedNotification?.deviceId === selectedDevice.deviceId
-                    ? highlightedNotification
-                    : null
-                }
-                onUnpair={() => handleUnpairDevice(selectedDevice.deviceId)}
-              />
-            )}
+                                            }
+                                            : prev,
+                                    )
+                                }
+                                hasArtworkBackdrop={hasArtworkBackdrop}
+                                artworkSrc={artworkSrc}
+                                dropZoneRef={dropZoneRef}
+                                isDraggingOver={isDraggingOver}
+                                justDroppedCount={justDroppedCount}
+                                onFilesPicked={handleFilesPicked}
+                                fileSaveLocation={selectedDevice.saveLocation}
+                                onChangeFileSaveLocation={(nextPath) =>
+                                    invoke("set_device_save_location", {
+                                        saveLocation: nextPath,
+                                        deviceId: selectedDevice.deviceId,
+                                    })
+                                }
+                                syncClipboard={selectedDevice.syncClipboard}
+                                onToggleSyncClipboard={() =>
+                                    invoke("set_device_clipboard_sync", {
+                                        deviceId: selectedDevice.deviceId,
+                                        enabled: !selectedDevice.syncClipboard,
+                                    })
+                                }
+                                allowPresenter={selectedDevice.allowPresenter}
+                                onTogglePresenter={() =>
+                                    invoke("set_device_presenter", {
+                                        deviceId: selectedDevice.deviceId,
+                                        enabled: !selectedDevice.allowPresenter,
+                                    })
+                                }
+                                syncNotifications={selectedDevice.syncNotifications}
+                                onToggleNotifications={() =>
+                                    invoke("set_device_notifications_sync", {
+                                        deviceId: selectedDevice.deviceId,
+                                        enabled: !selectedDevice.syncNotifications,
+                                    })
+                                }
+                                autoCopyOtp={selectedDevice.autoCopyOtp}
+                                onToggleAutoCopyOtp={() =>
+                                    invoke("set_device_auto_copy_otp", {
+                                        deviceId: selectedDevice.deviceId,
+                                        enabled: !selectedDevice.autoCopyOtp,
+                                    })
+                                }
+                                onAddRunCommand={async (name, command) => {
+                                    await invoke("add_device_run_command", {
+                                        name,
+                                        command,
+                                        deviceId: selectedDevice.deviceId,
+                                    });
+                                }}
+                                onRemoveRunCommand={async (key) => {
+                                    await invoke("remove_device_run_command", {
+                                        key,
+                                        deviceId: selectedDevice.deviceId,
+                                    });
+                                }}
+                                rightPaneContainer={rightPaneEl}
+                                openAddCommandSignal={openAddCommandSignal}
+                                highlightedNotification={
+                                    highlightedNotification?.deviceId === selectedDevice.deviceId
+                                        ? highlightedNotification
+                                        : null
+                                }
+                                onUnpair={() => handleUnpairDevice(selectedDevice.deviceId)}
+                            />
+                        )}
 
-            {activeView.kind === "app-settings" && (
-              <AppSettingsPage
-                key="app-settings"
-                ignoreWhatsappConversations={ignoreWhatsappConversations}
-                onToggleIgnoreWhatsappConversations={() =>
-                  invoke("set_ignore_whatsapp_conversations", {
-                    enabled: !ignoreWhatsappConversations,
-                  })
-                }
-                onCheckForUpdates={() => runUpdateCheck(true)}
-              />
-            )}
+                        {activeView.kind === "app-settings" && (
+                            <AppSettingsPage
+                                key="app-settings"
+                                ignoreWhatsappConversations={ignoreWhatsappConversations}
+                                onToggleIgnoreWhatsappConversations={() =>
+                                    invoke("set_ignore_whatsapp_conversations", {
+                                        enabled: !ignoreWhatsappConversations,
+                                    })
+                                }
+                                onCheckForUpdates={() => runUpdateCheck(true)}
+                            />
+                        )}
 
-            {activeView.kind === "pair-device" && (
-              <PairDevicePage
-                key="pair-device"
-                unpairedDevices={unpairedDevices}
-              />
-            )}
-          </AnimatePresence>
-        </main>
+                        {activeView.kind === "pair-device" && (
+                            <PairDevicePage
+                                key="pair-device"
+                                unpairedDevices={unpairedDevices}
+                            />
+                        )}
+                    </AnimatePresence>
+                </main>
 
-        <UpdateModal
-          update={availableUpdate}
-          open={isUpdateModalOpen}
-          onOpenChange={setIsUpdateModalOpen}
-          onSkipVersion={(version) => {
-            localStorage.setItem("velquo.skippedUpdateVersion", version);
-            setIsUpdateModalOpen(false);
-          }}
-          rightPaneContainer={rightPaneEl}
-        />
-      </div>
-    </div>
-  );
+                <UpdateModal
+                    update={availableUpdate}
+                    open={isUpdateModalOpen}
+                    onOpenChange={setIsUpdateModalOpen}
+                    onSkipVersion={(version) => {
+                        localStorage.setItem("velquo.skippedUpdateVersion", version);
+                        setIsUpdateModalOpen(false);
+                    }}
+                    rightPaneContainer={rightPaneEl}
+                />
+            </div>
+        </div>
+    );
 }
