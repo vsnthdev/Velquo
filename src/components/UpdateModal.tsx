@@ -30,14 +30,44 @@ export function UpdateModal({
     const [step, setStep] = useState<UpdateStep>("prompt");
     const [progressPct, setProgressPct] = useState<number>(0);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [releaseNotes, setReleaseNotes] = useState<string | null>(null);
+
+    const targetVersion = update?.version ?? "";
 
     useEffect(() => {
-        if (open) {
-            setStep("prompt");
-            setProgressPct(0);
-            setErrorMessage(null);
-        }
-    }, [open, update?.version]);
+        if (!open || !targetVersion) return;
+
+        setStep("prompt");
+        setProgressPct(0);
+        setErrorMessage(null);
+        setReleaseNotes(null);
+
+        const controller = new AbortController();
+        const tag = targetVersion.startsWith("v")
+            ? targetVersion
+            : `v${targetVersion}`;
+
+        fetch(
+            `https://api.github.com/repos/vsnthdev/Velquo/releases/tags/${encodeURIComponent(tag)}`,
+            {
+                signal: controller.signal,
+                headers: {
+                    Accept: "application/vnd.github+json",
+                },
+            },
+        )
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data: { body?: string | null } | null) => {
+                if (typeof data?.body == "string" && data.body.trim().length > 0) {
+                    setReleaseNotes(data.body.replace(/\r\n/g, "\n").trim());
+                }
+            })
+            .catch(() => {
+                // Ignore network errors fetching release notes
+            });
+
+        return () => controller.abort();
+    }, [open, targetVersion]);
 
     if (!update) return null;
 
@@ -166,10 +196,10 @@ export function UpdateModal({
                                     )}
                                 </div>
 
-                                {/* Release Notes (if provided in latest.json) */}
-                                {update.body && (
+                                {/* Release Notes fetched from GitHub Releases API */}
+                                {releaseNotes && (
                                     <div className="mt-4 max-h-36 overflow-y-auto rounded-xl border border-black/10 bg-black/[0.02] px-3.5 py-2.5 text-[12.5px] leading-relaxed whitespace-pre-wrap text-zinc-600 dark:border-white/10 dark:bg-white/[0.02] dark:text-zinc-300">
-                                        {update.body}
+                                        {releaseNotes}
                                     </div>
                                 )}
 

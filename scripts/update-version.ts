@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import prompts from "prompts";
-import readFileInput from "read-file-input";
 
 const rootUrl = new URL("../", import.meta.url);
 const rootPath = new URL(".", rootUrl).pathname;
@@ -79,15 +78,6 @@ if (!nextVersion || typeof nextVersion != "string") {
     process.exit(1);
 }
 
-console.log(`==> Opening editor to enter release notes for v${nextVersion}...`);
-const rawNotes = await readFileInput();
-const notes = rawNotes.trim();
-
-if (!notes) {
-    console.error("==> Aborted: Release notes cannot be empty.");
-    process.exit(1);
-}
-
 const repoBaseUrl = (
     pkg.homepage || "https://github.com/vsnthdev/Velquo"
 ).replace(/\/+$/, "");
@@ -138,7 +128,7 @@ if (await sigFile.exists()) {
         const currentLatest = await latestJsonFile.json();
         signature = currentLatest?.platforms?.["darwin-aarch64"]?.signature ?? "";
     } catch {
-    // Ignore malformed existing latest.json
+        // Ignore malformed existing latest.json
     }
 }
 
@@ -146,7 +136,6 @@ const pubDate = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 const downloadUrl = `${repoBaseUrl}/releases/download/v${nextVersion}/Velquo.app.tar.gz`;
 
 const latestPayload = {
-    notes,
     pub_date: pubDate,
     version: nextVersion,
     platforms: {
@@ -165,4 +154,3 @@ console.log(
 console.log(`    version  : ${nextVersion}`);
 console.log(`    pub_date : ${pubDate}`);
 console.log(`    url      : ${downloadUrl}`);
-console.log(`    notes    : ${notes}`);
