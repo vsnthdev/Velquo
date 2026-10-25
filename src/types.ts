@@ -115,7 +115,6 @@ export interface HostInfo {
     certFingerprint?: string;
     downloadsDir?: string;
     logFilePath?: string;
-    localIps?: string[];
     ignoreWhatsappConversations?: boolean;
 }
 

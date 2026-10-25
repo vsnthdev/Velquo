@@ -68,7 +68,6 @@ pub struct HostInfo {
     pub cert_fingerprint: String,
     pub downloads_dir: String,
     pub log_file_path: String,
-    pub local_ips: Vec<String>,
     pub ignore_whatsapp_conversations: bool,
 }
 
@@ -525,10 +524,6 @@ impl KdeConnectDaemon {
 
     pub fn get_host_info(&self) -> HostInfo {
         let tcp_port = *self.tcp_port.lock().unwrap();
-        let local_ips = Self::get_local_ipv4s()
-            .into_iter()
-            .map(|(ip, _)| ip.to_string())
-            .collect();
         HostInfo {
             device_id: self.host.device_id.clone(),
             device_name: self.host.device_name.clone(),
@@ -539,7 +534,6 @@ impl KdeConnectDaemon {
             cert_fingerprint: self.host.cert_fingerprint.clone(),
             downloads_dir: self.downloads_dir.to_string_lossy().to_string(),
             log_file_path: self.log_file_path.to_string_lossy().to_string(),
-            local_ips,
             ignore_whatsapp_conversations: self.is_ignore_whatsapp_conversations_enabled(),
         }
     }
