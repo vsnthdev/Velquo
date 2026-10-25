@@ -4664,27 +4664,35 @@ impl KdeConnectDaemon {
         let base_ms = current_millis();
         let mut transfer_ids = Vec::with_capacity(number_of_files);
 
-        // Insert all batch items in reverse so item 0 appears at index 0 in the UI list
-        for (idx, (transfer_id, file_path, filename, file_size)) in
-            batch_items.iter().enumerate().rev()
+        // Insert all batch items under a single lock so item 0 appears at index 0 and notify_ui() fires once
         {
-            self.upsert_transfer(TransferItem {
-                id: transfer_id.clone(),
-                device_id: device_id.to_string(),
-                device_name: device_name.clone(),
-                direction: "Outgoing".to_string(),
-                kind: "File".to_string(),
-                filename: filename.clone(),
-                total_bytes: *file_size,
-                transferred_bytes: 0,
-                status: "InProgress".to_string(),
-                saved_path: Some(file_path.to_string_lossy().to_string()),
-                text_content: None,
-                url_content: None,
-                error: None,
-                timestamp_ms: base_ms + (number_of_files.saturating_sub(idx) as i64),
-            });
+            let mut guard = self.transfers.lock().unwrap();
+            for (idx, (transfer_id, file_path, filename, file_size)) in
+                batch_items.iter().enumerate().rev()
+            {
+                guard.insert(
+                    0,
+                    TransferItem {
+                        id: transfer_id.clone(),
+                        device_id: device_id.to_string(),
+                        device_name: device_name.clone(),
+                        direction: "Outgoing".to_string(),
+                        kind: "File".to_string(),
+                        filename: filename.clone(),
+                        total_bytes: *file_size,
+                        transferred_bytes: 0,
+                        status: "InProgress".to_string(),
+                        saved_path: Some(file_path.to_string_lossy().to_string()),
+                        text_content: None,
+                        url_content: None,
+                        error: None,
+                        timestamp_ms: base_ms + (number_of_files.saturating_sub(idx) as i64),
+                    },
+                );
+            }
+            Self::prune_finished_transfers(&mut guard);
         }
+        self.notify_ui();
 
         for (tid, _, _, _) in &batch_items {
             transfer_ids.push(tid.clone());
