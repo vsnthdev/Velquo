@@ -2,7 +2,7 @@ use chrono::Local;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -19,7 +19,7 @@ pub struct LogEntry {
 pub struct AppLogger {
     entries: Arc<Mutex<VecDeque<LogEntry>>>,
     app_handle: Arc<Mutex<Option<AppHandle>>>,
-    log_file_path: PathBuf,
+    log_file: Mutex<Option<File>>,
 }
 
 static LOGGER: OnceLock<AppLogger> = OnceLock::new();
@@ -32,10 +32,16 @@ impl AppLogger {
         let _ = fs::create_dir_all(&log_dir);
         let log_file_path = log_dir.join("app.log");
 
+        let opened_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file_path)
+            .ok();
+
         let logger = LOGGER.get_or_init(|| AppLogger {
             entries: Arc::new(Mutex::new(VecDeque::with_capacity(500))),
             app_handle: Arc::new(Mutex::new(None)),
-            log_file_path: log_file_path.clone(),
+            log_file: Mutex::new(opened_file),
         });
 
         let _ = log::set_logger(logger);
@@ -94,13 +100,11 @@ impl Log for AppLogger {
         // Print to terminal stdout for live CLI debugging
         println!("[{}] {:5} [{}] {}", timestamp, level, target, message);
 
-        // Append to persistent log file
-        if let Ok(mut file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.log_file_path)
-        {
-            let _ = writeln!(file, "[{}] {:5} [{}] {}", timestamp, level, target, message);
+        // Append to persistent open log file handle
+        if let Ok(mut file_guard) = self.log_file.lock() {
+            if let Some(file) = file_guard.as_mut() {
+                let _ = writeln!(file, "[{}] {:5} [{}] {}", timestamp, level, target, message);
+            }
         }
 
         let entry = LogEntry {
