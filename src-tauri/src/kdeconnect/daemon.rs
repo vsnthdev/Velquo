@@ -1928,6 +1928,7 @@ impl KdeConnectDaemon {
                     entry.mpris_players.clear();
                     entry.mpris_player_order.clear();
                     entry.active_mpris_player = None;
+                    entry.album_art_cache.clear();
                     entry.album_art_in_flight.clear();
                     entry.sender = None;
                     entry.abort_tx = None;
@@ -2407,6 +2408,7 @@ impl KdeConnectDaemon {
             entry.mpris_players.clear();
             entry.mpris_player_order.clear();
             entry.active_mpris_player = None;
+            entry.album_art_cache.clear();
             entry.album_art_in_flight.clear();
             drop(devices);
             self.trusted_devices.lock().unwrap().remove(device_id);
@@ -3912,6 +3914,7 @@ impl KdeConnectDaemon {
                         if let Ok(mut devices) = daemon.devices.lock() {
                             if let Some(entry) = devices.get_mut(&dev_id) {
                                 entry.album_art_in_flight.remove(&album_art_url);
+                                entry.album_art_cache.clear();
                                 entry
                                     .album_art_cache
                                     .insert(album_art_url.clone(), data_url.clone());
@@ -4237,6 +4240,7 @@ impl KdeConnectDaemon {
                 entry.mpris_players.clear();
                 entry.mpris_player_order.clear();
                 entry.active_mpris_player = None;
+                entry.album_art_cache.clear();
                 entry.album_art_in_flight.clear();
                 log::info!(
                     "[pair] Unpaired / rejected pairing with '{}' ({})",
