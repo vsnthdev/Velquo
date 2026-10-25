@@ -147,7 +147,6 @@ pub struct DeviceView {
     pub allow_presenter: bool,
     pub sync_notifications: bool,
     pub auto_copy_otp: bool,
-    pub is_ringing: bool,
     pub save_location: String,
     pub notifications: Vec<PhoneNotification>,
     pub run_commands: Vec<RunCommandItem>,
@@ -304,7 +303,6 @@ impl KdeConnectDaemon {
                         allow_presenter: rec.allow_presenter,
                         sync_notifications: rec.sync_notifications,
                         auto_copy_otp: rec.auto_copy_otp,
-                        is_ringing: false,
                         save_location: device_save_loc,
                         notifications: Vec::new(),
                         run_commands: rec.run_commands.clone(),
@@ -1764,7 +1762,6 @@ impl KdeConnectDaemon {
                         allow_presenter: saved_allow_presenter,
                         sync_notifications: saved_sync_notifications,
                         auto_copy_otp: saved_auto_copy_otp,
-                        is_ringing: false,
                         save_location: saved_save_location,
                         notifications: prev_notifications,
                         run_commands: saved_run_commands,
@@ -1915,7 +1912,6 @@ impl KdeConnectDaemon {
             if let Some(entry) = devices.get_mut(&device_id) {
                 if entry.connection_generation == generation {
                     entry.view.reachable = false;
-                    entry.view.is_ringing = false;
                     entry.view.now_playing = None;
                     entry.view.notifications.clear();
                     entry.mpris_players.clear();
@@ -2866,14 +2862,7 @@ impl KdeConnectDaemon {
 
     pub fn ring_device(&self, device_id: &str) -> Result<()> {
         let pkt = NetworkPacket::find_my_phone();
-        self.send_packet_to_device(device_id, &pkt)?;
-        if let Ok(mut devices) = self.devices.lock() {
-            if let Some(entry) = devices.get_mut(device_id) {
-                entry.view.is_ringing = true;
-            }
-        }
-        self.notify_ui();
-        Ok(())
+        self.send_packet_to_device(device_id, &pkt)
     }
 
     pub fn copy_text_to_clipboard(self: &Arc<Self>, text: &str) -> Result<()> {
@@ -3003,30 +2992,6 @@ impl KdeConnectDaemon {
         let is_cancel = packet.get_bool("isCancel").unwrap_or(false);
         let raw_id_original = packet.get_str("id").unwrap_or("").to_string();
         let norm_id = Self::normalize_notif_id(&raw_id_original);
-
-        // When the user dismisses the Find My Phone ring alert on their phone, Android sends
-        // `kdeconnect.notification` with `isCancel: true` (often with id containing `org.kde.kdeconnect_tp`).
-        if is_cancel {
-            let mut ring_stopped = false;
-            if let Ok(mut devices) = self.devices.lock() {
-                if let Some(entry) = devices.get_mut(device_id) {
-                    if entry.view.is_ringing
-                        && (norm_id.contains("kdeconnect") || !norm_id.is_empty())
-                    {
-                        entry.view.is_ringing = false;
-                        ring_stopped = true;
-                        log::info!(
-                            "[findmyphone] Ringing dismissed on '{}' (notif_id='{}')",
-                            device_name,
-                            norm_id
-                        );
-                    }
-                }
-            }
-            if ring_stopped {
-                self.notify_ui();
-            }
-        }
 
         if !self.is_device_notifications_allowed(device_id) {
             return;

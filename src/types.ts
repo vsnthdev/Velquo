@@ -84,7 +84,6 @@ export interface DeviceView {
     allowPresenter: boolean;
     syncNotifications: boolean;
     autoCopyOtp: boolean;
-    isRinging: boolean;
     saveLocation: string;
     notifications: PhoneNotification[];
     runCommands: RunCommandItem[];

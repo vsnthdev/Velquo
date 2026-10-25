@@ -989,13 +989,8 @@ export function DeviceControlView({
 
                     <motion.button
                         type="button"
-                        disabled={device.isRinging}
                         onClick={() => {
-                            if (
-                                !device.reachable ||
-                device.pairState != "Paired" ||
-                device.isRinging
-                            ) {
+                            if (!device.reachable || device.pairState != "Paired") {
                                 return;
                             }
                             invoke("ring_device", { deviceId: device.deviceId }).catch(
@@ -1004,67 +999,17 @@ export function DeviceControlView({
                                 },
                             );
                         }}
-                        animate={
-                            device.isRinging
-                                ? {
-                                    x: [0, -2.5, 2.5, -2, 2, 0],
-                                }
-                                : { x: 0 }
-                        }
-                        whileHover={
-                            device.reachable && !device.isRinging
-                                ? { scale: 1.015 }
-                                : undefined
-                        }
-                        whileTap={
-                            device.reachable && !device.isRinging
-                                ? { scale: 0.985 }
-                                : undefined
-                        }
-                        transition={
-                            device.isRinging
-                                ? {
-                                    duration: 0.48,
-                                    repeat: Infinity,
-                                    repeatDelay: 0.35,
-                                    ease: "easeInOut",
-                                }
-                                : {
-                                    damping: 28,
-                                    type: "spring",
-                                    stiffness: 450,
-                                }
-                        }
-                        className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-[13.5px] font-medium transition-colors ${
-                            device.isRinging
-                                ? "cursor-default border-blue-500/35 bg-blue-500/[0.08] text-blue-600 dark:border-blue-400/35 dark:bg-blue-500/[0.12] dark:text-blue-400"
-                                : "cursor-pointer border-black/12 bg-black/[0.02] text-zinc-800 hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05]"
-                        }`}
+                        whileHover={device.reachable ? { scale: 1.015 } : undefined}
+                        whileTap={device.reachable ? { scale: 0.985 } : undefined}
+                        transition={{
+                            damping: 28,
+                            type: "spring",
+                            stiffness: 450,
+                        }}
+                        className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/12 bg-black/[0.02] px-4 py-2.5 text-[13.5px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05]"
                     >
-                        <motion.span
-                            animate={
-                                device.isRinging
-                                    ? { rotate: [0, -18, 18, -14, 14, -8, 8, 0] }
-                                    : { rotate: 0 }
-                            }
-                            transition={
-                                device.isRinging
-                                    ? {
-                                        duration: 0.48,
-                                        repeat: Infinity,
-                                        repeatDelay: 0.35,
-                                        ease: "easeInOut",
-                                    }
-                                    : { duration: 0.15 }
-                            }
-                            className="flex items-center"
-                        >
-                            <BellRingingIcon
-                                size={16}
-                                weight={device.isRinging ? "fill" : "regular"}
-                            />
-                        </motion.span>
-                        <span>{device.isRinging ? "Ringing" : "Ring phone"}</span>
+                        <BellRingingIcon size={16} weight="regular" />
+                        <span>Ring phone</span>
                     </motion.button>
 
                     {/* 3rd Quick Action: Remote input Radix Dialog */}
