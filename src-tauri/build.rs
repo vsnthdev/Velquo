@@ -4,10 +4,6 @@ fn main() {
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let plist_path = std::path::Path::new(&manifest_dir).join("Info.plist");
         println!("cargo:rerun-if-changed={}", plist_path.display());
-        println!(
-            "cargo:rustc-link-arg-bins=-Wl,-sectcreate,__TEXT,__info_plist,{}",
-            plist_path.display()
-        );
 
         let mr_src = std::path::Path::new(&manifest_dir)
             .join("src")

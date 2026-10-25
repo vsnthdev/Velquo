@@ -1001,7 +1001,11 @@ pub fn run() {
 
     let daemon_for_setup = Arc::clone(&daemon);
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.activate_ignoring_other_apps(false);
+
+    let mut app = builder
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -1159,6 +1163,16 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Velquo Tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building Velquo Tauri application");
+
+    #[cfg(target_os = "macos")]
+    {
+        // Set activation policy on the runtime BEFORE `app.run()` starts `[NSApp run]`,
+        // so `tao`'s `applicationDidFinishLaunching:` (`AppState::launched`) never applies
+        // `NSApplicationActivationPolicyRegular` before `.setup()` runs.
+        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    }
+
+    app.run(|_, _| {});
 }
