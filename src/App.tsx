@@ -39,6 +39,7 @@ export default function App() {
         useState<boolean>(true);
     const [rightPaneEl, setRightPaneEl] = useState<HTMLDivElement | null>(null);
     const [openAddCommandSignal, setOpenAddCommandSignal] = useState<number>(0);
+    const [scrollToAboutSignal, setScrollToAboutSignal] = useState<number>(0);
     const [highlightedNotification, setHighlightedNotification] = useState<{
         deviceId: string;
         notificationId: string;
@@ -202,6 +203,9 @@ export default function App() {
                 if (disposed) return;
                 if (event.payload.view == "pair-device") {
                     setActiveView({ kind: "pair-device" });
+                } else if (event.payload.view == "about") {
+                    setActiveView({ kind: "app-settings" });
+                    setScrollToAboutSignal((prev) => prev + 1);
                 } else if (event.payload.view == "device" && event.payload.deviceId) {
                     setActiveView({
                         kind: "device",
@@ -623,6 +627,7 @@ export default function App() {
                                     })
                                 }
                                 onCheckForUpdates={() => runUpdateCheck(true)}
+                                scrollToAboutSignal={scrollToAboutSignal}
                             />
                         )}
 

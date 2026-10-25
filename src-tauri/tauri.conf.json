@@ -27,6 +27,7 @@
                 "hiddenTitle": true,
                 "transparent": true,
                 "alwaysOnTop": false,
+                "focus": false,
                 "visible": false
             }
         ],

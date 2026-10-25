@@ -576,7 +576,7 @@ async fn open_updater_window(app: AppHandle) -> Result<(), String> {
     let url = "index.html?window=updater";
     let builder = tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::App(url.into()))
         .title("Velquo — Software Update")
-        .inner_size(860.0, 560.0)
+        .inner_size(440.0, 320.0)
         .resizable(false)
         .maximizable(false)
         .minimizable(true)
@@ -592,8 +592,21 @@ async fn open_updater_window(app: AppHandle) -> Result<(), String> {
     let window = builder.build().map_err(|e| e.to_string())?;
     let _ = window.show();
     let _ = window.set_focus();
-    log::info!("[updater-window] Spawned non-resizable updater window (860x560)");
+    log::info!("[updater-window] Spawned non-resizable updater window (440x320)");
     Ok(())
+}
+
+#[tauri::command]
+fn close_updater_window(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("updater") {
+        let _ = window.close();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if !has_any_visible_window(&app, Some("updater")) {
+            let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+        }
+    }
 }
 
 #[tauri::command]
@@ -906,12 +919,6 @@ pub fn build_tray_menu(
         "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm48-88a8,8,0,0,1-8,8H136v32a8,8,0,0,1-16,0V136H88a8,8,0,0,1,0-16h32V88a8,8,0,0,1,16,0v32h32A8,8,0,0,1,176,128Z",
         is_dark,
     );
-    // Phosphor `Door` (duotone)
-    let quit_icon = phosphor_duotone_menu_icon(
-        "M200,40V224H56V40a8,8,0,0,1,8-8H192A8,8,0,0,1,200,40Z",
-        "M232,216H208V40a16,16,0,0,0-16-16H64A16,16,0,0,0,48,40V216H24a8,8,0,0,0,0,16H232a8,8,0,0,0,0-16ZM64,40H192V216H64Zm104,92a12,12,0,1,1-12-12A12,12,0,0,1,168,132Z",
-        is_dark,
-    );
 
     // 1. Open window (`Browser` duotone icon)
     let open_item = IconMenuItem::with_id(
@@ -959,10 +966,6 @@ pub fn build_tray_menu(
     )?;
     menu.append(&pair_item)?;
 
-    // 6. Quit (`Door` duotone icon)
-    let quit_item = IconMenuItem::with_id(app, "quit", "Quit", true, quit_icon, None::<&str>)?;
-    menu.append(&quit_item)?;
-
     Ok(menu)
 }
 
@@ -977,6 +980,88 @@ pub fn refresh_tray_menu(app: &AppHandle, trusted_devices: Vec<(String, String, 
             }
         }
     });
+}
+
+#[cfg(target_os = "macos")]
+fn build_macos_app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    use tauri::menu::{MenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID};
+
+    let app_submenu = Submenu::with_items(
+        app,
+        "Velquo",
+        true,
+        &[
+            &MenuItem::with_id(app, "app_about", "About Velquo", true, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &MenuItem::with_id(
+                app,
+                "app_check_updates",
+                "Check for updates",
+                true,
+                None::<&str>,
+            )?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
+    )?;
+
+    let file_submenu = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[&PredefinedMenuItem::close_window(app, None)?],
+    )?;
+
+    let edit_submenu = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+
+    let view_submenu = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[&PredefinedMenuItem::fullscreen(app, None)?],
+    )?;
+
+    let window_submenu = Submenu::with_id_and_items(
+        app,
+        WINDOW_SUBMENU_ID,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+
+    let help_submenu = Submenu::with_id_and_items(app, HELP_SUBMENU_ID, "Help", true, &[])?;
+
+    Menu::with_items(
+        app,
+        &[
+            &app_submenu,
+            &file_submenu,
+            &edit_submenu,
+            &view_submenu,
+            &window_submenu,
+            &help_submenu,
+        ],
+    )
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1003,7 +1088,31 @@ pub fn run() {
 
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
-    let builder = builder.activate_ignoring_other_apps(false);
+    let builder = builder
+        .activate_ignoring_other_apps(false)
+        .menu(build_macos_app_menu)
+        .on_menu_event(|app, event| {
+            let id = event.id().as_ref();
+            if id == "app_about" {
+                log::info!("[app-menu] 'About Velquo' clicked — opening Settings > About");
+                open_main_window(app);
+                let _ = app.emit(
+                    "velquo://tray-navigate",
+                    serde_json::json!({ "view": "about" }),
+                );
+            } else if id == "app_check_updates" {
+                log::info!("[app-menu] 'Check for updates' clicked — opening updater window");
+                if let Some(pending) = app.try_state::<PendingUpdateState>() {
+                    if let Ok(mut guard) = pending.0.lock() {
+                        *guard = None;
+                    }
+                }
+                let app_clone = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = open_updater_window(app_clone).await;
+                });
+            }
+        });
 
     let mut app = builder
         .plugin(tauri_plugin_autostart::init(
@@ -1050,6 +1159,7 @@ pub fn run() {
             check_for_update,
             get_pending_update,
             open_updater_window,
+            close_updater_window,
             focus_main_window,
         ])
         .setup(move |app| {
@@ -1100,10 +1210,7 @@ pub fn run() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(move |app, event| {
                     let id = event.id.as_ref();
-                    if id == "quit" {
-                        log::info!("[tray] Quit clicked from menu bar menu");
-                        app.exit(0);
-                    } else if id == "open_window" {
+                    if id == "open_window" {
                         open_main_window(app);
                     } else if id == "pair_new_device" {
                         open_main_window(app);
@@ -1174,5 +1281,11 @@ pub fn run() {
         app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     }
 
-    app.run(|_, _| {});
+    app.run(|app_handle, event| {
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = event {
+            log::info!("[app] Reopen event received — opening main window");
+            open_main_window(app_handle);
+        }
+    });
 }

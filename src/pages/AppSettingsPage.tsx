@@ -1,7 +1,7 @@
 import pkg from "../../package.json";
 import { motion } from "motion/react";
-import { useState, useEffect } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { useRef, useState, useEffect } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { CheckIcon, GithubLogoIcon, ArrowsClockwiseIcon } from "@phosphor-icons/react";
@@ -10,10 +10,12 @@ interface AppSettingsPageProps {
     ignoreWhatsappConversations: boolean;
     onToggleIgnoreWhatsappConversations: () => void;
     onCheckForUpdates: () => Promise<"update-found" | "up-to-date" | "error">;
+    scrollToAboutSignal?: number;
 }
 
 export function AppSettingsPage({
     onCheckForUpdates,
+    scrollToAboutSignal,
     ignoreWhatsappConversations,
     onToggleIgnoreWhatsappConversations,
 }: AppSettingsPageProps) {
@@ -22,8 +24,20 @@ export function AppSettingsPage({
     const [checkStatus, setCheckStatus] = useState<
     "idle" | "checking" | "up-to-date" | "error"
     >("idle");
+    const aboutCardRef = useRef<HTMLDivElement | null>(null);
     const repoUrl = pkg.homepage;
     const repoDisplay = repoUrl.replace(/^https?:\/\//, "");
+
+    useEffect(() => {
+        if (!scrollToAboutSignal) return;
+        const timer = setTimeout(() => {
+            aboutCardRef.current?.scrollIntoView({
+                block: "end",
+                behavior: "smooth",
+            });
+        }, 60);
+        return () => clearTimeout(timer);
+    }, [scrollToAboutSignal]);
 
     useEffect(() => {
         getVersion()
@@ -233,7 +247,10 @@ export function AppSettingsPage({
             </h2>
 
             {/* About Card matching media/github-cover.svg */}
-            <div className="mt-3 flex flex-col items-center justify-center rounded-2xl border border-black/10 bg-black/[0.02] px-6 py-7 text-center dark:border-white/10 dark:bg-white/[0.02]">
+            <div
+                ref={aboutCardRef}
+                className="mt-3 flex flex-col items-center justify-center rounded-2xl border border-black/10 bg-black/[0.02] px-6 py-7 text-center dark:border-white/10 dark:bg-white/[0.02]"
+            >
                 {/* Interlocking Velquo Symbol from media/github-cover.svg */}
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
