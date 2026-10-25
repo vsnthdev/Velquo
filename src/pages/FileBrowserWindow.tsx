@@ -65,16 +65,28 @@ export function FileBrowserWindow() {
     const breadcrumbScrollRef = useRef<HTMLDivElement | null>(null);
     const sftpReqSeqRef = useRef<number>(0);
     const initialLoadedRef = useRef<boolean>(false);
+    const isFetchingSnapRef = useRef<boolean>(false);
+    const pendingSnapRef = useRef<boolean>(false);
 
     const refreshDeviceState = useCallback(async () => {
         if (!deviceId) return;
+        if (isFetchingSnapRef.current) {
+            pendingSnapRef.current = true;
+            return;
+        }
+        isFetchingSnapRef.current = true;
         try {
-            const snap = await invoke<AppSnapshot>("get_app_snapshot");
-            const found =
-                snap.devices.find((d) => d.deviceId == deviceId) ?? null;
-            setDevice(found);
+            do {
+                pendingSnapRef.current = false;
+                const snap = await invoke<AppSnapshot>("get_app_snapshot");
+                const found =
+                    snap.devices.find((d) => d.deviceId == deviceId) ?? null;
+                setDevice(found);
+            } while (pendingSnapRef.current);
         } catch (err) {
             console.error("Failed to fetch snapshot in FileBrowserWindow:", err);
+        } finally {
+            isFetchingSnapRef.current = false;
         }
     }, [deviceId]);
 

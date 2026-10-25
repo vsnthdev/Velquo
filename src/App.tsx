@@ -105,55 +105,68 @@ export default function App() {
 
     useEffect(() => {
         let disposed = false;
+        let isFetching = false;
+        let hasPendingFetch = false;
         let unlisten: (() => void) | undefined;
         let unlistenPing: (() => void) | undefined;
         let pingTimer: ReturnType<typeof setTimeout> | undefined;
 
         async function loadDevices() {
+            if (isFetching) {
+                hasPendingFetch = true;
+                return;
+            }
+            isFetching = true;
+
             try {
-                const snap = await invoke<AppSnapshot>("get_app_snapshot");
-                if (disposed) return;
-                setDevices(snap.devices);
-                setTransfers(snap.transfers || []);
-                if (typeof snap.host?.ignoreWhatsappConversations == "boolean") {
-                    setIgnoreWhatsappConversations(snap.host.ignoreWhatsappConversations);
-                }
+                do {
+                    hasPendingFetch = false;
+                    const snap = await invoke<AppSnapshot>("get_app_snapshot");
+                    if (disposed) return;
+                    setDevices(snap.devices);
+                    setTransfers(snap.transfers || []);
+                    if (typeof snap.host?.ignoreWhatsappConversations == "boolean") {
+                        setIgnoreWhatsappConversations(snap.host.ignoreWhatsappConversations);
+                    }
 
-                const paired = snap.devices.filter((d) => d.pairState == "Paired");
-                const newlyPaired = paired.find(
-                    (d) => !prevPairedIdsRef.current.has(d.deviceId),
-                );
-                prevPairedIdsRef.current = new Set(paired.map((d) => d.deviceId));
+                    const paired = snap.devices.filter((d) => d.pairState == "Paired");
+                    const newlyPaired = paired.find(
+                        (d) => !prevPairedIdsRef.current.has(d.deviceId),
+                    );
+                    prevPairedIdsRef.current = new Set(paired.map((d) => d.deviceId));
 
-                setActiveView((prev) => {
-                    // If the user is on the Pair New Device page and a device just finished pairing, open it immediately!
-                    if (prev.kind == "pair-device" && newlyPaired) {
-                        return {
-                            kind: "device",
-                            subview: "control",
-                            deviceId: newlyPaired.deviceId,
-                        };
-                    }
-                    if (prev.kind != "device") {
-                        return prev;
-                    }
-                    if (
-                        prev.deviceId &&
-            paired.some((d) => d.deviceId == prev.deviceId)
-                    ) {
-                        return prev;
-                    }
-                    if (paired.length > 0) {
-                        return {
-                            kind: "device",
-                            subview: "control",
-                            deviceId: paired[0].deviceId,
-                        };
-                    }
-                    return { kind: "pair-device" };
-                });
+                    setActiveView((prev) => {
+                        // If the user is on the Pair New Device page and a device just finished pairing, open it immediately!
+                        if (prev.kind == "pair-device" && newlyPaired) {
+                            return {
+                                kind: "device",
+                                subview: "control",
+                                deviceId: newlyPaired.deviceId,
+                            };
+                        }
+                        if (prev.kind != "device") {
+                            return prev;
+                        }
+                        if (
+                            prev.deviceId &&
+                            paired.some((d) => d.deviceId == prev.deviceId)
+                        ) {
+                            return prev;
+                        }
+                        if (paired.length > 0) {
+                            return {
+                                kind: "device",
+                                subview: "control",
+                                deviceId: paired[0].deviceId,
+                            };
+                        }
+                        return { kind: "pair-device" };
+                    });
+                } while (hasPendingFetch && !disposed);
             } catch (err) {
                 console.error("Failed to load devices:", err);
+            } finally {
+                isFetching = false;
             }
         }
 
