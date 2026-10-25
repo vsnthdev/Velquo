@@ -68,7 +68,7 @@ export function DevicePage({
     highlightedNotification,
     onChangeFileSaveLocation,
 }: DevicePageProps) {
-    const isSettingsOpen = subview === "settings";
+    const isSettingsOpen = subview == "settings";
 
     return (
         <motion.div

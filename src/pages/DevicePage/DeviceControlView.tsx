@@ -132,14 +132,14 @@ export function DeviceControlView({
         if (
             !isRemoteInputOpen ||
       !device.reachable ||
-      device.pairState !== "Paired"
+      device.pairState != "Paired"
         ) {
             return;
         }
 
         const handleWindowKeyDown = (e: globalThis.KeyboardEvent) => {
             // Allow Cmd+V / Ctrl+V to trigger the native paste event
-            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() == "v") {
                 return;
             }
 
@@ -148,11 +148,11 @@ export function DeviceControlView({
             e.stopPropagation();
 
             if (
-                e.key === "Shift" ||
-        e.key === "Control" ||
-        e.key === "Alt" ||
-        e.key === "Meta" ||
-        e.key === "CapsLock"
+                e.key == "Shift" ||
+        e.key == "Control" ||
+        e.key == "Alt" ||
+        e.key == "Meta" ||
+        e.key == "CapsLock"
             ) {
                 return;
             }
@@ -171,7 +171,7 @@ export function DeviceControlView({
                 return;
             }
 
-            if (e.key.length === 1) {
+            if (e.key.length == 1) {
                 invoke("send_remote_key", {
                     key: e.key,
                     specialKey: 0,
@@ -215,7 +215,7 @@ export function DeviceControlView({
     useEffect(() => {
         if (
             !highlightedNotification ||
-      highlightedNotification.deviceId !== device.deviceId ||
+      highlightedNotification.deviceId != device.deviceId ||
       !highlightedNotification.notificationId
         ) {
             return;
@@ -232,7 +232,7 @@ export function DeviceControlView({
         }, 120);
 
         const clearTimer = setTimeout(() => {
-            setActiveHighlightNotifId((prev) => (prev === targetId ? null : prev));
+            setActiveHighlightNotifId((prev) => (prev == targetId ? null : prev));
         }, 3200);
 
         return () => {
@@ -252,8 +252,8 @@ export function DeviceControlView({
 
         if (
             optimisticSeekRef.current &&
-      (optimisticSeekRef.current.player !== nowPlaying.player ||
-        optimisticSeekRef.current.title !== nowPlaying.title)
+      (optimisticSeekRef.current.player != nowPlaying.player ||
+        optimisticSeekRef.current.title != nowPlaying.title)
         ) {
             optimisticSeekRef.current = null;
         }
@@ -294,7 +294,7 @@ export function DeviceControlView({
                 progressPctMv.set(pct);
             }
             const secs = Math.floor(posMs / 1000);
-            setDisplaySecs((prev) => (prev !== secs ? secs : prev));
+            setDisplaySecs((prev) => (prev != secs ? secs : prev));
         };
 
         syncNow();
@@ -314,7 +314,7 @@ export function DeviceControlView({
     }, [nowPlaying, progressPctMv]);
 
     const handlePickFilesToSend = async () => {
-        if (!device.reachable || device.pairState !== "Paired") {
+        if (!device.reachable || device.pairState != "Paired") {
             return;
         }
         const selected = await open({
@@ -343,9 +343,9 @@ export function DeviceControlView({
         setNowTickMs(Date.now());
         const hasRecentCompleted = transfers.some(
             (t) =>
-                t.deviceId === device.deviceId &&
-        t.kind === "File" &&
-        t.status === "Completed" &&
+                t.deviceId == device.deviceId &&
+        t.kind == "File" &&
+        t.status == "Completed" &&
         Date.now() - t.timestampMs < 2400,
         );
         if (!hasRecentCompleted) return;
@@ -415,7 +415,7 @@ export function DeviceControlView({
     shareLinkTouchedInvalid;
 
     const handleSendShareLink = async () => {
-        if (!device.reachable || device.pairState !== "Paired") {
+        if (!device.reachable || device.pairState != "Paired") {
             return;
         }
         const trimmed = shareLinkInput.trim();
@@ -451,19 +451,19 @@ export function DeviceControlView({
             className="flex flex-col"
         >
             {/* Pairing Banner when device is not yet paired */}
-            {device.pairState !== "Paired" && (
+            {device.pairState != "Paired" && (
                 <div className="mt-6 flex items-center justify-between gap-4 rounded-2xl border border-amber-500/25 bg-amber-500/[0.08] px-4 py-3 text-sm">
                     <div className="flex flex-col">
                         <span className="font-medium text-amber-600 dark:text-amber-300">
-                            {device.pairState === "Requested"
+                            {device.pairState == "Requested"
                                 ? "Pairing request sent — confirm on your device"
-                                : device.pairState === "RequestedByPeer"
+                                : device.pairState == "RequestedByPeer"
                                     ? "Incoming pairing request from this device"
                                     : "Device is not paired yet"}
                         </span>
                         {device.verificationKey &&
-              (device.pairState === "Requested" ||
-                device.pairState === "RequestedByPeer") && (
+              (device.pairState == "Requested" ||
+                device.pairState == "RequestedByPeer") && (
                             <span className="mt-0.5 font-mono text-xs text-amber-700/80 dark:text-amber-200/80">
                                 Verification Key: {device.verificationKey}
                             </span>
@@ -471,7 +471,7 @@ export function DeviceControlView({
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
-                        {device.pairState === "NotPaired" && device.reachable && (
+                        {device.pairState == "NotPaired" && device.reachable && (
                             <motion.button
                                 type="button"
                                 whileHover={{ scale: 1.03 }}
@@ -486,7 +486,7 @@ export function DeviceControlView({
                                 Pair Device
                             </motion.button>
                         )}
-                        {device.pairState === "Requested" && (
+                        {device.pairState == "Requested" && (
                             <motion.button
                                 type="button"
                                 whileHover={{ scale: 1.03 }}
@@ -501,7 +501,7 @@ export function DeviceControlView({
                                 Cancel
                             </motion.button>
                         )}
-                        {device.pairState === "RequestedByPeer" && (
+                        {device.pairState == "RequestedByPeer" && (
                             <>
                                 <motion.button
                                     type="button"
@@ -745,7 +745,7 @@ export function DeviceControlView({
                             </div>
                             <span className="text-[14px] font-semibold text-zinc-900 dark:text-zinc-100">
                                 Sending {justDroppedCount}{" "}
-                                {justDroppedCount === 1 ? "file" : "files"} to{" "}
+                                {justDroppedCount == 1 ? "file" : "files"} to{" "}
                                 {device.deviceName}...
                             </span>
                         </motion.div>
@@ -796,30 +796,30 @@ export function DeviceControlView({
                 {/* Per-file transfer progress bars inside the drop card */}
                 {(() => {
                     const deviceFileTransfers = transfers.filter(
-                        (t) => t.deviceId === device.deviceId && t.kind === "File",
+                        (t) => t.deviceId == device.deviceId && t.kind == "File",
                     );
                     const anyInProgress = deviceFileTransfers.some(
-                        (t) => t.status === "InProgress",
+                        (t) => t.status == "InProgress",
                     );
                     const visibleTransfers = deviceFileTransfers
                         .filter(
                             (t) =>
-                                t.status === "InProgress" ||
-                (t.status === "Completed" &&
+                                t.status == "InProgress" ||
+                (t.status == "Completed" &&
                   (anyInProgress
                       ? nowTickMs - t.timestampMs < 15000
                       : nowTickMs - t.timestampMs < 2200)),
                         )
                         .slice(0, 6);
 
-                    if (visibleTransfers.length === 0) return null;
+                    if (visibleTransfers.length == 0) return null;
 
                     return (
                         <div className="mt-5 flex w-full max-w-md flex-col gap-2.5">
                             <AnimatePresence initial={false}>
                                 {visibleTransfers.map((item) => {
                                     const pct =
-                                        item.status === "Completed"
+                                        item.status == "Completed"
                                             ? 100
                                             : item.totalBytes > 0
                                                 ? Math.min(
@@ -829,7 +829,7 @@ export function DeviceControlView({
                                                     ),
                                                 )
                                                 : 0;
-                                    const isDone = item.status === "Completed";
+                                    const isDone = item.status == "Completed";
 
                                     return (
                                         <motion.div
@@ -849,7 +849,7 @@ export function DeviceControlView({
                                                 <span className="truncate">
                                                     {isDone
                                                         ? "Sent"
-                                                        : item.direction === "Outgoing"
+                                                        : item.direction == "Outgoing"
                                                             ? "Sending"
                                                             : "Receiving"}{" "}
                                                     {item.filename}
@@ -960,7 +960,7 @@ export function DeviceControlView({
                                                         }
                                                     }}
                                                     onKeyDown={(e) => {
-                                                        if (e.key === "Enter") {
+                                                        if (e.key == "Enter") {
                                                             e.preventDefault();
                                                             handleSendShareLink();
                                                         }
@@ -993,7 +993,7 @@ export function DeviceControlView({
                         onClick={() => {
                             if (
                                 !device.reachable ||
-                device.pairState !== "Paired" ||
+                device.pairState != "Paired" ||
                 device.isRinging
                             ) {
                                 return;
@@ -1073,7 +1073,7 @@ export function DeviceControlView({
                             <motion.button
                                 type="button"
                                 onClick={() => {
-                                    if (device.reachable && device.pairState === "Paired") {
+                                    if (device.reachable && device.pairState == "Paired") {
                                         setIsRemoteInputOpen(true);
                                     }
                                 }}
@@ -1184,7 +1184,7 @@ export function DeviceControlView({
                 <motion.button
                     type="button"
                     onClick={() => {
-                        if (device.reachable && device.pairState === "Paired") {
+                        if (device.reachable && device.pairState == "Paired") {
                             invoke("open_file_browser_window", {
                                 deviceId: device.deviceId,
                                 deviceName: device.deviceName,
@@ -1224,12 +1224,12 @@ export function DeviceControlView({
                                 {device.notifications.map((notif) => {
                                     const displayBody =
                                         notif.text ||
-                    (notif.ticker !== notif.title ? notif.ticker : "");
+                    (notif.ticker != notif.title ? notif.ticker : "");
                                     const isSensitiveHidden = displayBody
                                         .toLowerCase()
                                         .includes("sensitive notification content hidden");
-                                    const isCopied = copiedNotifId === notif.id;
-                                    const isHighlighted = activeHighlightNotifId === notif.id;
+                                    const isCopied = copiedNotifId == notif.id;
+                                    const isHighlighted = activeHighlightNotifId == notif.id;
 
                                     return (
                                         <motion.div
@@ -1261,7 +1261,7 @@ export function DeviceControlView({
                                                     <span className="rounded-md bg-black/[0.06] px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-600 dark:bg-white/[0.08] dark:text-zinc-300">
                                                         {notif.appName}
                                                     </span>
-                                                    {notif.title && notif.title !== notif.appName && (
+                                                    {notif.title && notif.title != notif.appName && (
                                                         <span className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
                                                             {notif.title}
                                                         </span>
@@ -1306,7 +1306,7 @@ export function DeviceControlView({
                                                             setCopiedNotifId(notif.id);
                                                             setTimeout(() => {
                                                                 setCopiedNotifId((prev) =>
-                                                                    prev === notif.id ? null : prev,
+                                                                    prev == notif.id ? null : prev,
                                                                 );
                                                             }, 1800);
                                                         }}

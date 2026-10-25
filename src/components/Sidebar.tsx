@@ -22,8 +22,8 @@ export function Sidebar({
     const [hoveredDeviceId, setHoveredDeviceId] = useState<string | null>(null);
     const [hoveredBottomId, setHoveredBottomId] = useState<string | null>(null);
 
-    const isAppSettingsSelected = activeView.kind === "app-settings";
-    const isPairDeviceSelected = activeView.kind === "pair-device";
+    const isAppSettingsSelected = activeView.kind == "app-settings";
+    const isPairDeviceSelected = activeView.kind == "pair-device";
 
     return (
         <aside className="flex h-full w-60 shrink-0 select-none flex-col border-r border-black/10 bg-transparent px-2 pt-12 pb-4 dark:border-white/10">
@@ -38,9 +38,9 @@ export function Sidebar({
                 <AnimatePresence initial={false}>
                     {devices.map((device, index) => {
                         const isSelected =
-                            activeView.kind === "device" &&
-              activeView.deviceId === device.deviceId;
-                        const isHovered = hoveredDeviceId === device.deviceId;
+                            activeView.kind == "device" &&
+              activeView.deviceId == device.deviceId;
+                        const isHovered = hoveredDeviceId == device.deviceId;
 
                         return (
                             <motion.div
@@ -156,7 +156,7 @@ export function Sidebar({
                         />
                     )}
 
-                    {!isAppSettingsSelected && hoveredBottomId === "app-settings" && (
+                    {!isAppSettingsSelected && hoveredBottomId == "app-settings" && (
                         <motion.div
                             layoutId="hover-bottom-pill"
                             initial={{ opacity: 0 }}
@@ -201,7 +201,7 @@ export function Sidebar({
                         />
                     )}
 
-                    {!isPairDeviceSelected && hoveredBottomId === "pair-device" && (
+                    {!isPairDeviceSelected && hoveredBottomId == "pair-device" && (
                         <motion.div
                             layoutId="hover-bottom-pill"
                             initial={{ opacity: 0 }}

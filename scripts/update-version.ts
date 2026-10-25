@@ -16,7 +16,7 @@ const gitStatusOutput = (
 ).trim();
 const gitStatusExit = await gitStatusProc.exited;
 
-if (gitStatusExit !== 0 || gitStatusOutput.length > 0) {
+if (gitStatusExit != 0 || gitStatusOutput.length > 0) {
     console.error(
         "==> Aborted: Git working tree is not clean. Please commit or reset all changes and untracked files before running update-version.",
     );
@@ -74,7 +74,7 @@ const { nextVersion } = await prompts(
     },
 );
 
-if (!nextVersion || typeof nextVersion !== "string") {
+if (!nextVersion || typeof nextVersion != "string") {
     console.error("==> Aborted: No version selected.");
     process.exit(1);
 }
@@ -121,7 +121,7 @@ const bundleProc = Bun.spawn(["bun", "run", "bundle"], {
 });
 
 const exitCode = await bundleProc.exited;
-if (exitCode !== 0) {
+if (exitCode != 0) {
     console.error(`==> Error: bun run bundle failed with exit code ${exitCode}`);
     process.exit(exitCode);
 }

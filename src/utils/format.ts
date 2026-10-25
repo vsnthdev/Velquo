@@ -40,7 +40,7 @@ export function formatFileSize(bytes: number): string {
         value /= 1024;
         unitIdx++;
     }
-    return `${value >= 10 || unitIdx === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIdx]}`;
+    return `${value >= 10 || unitIdx == 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIdx]}`;
 }
 
 export function formatShortDate(epochSecs: number | null): string {
@@ -48,7 +48,7 @@ export function formatShortDate(epochSecs: number | null): string {
     const date = new Date(epochSecs * 1000);
     if (Number.isNaN(date.getTime())) return "";
     const now = new Date();
-    const sameYear = date.getFullYear() === now.getFullYear();
+    const sameYear = date.getFullYear() == now.getFullYear();
     return date.toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
@@ -62,9 +62,9 @@ export function isValidHttpUrl(raw: string): boolean {
     try {
         const parsed = new URL(trimmed);
         return (
-            (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+            (parsed.protocol == "http:" || parsed.protocol == "https:") &&
       Boolean(parsed.hostname) &&
-      (parsed.hostname.includes(".") || parsed.hostname === "localhost")
+      (parsed.hostname.includes(".") || parsed.hostname == "localhost")
         );
     } catch {
         return false;

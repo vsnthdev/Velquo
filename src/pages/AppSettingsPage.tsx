@@ -34,7 +34,7 @@ export function AppSettingsPage({
 
         isEnabled()
             .then((enabled) => {
-                setLaunchOnStartup(enabled === true);
+                setLaunchOnStartup(enabled == true);
             })
             .catch(() => {
                 setLaunchOnStartup(false);
@@ -52,7 +52,7 @@ export function AppSettingsPage({
                 await disable();
             }
             const actual = await isEnabled();
-            setLaunchOnStartup(actual === true);
+            setLaunchOnStartup(actual == true);
         } catch (err) {
             console.error("Failed to update autostart state:", err);
             setLaunchOnStartup(prev);
@@ -68,19 +68,19 @@ export function AppSettingsPage({
     };
 
     const handleManualUpdateCheck = async () => {
-        if (checkStatus === "checking") return;
+        if (checkStatus == "checking") return;
         setCheckStatus("checking");
         try {
             const res = await onCheckForUpdates();
-            if (res === "up-to-date") {
+            if (res == "up-to-date") {
                 setCheckStatus("up-to-date");
                 setTimeout(() => {
-                    setCheckStatus((prev) => (prev === "up-to-date" ? "idle" : prev));
+                    setCheckStatus((prev) => (prev == "up-to-date" ? "idle" : prev));
                 }, 2500);
-            } else if (res === "error") {
+            } else if (res == "error") {
                 setCheckStatus("error");
                 setTimeout(() => {
-                    setCheckStatus((prev) => (prev === "error" ? "idle" : prev));
+                    setCheckStatus((prev) => (prev == "error" ? "idle" : prev));
                 }, 2500);
             } else {
                 setCheckStatus("idle");
@@ -88,7 +88,7 @@ export function AppSettingsPage({
         } catch {
             setCheckStatus("error");
             setTimeout(() => {
-                setCheckStatus((prev) => (prev === "error" ? "idle" : prev));
+                setCheckStatus((prev) => (prev == "error" ? "idle" : prev));
             }, 2500);
         }
     };
@@ -153,19 +153,19 @@ export function AppSettingsPage({
 
                 <motion.button
                     type="button"
-                    disabled={checkStatus === "checking"}
-                    whileHover={checkStatus === "checking" ? undefined : { scale: 1.02 }}
-                    whileTap={checkStatus === "checking" ? undefined : { scale: 0.97 }}
+                    disabled={checkStatus == "checking"}
+                    whileHover={checkStatus == "checking" ? undefined : { scale: 1.02 }}
+                    whileTap={checkStatus == "checking" ? undefined : { scale: 0.97 }}
                     onClick={handleManualUpdateCheck}
                     className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1 text-[12px] font-medium transition-colors ${
-                        checkStatus === "up-to-date"
+                        checkStatus == "up-to-date"
                             ? "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
-                            : checkStatus === "error"
+                            : checkStatus == "error"
                                 ? "border-amber-500/30 bg-amber-500/12 text-amber-700 dark:text-amber-300"
                                 : "border-black/12 bg-black/[0.04] text-zinc-800 hover:border-black/20 hover:bg-black/[0.07] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.09]"
                     }`}
                 >
-                    {checkStatus === "up-to-date" ? (
+                    {checkStatus == "up-to-date" ? (
                         <>
                             <CheckIcon size={13} weight="bold" />
                             <span>Up to date</span>
@@ -175,12 +175,12 @@ export function AppSettingsPage({
                             <ArrowsClockwiseIcon
                                 size={13}
                                 weight="bold"
-                                className={checkStatus === "checking" ? "animate-spin" : ""}
+                                className={checkStatus == "checking" ? "animate-spin" : ""}
                             />
                             <span>
-                                {checkStatus === "checking"
+                                {checkStatus == "checking"
                                     ? "Checking..."
-                                    : checkStatus === "error"
+                                    : checkStatus == "error"
                                         ? "Up to date"
                                         : "Check now"}
                             </span>

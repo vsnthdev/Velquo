@@ -71,7 +71,7 @@ export function FileBrowserWindow() {
         try {
             const snap = await invoke<AppSnapshot>("get_app_snapshot");
             const found =
-                snap.devices.find((d) => d.deviceId === deviceId) ?? null;
+                snap.devices.find((d) => d.deviceId == deviceId) ?? null;
             setDevice(found);
         } catch (err) {
             console.error("Failed to fetch snapshot in FileBrowserWindow:", err);
@@ -99,7 +99,7 @@ export function FileBrowserWindow() {
                     deviceId,
                     path: targetPath ?? null,
                 });
-                if (sftpReqSeqRef.current !== reqId) return;
+                if (sftpReqSeqRef.current != reqId) return;
                 setSftpData(res);
                 requestAnimationFrame(() => {
                     if (breadcrumbScrollRef.current) {
@@ -108,10 +108,10 @@ export function FileBrowserWindow() {
                     }
                 });
             } catch (err) {
-                if (sftpReqSeqRef.current !== reqId) return;
-                setSftpError(typeof err === "string" ? err : String(err));
+                if (sftpReqSeqRef.current != reqId) return;
+                setSftpError(typeof err == "string" ? err : String(err));
             } finally {
-                if (sftpReqSeqRef.current === reqId) {
+                if (sftpReqSeqRef.current == reqId) {
                     setIsSftpLoading(false);
                 }
             }
@@ -131,7 +131,7 @@ export function FileBrowserWindow() {
         const current = sftpData.currentPath || "/";
         const roots = sftpData.roots || [];
 
-        if (current === "/" && roots.length > 1) {
+        if (current == "/" && roots.length > 1) {
             return [{ path: "/", label: "Storage locations" }];
         }
 
@@ -139,8 +139,8 @@ export function FileBrowserWindow() {
             .sort((a, b) => b.path.length - a.path.length)
             .find(
                 (r) =>
-                    current === r.path ||
-          (r.path !== "/" && current.startsWith(`${r.path}/`)),
+                    current == r.path ||
+          (r.path != "/" && current.startsWith(`${r.path}/`)),
             );
 
         const crumbs: Array<{ label: string; path: string }> = [];
@@ -151,11 +151,11 @@ export function FileBrowserWindow() {
         if (matchedRoot) {
             crumbs.push({ path: matchedRoot.path, label: matchedRoot.name });
             const rel =
-                matchedRoot.path === "/"
+                matchedRoot.path == "/"
                     ? current.slice(1)
                     : current.slice(matchedRoot.path.length);
             const parts = rel.split("/").filter(Boolean);
-            let accum = matchedRoot.path === "/" ? "" : matchedRoot.path;
+            let accum = matchedRoot.path == "/" ? "" : matchedRoot.path;
             for (const seg of parts) {
                 accum = `${accum}/${seg}`;
                 crumbs.push({ label: seg, path: accum });
@@ -215,7 +215,7 @@ export function FileBrowserWindow() {
         } catch (err) {
             setDownloadErrors((prev) => {
                 const next = new Map(prev);
-                next.set(entry.path, typeof err === "string" ? err : String(err));
+                next.set(entry.path, typeof err == "string" ? err : String(err));
                 return next;
             });
         } finally {
@@ -254,7 +254,7 @@ export function FileBrowserWindow() {
                 if (!prev) return prev;
                 return {
                     ...prev,
-                    entries: prev.entries.filter((item) => item.path !== entry.path),
+                    entries: prev.entries.filter((item) => item.path != entry.path),
                 };
             });
             setDownloadedPaths((prev) => {
@@ -266,7 +266,7 @@ export function FileBrowserWindow() {
         } catch (err) {
             setDownloadErrors((prev) => {
                 const next = new Map(prev);
-                next.set(entry.path, typeof err === "string" ? err : String(err));
+                next.set(entry.path, typeof err == "string" ? err : String(err));
                 return next;
             });
         } finally {
@@ -279,7 +279,7 @@ export function FileBrowserWindow() {
     };
 
     const handleHeaderDrag = (e: MouseEvent<HTMLElement>) => {
-        if (e.button !== 0) return;
+        if (e.button != 0) return;
         const target = e.target as HTMLElement;
         if (target.closest("button, a, input")) return;
         getCurrentWindow()
@@ -339,7 +339,7 @@ export function FileBrowserWindow() {
                 </div>
             );
         }
-        if (ext === "pdf") {
+        if (ext == "pdf") {
             return (
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/12 text-red-600 dark:bg-red-500/15 dark:text-red-400">
                     <FilePdfIcon size={17} weight="duotone" />
@@ -443,7 +443,7 @@ export function FileBrowserWindow() {
                     >
                         {sftpBreadcrumbs.length > 0 ? (
                             sftpBreadcrumbs.map((crumb, idx) => {
-                                const isLast = idx === sftpBreadcrumbs.length - 1;
+                                const isLast = idx == sftpBreadcrumbs.length - 1;
                                 return (
                                     <div
                                         key={`${crumb.path}-${idx}`}
@@ -571,7 +571,7 @@ export function FileBrowserWindow() {
                             Retry
                         </motion.button>
                     </div>
-                ) : sftpData && sftpData.entries.length === 0 ? (
+                ) : sftpData && sftpData.entries.length == 0 ? (
                     <div className="flex h-full flex-col items-center justify-center px-6 text-center">
                         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-black/[0.04] text-zinc-400 dark:bg-white/[0.05] dark:text-zinc-500">
                             <FolderOpenIcon size={22} weight="regular" />
@@ -593,8 +593,8 @@ export function FileBrowserWindow() {
                             const dlError = downloadErrors.get(entry.path);
                             const formattedDate = formatShortDate(entry.modifiedSecs);
                             const isRootStorageEntry =
-                                sftpData.currentPath === "/" &&
-                sftpData.roots.some((r) => r.path === entry.path);
+                                sftpData.currentPath == "/" &&
+                sftpData.roots.some((r) => r.path == entry.path);
 
                             if (entry.isDir) {
                                 return (
@@ -778,7 +778,7 @@ export function FileBrowserWindow() {
                 <span>
                     {sftpData && !sftpData.unconfiguredMessage
                         ? `${sftpData.entries.length} ${
-                            sftpData.entries.length === 1 ? "item" : "items"
+                            sftpData.entries.length == 1 ? "item" : "items"
                         }`
                         : "Remote SFTP"}
                 </span>

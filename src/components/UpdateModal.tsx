@@ -42,7 +42,7 @@ export function UpdateModal({
     if (!update) return null;
 
     const handleUpdateNow = async () => {
-        if (step === "downloading") return;
+        if (step == "downloading") return;
         setStep("downloading");
         setProgressPct(0);
         setErrorMessage(null);
@@ -52,10 +52,10 @@ export function UpdateModal({
 
         try {
             await update.downloadAndInstall((event) => {
-                if (event.event === "Started") {
+                if (event.event == "Started") {
                     totalBytes = event.data.contentLength ?? 0;
                     setProgressPct(2);
-                } else if (event.event === "Progress") {
+                } else if (event.event == "Progress") {
                     downloadedBytes += event.data.chunkLength;
                     if (totalBytes > 0) {
                         const pct = Math.min(
@@ -66,7 +66,7 @@ export function UpdateModal({
                     } else {
                         setProgressPct((prev) => Math.min(95, prev + 5));
                     }
-                } else if (event.event === "Finished") {
+                } else if (event.event == "Finished") {
                     setProgressPct(100);
                 }
             });
@@ -76,7 +76,7 @@ export function UpdateModal({
         } catch (err) {
             console.error("Failed to download and install update:", err);
             setErrorMessage(
-                typeof err === "string"
+                typeof err == "string"
                     ? err
                     : err instanceof Error
                         ? err.message
@@ -98,7 +98,7 @@ export function UpdateModal({
         <Dialog.Root
             open={open}
             onOpenChange={(nextOpen) => {
-                if (step === "downloading") return;
+                if (step == "downloading") return;
                 onOpenChange(nextOpen);
             }}
         >
@@ -151,7 +151,7 @@ export function UpdateModal({
                                         </div>
                                     </div>
 
-                                    {step !== "downloading" && (
+                                    {step != "downloading" && (
                                         <Dialog.Close asChild>
                                             <motion.button
                                                 type="button"
@@ -182,7 +182,7 @@ export function UpdateModal({
                                 {/* Action Buttons / Progress Bar / Red Restart Button */}
                                 <div className="mt-5 flex items-center gap-2.5">
                                     <AnimatePresence mode="wait" initial={false}>
-                                        {(step === "prompt" || step === "error") && (
+                                        {(step == "prompt" || step == "error") && (
                                             <motion.div
                                                 key="prompt-buttons"
                                                 initial={{ y: 4, opacity: 0 }}
@@ -210,13 +210,13 @@ export function UpdateModal({
                                                 >
                                                     <CloudArrowDownIcon size={16} weight="bold" />
                                                     <span>
-                                                        {step === "error" ? "Retry update" : "Update now"}
+                                                        {step == "error" ? "Retry update" : "Update now"}
                                                     </span>
                                                 </motion.button>
                                             </motion.div>
                                         )}
 
-                                        {step === "downloading" && (
+                                        {step == "downloading" && (
                                             <motion.div
                                                 key="downloading-progress-button"
                                                 initial={{ opacity: 0, scale: 0.98 }}
@@ -240,7 +240,7 @@ export function UpdateModal({
                                             </motion.div>
                                         )}
 
-                                        {step === "ready" && (
+                                        {step == "ready" && (
                                             <motion.button
                                                 key="restart-button"
                                                 type="button"

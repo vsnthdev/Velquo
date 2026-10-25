@@ -79,7 +79,7 @@ export function DeviceSettingsView({
             title: "Select File Save Location",
             defaultPath: fileSaveLocation || undefined,
         });
-        if (typeof selected === "string" && selected.trim()) {
+        if (typeof selected == "string" && selected.trim()) {
             onChangeFileSaveLocation(selected);
         }
     };
@@ -356,7 +356,7 @@ export function DeviceSettingsView({
                                     {/* Modal Header */}
                                     <div className="flex items-center justify-between gap-3">
                                         <div className="flex items-center gap-2.5">
-                                            {modalView === "add" && (
+                                            {modalView == "add" && (
                                                 <motion.button
                                                     type="button"
                                                     whileHover={{ scale: 1.06 }}
@@ -373,14 +373,14 @@ export function DeviceSettingsView({
                                             )}
 
                                             <Dialog.Title className="text-[15.5px] font-semibold text-zinc-900 dark:text-zinc-100">
-                                                {modalView === "list"
+                                                {modalView == "list"
                                                     ? "Configure commands"
                                                     : "Add command"}
                                             </Dialog.Title>
                                         </div>
 
                                         <div className="flex items-center gap-2">
-                                            {modalView === "list" && (
+                                            {modalView == "list" && (
                                                 <motion.button
                                                     type="button"
                                                     whileHover={{ scale: 1.03 }}
@@ -413,7 +413,7 @@ export function DeviceSettingsView({
                                     {/* Swappable Modal Inner Content: List View <-> Add New Command View */}
                                     <div className="mt-4 flex-1 overflow-y-auto">
                                         <AnimatePresence mode="wait" initial={false}>
-                                            {modalView === "list" ? (
+                                            {modalView == "list" ? (
                                                 <motion.div
                                                     key="commands-list-view"
                                                     initial={{ x: -10, opacity: 0 }}
@@ -516,7 +516,7 @@ export function DeviceSettingsView({
                                                                 if (formError) setFormError(false);
                                                             }}
                                                             onKeyDown={(e) => {
-                                                                if (e.key === "Enter") {
+                                                                if (e.key == "Enter") {
                                                                     e.preventDefault();
                                                                     handleCreateCommand();
                                                                 }

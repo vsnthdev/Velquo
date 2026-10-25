@@ -70,7 +70,7 @@ export default function App() {
                 const skippedVersion = localStorage.getItem(
                     "velquo.skippedUpdateVersion",
                 );
-                if (!force && skippedVersion === update.version) {
+                if (!force && skippedVersion == update.version) {
                     return "up-to-date";
                 }
 
@@ -115,11 +115,11 @@ export default function App() {
                 if (disposed) return;
                 setDevices(snap.devices);
                 setTransfers(snap.transfers || []);
-                if (typeof snap.host?.ignoreWhatsappConversations === "boolean") {
+                if (typeof snap.host?.ignoreWhatsappConversations == "boolean") {
                     setIgnoreWhatsappConversations(snap.host.ignoreWhatsappConversations);
                 }
 
-                const paired = snap.devices.filter((d) => d.pairState === "Paired");
+                const paired = snap.devices.filter((d) => d.pairState == "Paired");
                 const newlyPaired = paired.find(
                     (d) => !prevPairedIdsRef.current.has(d.deviceId),
                 );
@@ -127,19 +127,19 @@ export default function App() {
 
                 setActiveView((prev) => {
                     // If the user is on the Pair New Device page and a device just finished pairing, open it immediately!
-                    if (prev.kind === "pair-device" && newlyPaired) {
+                    if (prev.kind == "pair-device" && newlyPaired) {
                         return {
                             kind: "device",
                             subview: "control",
                             deviceId: newlyPaired.deviceId,
                         };
                     }
-                    if (prev.kind !== "device") {
+                    if (prev.kind != "device") {
                         return prev;
                     }
                     if (
                         prev.deviceId &&
-            paired.some((d) => d.deviceId === prev.deviceId)
+            paired.some((d) => d.deviceId == prev.deviceId)
                     ) {
                         return prev;
                     }
@@ -210,9 +210,9 @@ export default function App() {
             "velquo://tray-navigate",
             (event) => {
                 if (disposed) return;
-                if (event.payload.view === "pair-device") {
+                if (event.payload.view == "pair-device") {
                     setActiveView({ kind: "pair-device" });
-                } else if (event.payload.view === "device" && event.payload.deviceId) {
+                } else if (event.payload.view == "device" && event.payload.deviceId) {
                     setActiveView({
                         kind: "device",
                         subview: "control",
@@ -267,14 +267,14 @@ export default function App() {
         };
     }, []);
 
-    const pairedDevices = devices.filter((d) => d.pairState === "Paired");
+    const pairedDevices = devices.filter((d) => d.pairState == "Paired");
     const unpairedDevices = devices.filter(
-        (d) => d.pairState !== "Paired" && d.reachable,
+        (d) => d.pairState != "Paired" && d.reachable,
     );
 
     const selectedDevice =
-        activeView.kind === "device"
-            ? (pairedDevices.find((d) => d.deviceId === activeView.deviceId) ??
+        activeView.kind == "device"
+            ? (pairedDevices.find((d) => d.deviceId == activeView.deviceId) ??
         pairedDevices[0] ??
         null)
             : null;
@@ -292,14 +292,14 @@ export default function App() {
 
         const isInsideDropZone = (pos: { x: number; y: number }): boolean => {
             const currentView = activeViewRef.current;
-            if (currentView.kind !== "device" || currentView.subview !== "control") {
+            if (currentView.kind != "device" || currentView.subview != "control") {
                 return false;
             }
             const targetDevice = selectedDeviceRef.current;
             if (
                 !targetDevice ||
         !targetDevice.reachable ||
-        targetDevice.pairState !== "Paired"
+        targetDevice.pairState != "Paired"
             ) {
                 return false;
             }
@@ -317,11 +317,11 @@ export default function App() {
         getCurrentWebview()
             .onDragDropEvent(async (event) => {
                 if (disposed) return;
-                if (event.payload.type === "enter" || event.payload.type === "over") {
+                if (event.payload.type == "enter" || event.payload.type == "over") {
                     setIsDraggingOver(isInsideDropZone(event.payload.position));
-                } else if (event.payload.type === "leave") {
+                } else if (event.payload.type == "leave") {
                     setIsDraggingOver(false);
-                } else if (event.payload.type === "drop") {
+                } else if (event.payload.type == "drop") {
                     const droppedInside = isInsideDropZone(event.payload.position);
                     setIsDraggingOver(false);
                     if (!droppedInside) {
@@ -337,7 +337,7 @@ export default function App() {
                     if (
                         targetDevice &&
             targetDevice.reachable &&
-            targetDevice.pairState === "Paired" &&
+            targetDevice.pairState == "Paired" &&
             event.payload.paths.length > 0
                     ) {
                         setJustDroppedCount(event.payload.paths.length);
@@ -428,15 +428,15 @@ export default function App() {
 
     const artworkSrc = nativeArtData || fallbackArtworkUrl;
     const hasActiveMedia = Boolean(
-        activeView.kind === "device" &&
-    activeView.subview === "control" &&
+        activeView.kind == "device" &&
+    activeView.subview == "control" &&
     selectedDevice?.reachable &&
     selectedDevice?.nowPlaying?.title,
     );
     const hasArtworkBackdrop = Boolean(hasActiveMedia && artworkSrc);
 
     const handleDragMouseDown = (e: MouseEvent<HTMLDivElement>) => {
-        if (e.buttons === 1) {
+        if (e.buttons == 1) {
             getCurrentWindow().startDragging();
         }
     };
@@ -449,7 +449,7 @@ export default function App() {
     const handleUnpairDevice = async (deviceId: string) => {
         try {
             await invoke("unpair_device", { deviceId });
-            const remaining = pairedDevices.filter((d) => d.deviceId !== deviceId);
+            const remaining = pairedDevices.filter((d) => d.deviceId != deviceId);
             if (remaining.length > 0) {
                 setActiveView({
                     kind: "device",
@@ -544,7 +544,7 @@ export default function App() {
                     </AnimatePresence>
 
                     <AnimatePresence mode="wait">
-                        {activeView.kind === "device" && selectedDevice && (
+                        {activeView.kind == "device" && selectedDevice && (
                             <DevicePage
                                 key={`device-${selectedDevice.deviceId}`}
                                 device={selectedDevice}
@@ -552,11 +552,11 @@ export default function App() {
                                 subview={activeView.subview}
                                 onToggleSubview={() =>
                                     setActiveView((prev) =>
-                                        prev.kind === "device"
+                                        prev.kind == "device"
                                             ? {
                                                 ...prev,
                                                 subview:
-                            prev.subview === "control" ? "settings" : "control",
+                            prev.subview == "control" ? "settings" : "control",
                                             }
                                             : prev,
                                     )
@@ -618,7 +618,7 @@ export default function App() {
                                 rightPaneContainer={rightPaneEl}
                                 openAddCommandSignal={openAddCommandSignal}
                                 highlightedNotification={
-                                    highlightedNotification?.deviceId === selectedDevice.deviceId
+                                    highlightedNotification?.deviceId == selectedDevice.deviceId
                                         ? highlightedNotification
                                         : null
                                 }
@@ -626,7 +626,7 @@ export default function App() {
                             />
                         )}
 
-                        {activeView.kind === "app-settings" && (
+                        {activeView.kind == "app-settings" && (
                             <AppSettingsPage
                                 key="app-settings"
                                 ignoreWhatsappConversations={ignoreWhatsappConversations}
@@ -639,7 +639,7 @@ export default function App() {
                             />
                         )}
 
-                        {activeView.kind === "pair-device" && (
+                        {activeView.kind == "pair-device" && (
                             <PairDevicePage
                                 key="pair-device"
                                 unpairedDevices={unpairedDevices}

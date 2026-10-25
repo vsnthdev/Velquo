@@ -109,11 +109,11 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
                                             {device.deviceName}
                                         </span>
 
-                                        {device.pairState === "Requested" ||
-                    device.pairState === "RequestedByPeer" ? (
+                                        {device.pairState == "Requested" ||
+                    device.pairState == "RequestedByPeer" ? (
                                                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] text-amber-600 dark:text-amber-300">
                                                     <span>
-                                                        {device.pairState === "Requested"
+                                                        {device.pairState == "Requested"
                                                             ? "Confirm on device"
                                                             : "Incoming pairing request"}
                                                     </span>
@@ -133,7 +133,7 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
 
                                 {/* Action buttons based on pairing state */}
                                 <div className="flex shrink-0 items-center gap-2">
-                                    {device.pairState === "NotPaired" && (
+                                    {device.pairState == "NotPaired" && (
                                         <motion.button
                                             type="button"
                                             whileHover={{ scale: 1.03 }}
@@ -149,7 +149,7 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
                                         </motion.button>
                                     )}
 
-                                    {device.pairState === "Requested" && (
+                                    {device.pairState == "Requested" && (
                                         <motion.button
                                             type="button"
                                             whileHover={{ scale: 1.03 }}
@@ -165,7 +165,7 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
                                         </motion.button>
                                     )}
 
-                                    {device.pairState === "RequestedByPeer" && (
+                                    {device.pairState == "RequestedByPeer" && (
                                         <>
                                             <motion.button
                                                 type="button"
@@ -245,7 +245,7 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
                         if (ipError) setIpError(false);
                     }}
                     onKeyDown={(e) => {
-                        if (e.key === "Enter") {
+                        if (e.key == "Enter") {
                             e.preventDefault();
                             handleProbeIp();
                         }

@@ -15,9 +15,52 @@ const ALLOWED_PHOSPHOR_EXPORTS = new Set([
     "IconContext",
 ]);
 
-const phosphorPlugin = {
+const customPlugin = {
     rules: {
-        "icon-suffix": {
+        "no-strict-equality": {
+            meta: {
+                schema: [],
+                fixable: "code",
+                type: "suggestion",
+                messages: {
+                    useRegularEquality:
+                        "Use '{{expected}}' instead of '{{actual}}'.",
+                },
+            },
+            create(context) {
+                return {
+                    BinaryExpression(node) {
+                        if (node.operator != "===" && node.operator != "!==") {
+                            return;
+                        }
+                        const expected = node.operator == "===" ? "==" : "!=";
+                        const operatorToken =
+                            context.sourceCode.getFirstTokenBetween(
+                                node.left,
+                                node.right,
+                                (token) => token.value == node.operator,
+                            );
+                        if (!operatorToken) return;
+
+                        context.report({
+                            node: operatorToken,
+                            messageId: "useRegularEquality",
+                            data: {
+                                expected,
+                                actual: node.operator,
+                            },
+                            fix(fixer) {
+                                return fixer.replaceText(
+                                    operatorToken,
+                                    expected,
+                                );
+                            },
+                        });
+                    },
+                };
+            },
+        },
+        "phosphor-icon-suffix": {
             meta: {
                 schema: [],
                 fixable: "code",
@@ -30,13 +73,13 @@ const phosphorPlugin = {
             create(context) {
                 return {
                     ImportDeclaration(node) {
-                        if (node.source.value !== "@phosphor-icons/react") {
+                        if (node.source.value != "@phosphor-icons/react") {
                             return;
                         }
                         for (const spec of node.specifiers) {
-                            if (spec.type !== "ImportSpecifier") continue;
+                            if (spec.type != "ImportSpecifier") continue;
                             const importedName =
-                                spec.imported.type === "Identifier"
+                                spec.imported.type == "Identifier"
                                     ? spec.imported.name
                                     : spec.imported.value;
                             if (
@@ -55,7 +98,7 @@ const phosphorPlugin = {
                                 },
                                 fix(fixer) {
                                     const fixes = [];
-                                    if (spec.local.name === importedName) {
+                                    if (spec.local.name == importedName) {
                                         fixes.push(
                                             fixer.replaceText(
                                                 spec,
@@ -112,15 +155,16 @@ export default tseslint.config(
         },
         plugins: {
             perfectionist,
+            velquo: customPlugin,
             "@stylistic": stylistic,
-            phosphor: phosphorPlugin,
             "react-hooks": reactHooks,
             "react-refresh": reactRefresh,
         },
         rules: {
             ...reactHooks.configs.recommended.rules,
-            "phosphor/icon-suffix": "error",
+            "velquo/no-strict-equality": "error",
             "@stylistic/semi": ["error", "always"],
+            "velquo/phosphor-icon-suffix": "error",
             "react-hooks/set-state-in-effect": "off",
             "@stylistic/jsx-indent-props": ["error", 4],
             "@stylistic/jsx-quotes": ["error", "prefer-double"],
