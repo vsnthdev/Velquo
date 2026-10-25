@@ -575,7 +575,7 @@ pub fn open_main_window(app: &AppHandle) {
     }
 }
 
-fn render_svg_icon(svg: &str, size: u32) -> Option<tauri::image::Image<'static>> {
+fn render_svg_rgba(svg: &str, size: u32) -> Option<Vec<u8>> {
     let opt = resvg::usvg::Options::default();
     let tree = match resvg::usvg::Tree::from_str(svg, &opt) {
         Ok(t) => t,
@@ -604,27 +604,65 @@ fn render_svg_icon(svg: &str, size: u32) -> Option<tauri::image::Image<'static>>
         }
     }
 
-    Some(tauri::image::Image::new_owned(rgba, size, size))
+    Some(rgba)
 }
 
+#[cfg(target_os = "macos")]
 fn is_macos_dark_mode() -> bool {
-    std::process::Command::new("/usr/bin/defaults")
-        .args(["read", "-g", "AppleInterfaceStyle"])
-        .output()
-        .map(|out| {
-            out.status.success()
-                && String::from_utf8_lossy(&out.stdout)
-                    .trim()
-                    .eq_ignore_ascii_case("Dark")
-        })
-        .unwrap_or(false)
+    use objc2::msg_send;
+    use objc2_foundation::NSString;
+    use std::ffi::c_void;
+
+    extern "C" {
+        fn objc_getClass(name: *const libc::c_char) -> *mut c_void;
+    }
+
+    unsafe {
+        let defaults_cls = objc_getClass(c"NSUserDefaults".as_ptr());
+        if defaults_cls.is_null() {
+            return false;
+        }
+        let standard: *mut objc2::runtime::AnyObject = msg_send![
+            defaults_cls.cast::<objc2::runtime::AnyClass>(),
+            standardUserDefaults
+        ];
+        if standard.is_null() {
+            return false;
+        }
+        let key = NSString::from_str("AppleInterfaceStyle");
+        let val: *mut NSString = msg_send![standard, stringForKey: &*key];
+        if val.is_null() {
+            return false;
+        }
+        (*val).to_string().trim().eq_ignore_ascii_case("Dark")
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn is_macos_dark_mode() -> bool {
+    false
 }
 
 fn phosphor_duotone_menu_icon(
-    tone_path_d: &str,
-    main_path_d: &str,
+    tone_path_d: &'static str,
+    main_path_d: &'static str,
     is_dark: bool,
 ) -> Option<tauri::image::Image<'static>> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+
+    type IconCacheKey = (&'static str, &'static str, bool);
+    static ICON_RGBA_CACHE: OnceLock<Mutex<HashMap<IconCacheKey, Vec<u8>>>> = OnceLock::new();
+
+    let cache = ICON_RGBA_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let key = (tone_path_d, main_path_d, is_dark);
+
+    if let Ok(guard) = cache.lock() {
+        if let Some(cached_rgba) = guard.get(&key) {
+            return Some(tauri::image::Image::new_owned(cached_rgba.clone(), 36, 36));
+        }
+    }
+
     // Render the Phosphor `duotone` SVG directly in Rust using `resvg` in either white (Dark Mode)
     // or black (Light Mode). On macOS, `mark_menu_icons_as_template()` also marks the
     // resulting `NSImage` as a template so AppKit automatically preserves the 20% alpha duotone
@@ -633,7 +671,13 @@ fn phosphor_duotone_menu_icon(
     let svg = format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="36" height="36"><path fill="{fill}" fill-opacity="0.2" d="{tone_path_d}"/><path fill="{fill}" d="{main_path_d}"/></svg>"##,
     );
-    render_svg_icon(&svg, 36)
+    let rgba = render_svg_rgba(&svg, 36)?;
+
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(key, rgba.clone());
+    }
+
+    Some(tauri::image::Image::new_owned(rgba, 36, 36))
 }
 
 #[cfg(target_os = "macos")]
