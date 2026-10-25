@@ -80,7 +80,7 @@ export function FileBrowserWindow() {
 
     useEffect(() => {
         refreshDeviceState();
-        const unlistenPromise = listen("velquo://state-changed", () => {
+        const unlistenPromise = listen("velquo://state-updated", () => {
             refreshDeviceState();
         });
         return () => {
