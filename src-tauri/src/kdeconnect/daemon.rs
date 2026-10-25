@@ -4879,6 +4879,18 @@ impl KdeConnectDaemon {
         base_dir.join(format!("{}-{}", current_millis(), filename))
     }
 
+    fn prune_finished_transfers(list: &mut Vec<TransferItem>) {
+        let mut finished_count = 0usize;
+        list.retain(|t| {
+            if t.status == "InProgress" {
+                true
+            } else {
+                finished_count += 1;
+                finished_count <= 30
+            }
+        });
+    }
+
     fn upsert_transfer(&self, item: TransferItem) {
         let mut guard = self.transfers.lock().unwrap();
         if let Some(existing) = guard.iter_mut().find(|t| t.id == item.id) {
@@ -4886,6 +4898,7 @@ impl KdeConnectDaemon {
         } else {
             guard.insert(0, item);
         }
+        Self::prune_finished_transfers(&mut guard);
         drop(guard);
         self.notify_ui();
     }
@@ -4918,6 +4931,7 @@ impl KdeConnectDaemon {
             existing.error = error;
             existing.timestamp_ms = current_millis();
         }
+        Self::prune_finished_transfers(&mut guard);
         drop(guard);
         self.notify_ui();
     }
