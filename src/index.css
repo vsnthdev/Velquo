@@ -20,6 +20,11 @@
 *::after {
   -webkit-user-select: none;
   user-select: none;
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
 }
 
 input,
