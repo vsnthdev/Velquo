@@ -10,6 +10,8 @@
 	<string>Velquo</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<key>LSUIElement</key>
+	<true/>
 	<key>NSUserNotificationAlertStyle</key>
 	<string>alert</string>
 	<key>NSLocalNetworkUsageDescription</key>

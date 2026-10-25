@@ -1052,6 +1052,12 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 // Start silently in the macOS menu bar without opening the window or showing in Dock
+                use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+                use objc2_foundation::MainThreadMarker;
+                if let Some(mtm) = MainThreadMarker::new() {
+                    let ns_app = NSApplication::sharedApplication(mtm);
+                    ns_app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+                }
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
 

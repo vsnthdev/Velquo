@@ -170,12 +170,6 @@ pub fn init_macos_notifications(app: AppHandle, daemon: Arc<KdeConnectDaemon>) {
     let _ = app.run_on_main_thread(move || unsafe {
         let mtm = MainThreadMarker::new_unchecked();
 
-        // Ensure NSApplication has the Velquo icon set even when running as an unbundled binary in `tauri dev`
-        if let Some(app_img) = load_velquo_app_nsimage() {
-            let ns_app = NSApplication::sharedApplication(mtm);
-            ns_app.setApplicationIconImage(Some(&app_img));
-        }
-
         let delegate = VelquoNotificationDelegate::new(mtm);
         let center = NSUserNotificationCenter::defaultUserNotificationCenter();
         let proto = ProtocolObject::from_retained(delegate);
