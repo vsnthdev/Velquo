@@ -376,6 +376,7 @@ export default function App() {
     // Fallback to iTunes Search API if KDE Connect hasn't provided native album art
     useEffect(() => {
         if (!trackTitle) {
+            itunesArtCache.clear();
             setFallbackArtworkUrl(null);
             return;
         }
@@ -411,6 +412,7 @@ export default function App() {
                 const hiResUrl = rawUrl
                     ? rawUrl.replace("100x100bb", "300x300bb")
                     : null;
+                itunesArtCache.clear();
                 itunesArtCache.set(queryKey, hiResUrl);
                 if (!cancelled) {
                     setFallbackArtworkUrl(hiResUrl);
