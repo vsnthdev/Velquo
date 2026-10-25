@@ -4339,6 +4339,7 @@ impl KdeConnectDaemon {
                         );
                     }
                     Err(e) => {
+                        let _ = tokio::fs::remove_file(&dest_path).await;
                         log::error!("[share-in] File download '{}' failed: {:?}", clean_name, e);
                         daemon.finish_transfer(&transfer_id, "Failed", None, Some(e.to_string()));
                     }
@@ -4502,6 +4503,14 @@ impl KdeConnectDaemon {
             if expected_bytes > 0 && received >= expected_bytes {
                 break;
             }
+        }
+
+        if expected_bytes > 0 && received < expected_bytes {
+            return Err(anyhow!(
+                "Transfer interrupted ({} of {} bytes received)",
+                received,
+                expected_bytes
+            ));
         }
 
         file.flush().await?;
