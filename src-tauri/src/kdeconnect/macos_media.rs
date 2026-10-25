@@ -6,11 +6,13 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
+use tokio::sync::Notify;
 
 pub const DEFAULT_MAC_PLAYER: &str = "macOS Media";
 pub const PLAYER_SPOTIFY: &str = "Spotify";
@@ -44,6 +46,23 @@ static ALBUM_ART_CACHE: OnceLock<Mutex<HashMap<String, Vec<u8>>>> = OnceLock::ne
 static LAST_TRACK_ART: OnceLock<Mutex<Option<CachedAlbumArt>>> = OnceLock::new();
 static MR_DYLIB_PATH: OnceLock<PathBuf> = OnceLock::new();
 static PENDING_PLAYBACK_OVERRIDE: OnceLock<Mutex<Option<(bool, Instant)>>> = OnceLock::new();
+static LATEST_CC_STATE: OnceLock<Mutex<Option<(ControlCenterNowPlaying, Instant)>>> =
+    OnceLock::new();
+static MR_STDIN_PIPE: OnceLock<Mutex<Option<ChildStdin>>> = OnceLock::new();
+static MAC_MEDIA_NOTIFY: OnceLock<Arc<Notify>> = OnceLock::new();
+static MR_STREAM_STARTED: AtomicBool = AtomicBool::new(false);
+
+pub fn mac_media_notify() -> Arc<Notify> {
+    Arc::clone(MAC_MEDIA_NOTIFY.get_or_init(|| Arc::new(Notify::new())))
+}
+
+fn latest_cc_state_store() -> &'static Mutex<Option<(ControlCenterNowPlaying, Instant)>> {
+    LATEST_CC_STATE.get_or_init(|| Mutex::new(None))
+}
+
+fn mr_stdin_pipe_store() -> &'static Mutex<Option<ChildStdin>> {
+    MR_STDIN_PIPE.get_or_init(|| Mutex::new(None))
+}
 
 pub type MacMediaBroadcastSig = (
     String,
@@ -156,7 +175,7 @@ where
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ControlCenterNowPlaying {
     title: String,
@@ -172,34 +191,140 @@ struct ControlCenterNowPlaying {
     artwork_base64: String,
 }
 
+/// Spawns the single persistent `/usr/bin/perl` MediaRemote stream helper on macOS startup.
+/// The helper sleeps on its main RunLoop, pushes JSON lines whenever Control Center media changes,
+/// accepts `CMD`/`SEEK`/`GET`/`ART` over stdin, and automatically `_exit(0)`s when Velquo quits.
+#[cfg(target_os = "macos")]
+pub fn start_macos_media_bridge() {
+    if MR_STREAM_STARTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let _ = std::thread::Builder::new()
+        .name("velquo-mr-stream".into())
+        .spawn(|| {
+            let Some(dylib_path) = ensure_mr_bridge_dylib() else {
+                return;
+            };
+            let Some(dylib_str) = dylib_path.to_str().map(|s| s.to_string()) else {
+                return;
+            };
+
+            let perl_code = r#"my $h = DynaLoader::dl_load_file($ARGV[0], 0) or exit 1; my $s = DynaLoader::dl_find_symbol($h, "velquo_mr_stream") or exit 1; DynaLoader::dl_install_xsub("main::run", $s); run();"#;
+
+            loop {
+                let child_res = Command::new("/usr/bin/perl")
+                    .arg("-MDynaLoader")
+                    .arg("-e")
+                    .arg(perl_code)
+                    .arg(&dylib_str)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::null())
+                    .spawn();
+
+                let mut child = match child_res {
+                    Ok(c) => c,
+                    Err(e) => {
+                        log::warn!("[mpris-host] Failed to spawn persistent perl bridge: {}", e);
+                        std::thread::sleep(Duration::from_secs(5));
+                        continue;
+                    }
+                };
+
+                if let Some(stdin) = child.stdin.take() {
+                    if let Ok(mut guard) = mr_stdin_pipe_store().lock() {
+                        *guard = Some(stdin);
+                    }
+                }
+
+                if let Some(stdout) = child.stdout.take() {
+                    let reader = BufReader::new(stdout);
+                    for line in reader.lines().map_while(Result::ok) {
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        if trimmed == "null" {
+                            if let Ok(mut guard) = latest_cc_state_store().lock() {
+                                *guard = None;
+                            }
+                            mac_media_notify().notify_one();
+                            continue;
+                        }
+                        if let Ok(cc) = serde_json::from_str::<ControlCenterNowPlaying>(trimmed) {
+                            let _ = resolve_and_cache_artwork_for_cc(&cc);
+                            if let Ok(mut guard) = latest_cc_state_store().lock() {
+                                *guard = Some((cc, Instant::now()));
+                            }
+                            mac_media_notify().notify_one();
+                        }
+                    }
+                }
+
+                if let Ok(mut guard) = mr_stdin_pipe_store().lock() {
+                    *guard = None;
+                }
+                let _ = child.wait();
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        });
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn start_macos_media_bridge() {}
+
+#[cfg(target_os = "macos")]
+fn write_mr_stdin_line(line: &str) -> bool {
+    if let Ok(mut guard) = mr_stdin_pipe_store().lock() {
+        if let Some(stdin) = guard.as_mut() {
+            if stdin.write_all(line.as_bytes()).is_ok() && stdin.flush().is_ok() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[cfg(target_os = "macos")]
 fn query_control_center_now_playing(include_artwork: bool) -> Option<ControlCenterNowPlaying> {
-    let dylib_path = ensure_mr_bridge_dylib()?;
-    let perl_code = r#"my $h = DynaLoader::dl_load_file($ARGV[0], 0) or exit 1; my $s = DynaLoader::dl_find_symbol($h, "velquo_mr_get") or exit 1; DynaLoader::dl_install_xsub("main::run", $s); run();"#;
-
-    let output = Command::new("/usr/bin/perl")
-        .arg("-MDynaLoader")
-        .arg("-e")
-        .arg(perl_code)
-        .arg(dylib_path.to_str()?)
-        .env(
-            "VELQUO_MR_INCLUDE_ARTWORK",
-            if include_artwork { "1" } else { "0" },
-        )
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
+    if !include_artwork {
+        if let Ok(guard) = latest_cc_state_store().lock() {
+            if let Some((mut cc, updated_at)) = guard.clone() {
+                if cc.is_playing {
+                    let elapsed_ms = updated_at.elapsed().as_millis() as i64;
+                    if cc.duration_ms > 0 {
+                        cc.position_ms = (cc.position_ms + elapsed_ms).clamp(0, cc.duration_ms);
+                    } else {
+                        cc.position_ms = (cc.position_ms + elapsed_ms).max(0);
+                    }
+                }
+                return Some(cc);
+            }
+        }
         return None;
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let trimmed = stdout.trim();
-    if trimmed.is_empty() || trimmed == "null" {
-        return None;
+    // Check if the cached state already has artwork_base64 populated
+    if let Ok(guard) = latest_cc_state_store().lock() {
+        if let Some((cc, _)) = guard.as_ref() {
+            if !cc.artwork_base64.is_empty() {
+                return Some(cc.clone());
+            }
+        }
     }
 
-    serde_json::from_str::<ControlCenterNowPlaying>(trimmed).ok()
+    // Request fresh artwork emission from the persistent stream
+    let _ = write_mr_stdin_line("ART\n");
+    std::thread::sleep(Duration::from_millis(90));
+    if let Ok(guard) = latest_cc_state_store().lock() {
+        if let Some((cc, _)) = guard.as_ref() {
+            if !cc.artwork_base64.is_empty() {
+                return Some(cc.clone());
+            }
+        }
+    }
+    None
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -209,29 +334,18 @@ fn query_control_center_now_playing(_include_artwork: bool) -> Option<ControlCen
 
 #[cfg(target_os = "macos")]
 fn send_control_center_mr_command(command_id: Option<i32>, seek_ms: Option<i64>) -> bool {
-    let Some(dylib_path) = ensure_mr_bridge_dylib() else {
-        return false;
-    };
-    let Some(dylib_str) = dylib_path.to_str() else {
-        return false;
-    };
-
-    let perl_code = r#"my $h = DynaLoader::dl_load_file($ARGV[0], 0) or exit 1; my $s = DynaLoader::dl_find_symbol($h, "velquo_mr_control") or exit 1; DynaLoader::dl_install_xsub("main::run", $s); run();"#;
-
-    let mut cmd = Command::new("/usr/bin/perl");
-    cmd.arg("-MDynaLoader")
-        .arg("-e")
-        .arg(perl_code)
-        .arg(dylib_str);
-
+    let mut sent = false;
     if let Some(cid) = command_id {
-        cmd.env("VELQUO_MR_COMMAND", cid.to_string());
+        if write_mr_stdin_line(&format!("CMD {}\n", cid)) {
+            sent = true;
+        }
     }
     if let Some(ms) = seek_ms {
-        cmd.env("VELQUO_MR_SEEK_MS", ms.to_string());
+        if write_mr_stdin_line(&format!("SEEK {}\n", ms.max(0))) {
+            sent = true;
+        }
     }
-
-    cmd.output().map(|o| o.status.success()).unwrap_or(false)
+    sent
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -366,6 +480,7 @@ fn spawn_itunes_hires_upgrade(track_key: String, title: String, artist: String) 
                 });
             }
         }
+        mac_media_notify().notify_one();
     });
 }
 
@@ -528,16 +643,6 @@ pub fn get_mac_player_list() -> Vec<String> {
         }
     }
 
-    if players.is_empty() {
-        for app in [PLAYER_SPOTIFY, PLAYER_APPLE_MUSIC] {
-            if let Some(snap) = query_app_player(app, app) {
-                if snap.is_playing || !snap.title.is_empty() {
-                    players.push(app.to_string());
-                }
-            }
-        }
-    }
-
     players
 }
 
@@ -546,7 +651,6 @@ pub fn get_mac_player_list() -> Vec<String> {
 pub fn query_mac_player_status(requested_player: &str) -> Option<MacPlayerSnapshot> {
     let sys_vol = get_macos_system_volume().unwrap_or(50);
 
-    // 1. Primary source: macOS Control Center Now Playing (via MediaRemote bridge)
     if let Some(cc) = query_control_center_now_playing(false) {
         let effective_playing = apply_pending_playback_override(cc.is_playing);
         if !cc.title.is_empty() || !cc.artist.is_empty() || effective_playing {
@@ -584,15 +688,6 @@ pub fn query_mac_player_status(requested_player: &str) -> Option<MacPlayerSnapsh
                 can_go_previous: true,
                 can_seek: length_ms > 0,
             });
-        }
-    }
-
-    // 2. Fallback: direct AppleScript query for Spotify or Apple Music
-    for app in [PLAYER_SPOTIFY, PLAYER_APPLE_MUSIC] {
-        if let Some(snap) = query_app_player(app, app) {
-            if snap.is_playing || !snap.title.is_empty() {
-                return Some(snap);
-            }
         }
     }
 

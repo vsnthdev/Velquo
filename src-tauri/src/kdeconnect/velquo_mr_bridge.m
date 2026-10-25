@@ -7,10 +7,14 @@
 #include <objc/message.h>
 #include <dispatch/dispatch.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 typedef bool (*MRMediaRemoteSendCommand_t)(int command, id userInfo);
 typedef void (*MRMediaRemoteSetElapsedTime_t)(double elapsedTime);
 typedef void (*MRMediaRemoteGetNowPlayingApplicationPID_t)(dispatch_queue_t queue, void (^completion)(int pid));
+typedef void (*MRMediaRemoteRegisterForNowPlayingNotifications_t)(dispatch_queue_t queue);
 
 static void *load_mediaremote(void) {
     static void *handle = NULL;
@@ -20,7 +24,9 @@ static void *load_mediaremote(void) {
     return handle;
 }
 
-void velquo_mr_get(void) {
+static NSString *s_lastArtworkTrackKey = nil;
+
+static void velquo_mr_emit_state(BOOL forceArtwork) {
     @autoreleasepool {
         void *handle = load_mediaremote();
         if (!handle) {
@@ -54,6 +60,7 @@ void velquo_mr_get(void) {
         }
 
         if (!item) {
+            s_lastArtworkTrackKey = nil;
             printf("null\n");
             fflush(stdout);
             return;
@@ -61,6 +68,7 @@ void velquo_mr_get(void) {
 
         SEL selNowPlayingInfo = NSSelectorFromString(@"nowPlayingInfo");
         if (![item respondsToSelector:selNowPlayingInfo]) {
+            s_lastArtworkTrackKey = nil;
             printf("null\n");
             fflush(stdout);
             return;
@@ -68,6 +76,7 @@ void velquo_mr_get(void) {
 
         NSDictionary *info = ((id (*)(id, SEL))objc_msgSend)(item, selNowPlayingInfo);
         if (!info || ![info isKindOfClass:[NSDictionary class]]) {
+            s_lastArtworkTrackKey = nil;
             printf("null\n");
             fflush(stdout);
             return;
@@ -131,10 +140,23 @@ void velquo_mr_get(void) {
             }
         }
 
-        // Fetch artwork bytes if VELQUO_MR_INCLUDE_ARTWORK=1
-        NSString *artworkBase64 = @"";
+        NSString *artworkId = info[@"kMRMediaRemoteNowPlayingInfoArtworkIdentifier"];
+        if (![artworkId isKindOfClass:[NSString class]]) {
+            artworkId = info[@"kMRMediaRemoteNowPlayingInfoContentItemIdentifier"];
+        }
+        if (![artworkId isKindOfClass:[NSString class]]) {
+            artworkId = @"";
+        }
+
+        NSString *trackKey = [NSString stringWithFormat:@"%@|%@|%@|%@|%@",
+                              bundleId ?: @"", title ?: @"", artist ?: @"", album ?: @"", artworkId ?: @""];
+        BOOL isNewTrack = (!s_lastArtworkTrackKey || ![s_lastArtworkTrackKey isEqualToString:trackKey]);
+
         const char *includeArtEnv = getenv("VELQUO_MR_INCLUDE_ARTWORK");
-        if (includeArtEnv && strcmp(includeArtEnv, "1") == 0 && playerPath) {
+        BOOL shouldFetchArt = forceArtwork || isNewTrack || (includeArtEnv && strcmp(includeArtEnv, "1") == 0);
+
+        NSString *artworkBase64 = @"";
+        if (shouldFetchArt && playerPath && (title.length > 0 || artist.length > 0 || artworkId.length > 0)) {
             NSData *artData = info[@"kMRMediaRemoteNowPlayingInfoArtworkData"];
             if (![artData isKindOfClass:[NSData class]] || [artData length] == 0) {
                 SEL selInitPath = NSSelectorFromString(@"initWithPlayerPath:");
@@ -161,7 +183,7 @@ void velquo_mr_get(void) {
                         };
 
                         ((void (*)(id, SEL, id, id))objc_msgSend)(req, selReqArt, q, artCompletion);
-                        dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 1200 * NSEC_PER_MSEC));
+                        dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 900 * NSEC_PER_MSEC));
                         if (fetchedData) {
                             artData = fetchedData;
                         }
@@ -170,15 +192,8 @@ void velquo_mr_get(void) {
             }
             if ([artData isKindOfClass:[NSData class]] && [artData length] > 0) {
                 artworkBase64 = [artData base64EncodedStringWithOptions:0] ?: @"";
+                s_lastArtworkTrackKey = [trackKey copy];
             }
-        }
-
-        NSString *artworkId = info[@"kMRMediaRemoteNowPlayingInfoArtworkIdentifier"];
-        if (![artworkId isKindOfClass:[NSString class]]) {
-            artworkId = info[@"kMRMediaRemoteNowPlayingInfoContentItemIdentifier"];
-        }
-        if (![artworkId isKindOfClass:[NSString class]]) {
-            artworkId = @"";
         }
 
         NSDictionary *outDict = @{
@@ -204,6 +219,10 @@ void velquo_mr_get(void) {
         }
         fflush(stdout);
     }
+}
+
+void velquo_mr_get(void) {
+    velquo_mr_emit_state(NO);
 }
 
 void velquo_mr_control(void) {
@@ -233,7 +252,6 @@ void velquo_mr_control(void) {
             }
         }
 
-        // Wait for MediaRemote IPC round-trip before process exits (matches mediaremote-adapter waitForCommandCompletion)
         MRMediaRemoteGetNowPlayingApplicationPID_t getPid = (MRMediaRemoteGetNowPlayingApplicationPID_t)dlsym(handle, "MRMediaRemoteGetNowPlayingApplicationPID");
         if (getPid) {
             dispatch_semaphore_t sem = dispatch_semaphore_create(0);
@@ -242,5 +260,103 @@ void velquo_mr_control(void) {
             });
             dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 500 * NSEC_PER_MSEC));
         }
+    }
+}
+
+// Persistent event-driven MediaRemote bridge process:
+// 1. Registers for real-time MediaRemote notifications on the main RunLoop.
+// 2. Streams JSON lines to stdout whenever Now Playing metadata or playback state changes.
+// 3. Reads commands ("CMD <id>", "SEEK <ms>", "GET", "ART") from stdin, and exits immediately
+//    when stdin closes (guaranteeing automatic exit whenever Velquo quits or terminates).
+void velquo_mr_stream(void) {
+    @autoreleasepool {
+        void *handle = load_mediaremote();
+        if (!handle) {
+            return;
+        }
+
+        MRMediaRemoteRegisterForNowPlayingNotifications_t regFn =
+            (MRMediaRemoteRegisterForNowPlayingNotifications_t)dlsym(
+                handle,
+                "MRMediaRemoteRegisterForNowPlayingNotifications"
+            );
+        if (regFn) {
+            regFn(dispatch_get_main_queue());
+        }
+
+        MRMediaRemoteSendCommand_t sendCmd =
+            (MRMediaRemoteSendCommand_t)dlsym(handle, "MRMediaRemoteSendCommand");
+        MRMediaRemoteSetElapsedTime_t setElapsed =
+            (MRMediaRemoteSetElapsedTime_t)dlsym(handle, "MRMediaRemoteSetElapsedTime");
+
+        __block uint64_t pendingGen = 0;
+        void (^scheduleEmit)(BOOL, int64_t) = ^(BOOL forceArt, int64_t delayMs) {
+            uint64_t gen = ++pendingGen;
+            dispatch_after(
+                dispatch_time(DISPATCH_TIME_NOW, delayMs * NSEC_PER_MSEC),
+                dispatch_get_main_queue(),
+                ^{
+                    if (gen == pendingGen || forceArt) {
+                        velquo_mr_emit_state(forceArt);
+                    }
+                }
+            );
+        };
+
+        // Emit initial snapshot immediately on startup
+        dispatch_async(dispatch_get_main_queue(), ^{
+            velquo_mr_emit_state(NO);
+        });
+
+        [[NSNotificationCenter defaultCenter]
+            addObserverForName:nil
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(NSNotification *note) {
+                        NSString *name = note.name;
+                        if (!name) return;
+                        if ([name hasPrefix:@"kMRMediaRemote"] ||
+                            [name hasPrefix:@"_kMRMediaRemote"] ||
+                            [name containsString:@"NowPlaying"]) {
+                            scheduleEmit(NO, 35);
+                        }
+                    }];
+
+        // Background stdin reader: handles commands and terminates the process on EOF
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
+            char buf[256];
+            while (fgets(buf, sizeof(buf), stdin) != NULL) {
+                if (strncmp(buf, "CMD ", 4) == 0) {
+                    int cmdId = atoi(buf + 4);
+                    if (sendCmd) {
+                        sendCmd(cmdId, nil);
+                    }
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        scheduleEmit(NO, 75);
+                    });
+                } else if (strncmp(buf, "SEEK ", 5) == 0) {
+                    double posSec = atof(buf + 5) / 1000.0;
+                    if (posSec < 0.0) posSec = 0.0;
+                    if (setElapsed) {
+                        setElapsed(posSec);
+                    }
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        scheduleEmit(NO, 75);
+                    });
+                } else if (strncmp(buf, "ART", 3) == 0) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        scheduleEmit(YES, 5);
+                    });
+                } else if (strncmp(buf, "GET", 3) == 0) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        scheduleEmit(NO, 5);
+                    });
+                }
+            }
+            // stdin closed (parent Velquo process exited) -> terminate immediately
+            _exit(0);
+        });
+
+        [[NSRunLoop mainRunLoop] run];
     }
 }

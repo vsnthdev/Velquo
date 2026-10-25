@@ -6,8 +6,8 @@ use crate::kdeconnect::clipboard::{
 };
 use crate::kdeconnect::macos_media::{
     get_cached_mac_album_art, get_mac_player_list, handle_incoming_mpris_request,
-    last_broadcast_sig_store, pause_mac_media_for_call, query_mac_player_status,
-    resume_mac_media_after_call, DEFAULT_MAC_PLAYER,
+    last_broadcast_sig_store, mac_media_notify, pause_mac_media_for_call, query_mac_player_status,
+    resume_mac_media_after_call, start_macos_media_bridge, DEFAULT_MAC_PLAYER,
 };
 use crate::kdeconnect::packet::{
     current_millis, current_secs, NetworkPacket, PACKET_TYPE_BATTERY, PACKET_TYPE_BATTERY_REQUEST,
@@ -777,14 +777,13 @@ impl KdeConnectDaemon {
             }
         });
 
-        // 5. Proactive macOS Control Center Now Playing broadcaster to paired Android devices
+        // 5. Event-driven macOS Control Center Now Playing broadcaster to paired Android devices
+        start_macos_media_bridge();
         let daemon_mpris = Arc::clone(&self);
+        let media_notify = mac_media_notify();
         tokio::spawn(async move {
-            let mut mpris_interval = tokio::time::interval(Duration::from_millis(2000));
-            mpris_interval.tick().await;
-
             loop {
-                mpris_interval.tick().await;
+                media_notify.notified().await;
 
                 let online_paired_ids: Vec<String> = {
                     let devices = daemon_mpris.devices.lock().unwrap();
