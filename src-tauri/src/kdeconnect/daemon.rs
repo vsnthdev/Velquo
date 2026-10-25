@@ -1982,18 +1982,6 @@ impl KdeConnectDaemon {
                 let msg = packet.get_str("message").unwrap_or("Ping!");
                 log::info!("[ping] Received Ping from '{}': \"{}\"", device_name, msg);
                 Self::show_macos_notification(device_name, msg, Some(device_id), None, false);
-                if let Ok(guard) = self.app_handle.lock() {
-                    if let Some(app) = guard.as_ref() {
-                        let _ = app.emit(
-                            "velquo://ping",
-                            serde_json::json!({
-                                "deviceId": device_id,
-                                "deviceName": device_name,
-                                "message": msg,
-                            }),
-                        );
-                    }
-                }
             }
             PACKET_TYPE_BATTERY_REQUEST => {
                 log::info!(
@@ -3287,19 +3275,6 @@ impl KdeConnectDaemon {
                     Some(&raw_id_original),
                     true,
                 );
-
-                if let Ok(guard) = self.app_handle.lock() {
-                    if let Some(app) = guard.as_ref() {
-                        let _ = app.emit(
-                            "velquo://ping",
-                            serde_json::json!({
-                                "deviceId": device_id,
-                                "deviceName": format!("Copied OTP: {}", code),
-                                "message": notif_body,
-                            }),
-                        );
-                    }
-                }
                 return;
             }
         }

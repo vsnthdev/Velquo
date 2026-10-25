@@ -124,11 +124,6 @@ export interface AppSnapshot {
     transfers: TransferItem[];
 }
 
-export interface PingToastData {
-    deviceName: string;
-    message: string;
-}
-
 export type ActiveView =
   | { kind: "device"; deviceId: string; subview: "control" | "settings" }
   | { kind: "app-settings" }

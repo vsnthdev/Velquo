@@ -3,7 +3,6 @@ import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "./components/Sidebar";
 import { DevicePage } from "./pages/DevicePage";
 import { itunesArtCache } from "./utils/format";
-import { PingToast } from "./components/PingToast";
 import { motion, AnimatePresence } from "motion/react";
 import { UpdateModal } from "./components/UpdateModal";
 import { PairDevicePage } from "./pages/PairDevicePage";
@@ -11,6 +10,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AppSettingsPage } from "./pages/AppSettingsPage";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { check, type Update } from "@tauri-apps/plugin-updater";
+import type {
+    ActiveView,
+    DeviceView,
+    AppSnapshot,
+    TransferItem,
+} from "./types";
 import {
     useRef,
     useState,
@@ -18,13 +23,6 @@ import {
     useCallback,
     type MouseEvent,
 } from "react";
-import type {
-    ActiveView,
-    DeviceView,
-    AppSnapshot,
-    TransferItem,
-    PingToastData,
-} from "./types";
 
 export default function App() {
     const [devices, setDevices] = useState<DeviceView[]>([]);
@@ -36,7 +34,6 @@ export default function App() {
     });
     const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
     const [justDroppedCount, setJustDroppedCount] = useState<number>(0);
-    const [pingToast, setPingToast] = useState<PingToastData | null>(null);
     const [fallbackArtworkUrl, setFallbackArtworkUrl] = useState<string | null>(
         null,
     );
@@ -108,8 +105,6 @@ export default function App() {
         let isFetching = false;
         let hasPendingFetch = false;
         let unlisten: (() => void) | undefined;
-        let unlistenPing: (() => void) | undefined;
-        let pingTimer: ReturnType<typeof setTimeout> | undefined;
 
         async function loadDevices() {
             if (isFetching) {
@@ -179,25 +174,6 @@ export default function App() {
                 fn();
             } else {
                 unlisten = fn;
-            }
-        });
-
-        listen<{ deviceId: string; deviceName: string; message: string }>(
-            "velquo://ping",
-            (event) => {
-                if (disposed) return;
-                setPingToast({
-                    message: event.payload.message,
-                    deviceName: event.payload.deviceName,
-                });
-                if (pingTimer) clearTimeout(pingTimer);
-                pingTimer = setTimeout(() => setPingToast(null), 4000);
-            },
-        ).then((fn) => {
-            if (disposed) {
-                fn();
-            } else {
-                unlistenPing = fn;
             }
         });
 
@@ -272,11 +248,9 @@ export default function App() {
         return () => {
             disposed = true;
             if (unlisten) unlisten();
-            if (unlistenPing) unlistenPing();
             if (unlistenSetup) unlistenSetup();
             if (unlistenTrayNav) unlistenTrayNav();
             if (unlistenFocusNotif) unlistenFocusNotif();
-            if (pingTimer) clearTimeout(pingTimer);
         };
     }, []);
 
@@ -487,9 +461,6 @@ export default function App() {
                 onMouseDown={handleDragMouseDown}
                 className="fixed top-0 left-0 z-50 h-11 w-full"
             />
-
-            {/* Animated Ping Notification Toast */}
-            <PingToast pingToast={pingToast} onDismiss={() => setPingToast(null)} />
 
             {/* Left transparent/vibrant sidebar */}
             <Sidebar
