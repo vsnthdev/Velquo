@@ -3704,39 +3704,102 @@ impl KdeConnectDaemon {
         }
     }
 
-    /// Reads the host MacBook's battery percentage (0..=100) and charging status via `pmset -g batt`.
+    /// Reads the host MacBook's battery percentage (0..=100) and charging status directly via `IOKit.framework` (`IOPSCopyPowerSourcesInfo`).
+    #[cfg(target_os = "macos")]
     pub fn read_macos_battery_status() -> Option<(i32, bool)> {
-        let output = std::process::Command::new("/usr/bin/pmset")
-            .args(["-g", "batt"])
-            .output()
-            .ok()?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        use objc2::msg_send;
+        use objc2_foundation::{NSDictionary, NSString};
+        use std::ffi::c_void;
 
-        let on_ac_power = stdout.contains("'AC Power'");
-        for line in stdout.lines() {
-            if let Some(pct_idx) = line.find("%;") {
-                let prefix = &line[..pct_idx];
-                let num_str: String = prefix
-                    .chars()
-                    .rev()
-                    .take_while(|c| c.is_ascii_digit())
-                    .collect::<String>()
-                    .chars()
-                    .rev()
-                    .collect();
-                if let Ok(charge) = num_str.parse::<i32>() {
-                    let clamped = charge.clamp(0, 100);
-                    let after = &line[pct_idx + 2..];
-                    let is_charging = on_ac_power
-                        || (after.contains("charging")
-                            && !after.contains("discharging")
-                            && !after.contains("not charging"))
-                        || after.contains("charged")
-                        || after.contains("finishing charge");
-                    return Some((clamped, is_charging));
-                }
-            }
+        #[link(name = "IOKit", kind = "framework")]
+        extern "C" {
+            fn IOPSCopyPowerSourcesInfo() -> *const c_void;
+            fn IOPSCopyPowerSourcesList(blob: *const c_void) -> *const c_void;
+            fn IOPSGetPowerSourceDescription(
+                blob: *const c_void,
+                ps: *const c_void,
+            ) -> *const c_void;
         }
+
+        #[link(name = "CoreFoundation", kind = "framework")]
+        extern "C" {
+            fn CFArrayGetCount(the_array: *const c_void) -> isize;
+            fn CFArrayGetValueAtIndex(the_array: *const c_void, idx: isize) -> *const c_void;
+            fn CFRelease(cf: *const c_void);
+        }
+
+        unsafe {
+            let blob = IOPSCopyPowerSourcesInfo();
+            if blob.is_null() {
+                return None;
+            }
+            let list = IOPSCopyPowerSourcesList(blob);
+            if list.is_null() {
+                CFRelease(blob);
+                return None;
+            }
+
+            let count = CFArrayGetCount(list);
+            let mut result: Option<(i32, bool)> = None;
+
+            let key_cur = NSString::from_str("Current Capacity");
+            let key_max = NSString::from_str("Max Capacity");
+            let key_charging = NSString::from_str("Is Charging");
+            let key_charged = NSString::from_str("Is Charged");
+            let key_state = NSString::from_str("Power Source State");
+
+            for idx in 0..count {
+                let ps = CFArrayGetValueAtIndex(list, idx);
+                if ps.is_null() {
+                    continue;
+                }
+                let desc_ptr = IOPSGetPowerSourceDescription(blob, ps);
+                if desc_ptr.is_null() {
+                    continue;
+                }
+                let dict = &*(desc_ptr as *const NSDictionary);
+
+                let Some(cur_obj) = dict.objectForKey(&key_cur) else {
+                    continue;
+                };
+                let cur_cap: i32 = msg_send![&*cur_obj, intValue];
+                let max_cap: i32 = dict
+                    .objectForKey(&key_max)
+                    .map(|o| msg_send![&*o, intValue])
+                    .unwrap_or(100);
+
+                let charge = if max_cap > 0 {
+                    ((cur_cap * 100) / max_cap).clamp(0, 100)
+                } else {
+                    cur_cap.clamp(0, 100)
+                };
+
+                let is_charging: bool = dict
+                    .objectForKey(&key_charging)
+                    .map(|o| msg_send![&*o, boolValue])
+                    .unwrap_or(false);
+                let is_charged: bool = dict
+                    .objectForKey(&key_charged)
+                    .map(|o| msg_send![&*o, boolValue])
+                    .unwrap_or(false);
+                let on_ac = dict
+                    .objectForKey(&key_state)
+                    .and_then(|o| o.downcast::<NSString>().ok())
+                    .map(|s| s.to_string() == "AC Power")
+                    .unwrap_or(false);
+
+                result = Some((charge, is_charging || is_charged || on_ac));
+                break;
+            }
+
+            CFRelease(list);
+            CFRelease(blob);
+            result
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn read_macos_battery_status() -> Option<(i32, bool)> {
         None
     }
 
