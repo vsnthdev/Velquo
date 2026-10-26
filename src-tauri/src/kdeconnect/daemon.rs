@@ -247,6 +247,7 @@ pub struct KdeConnectDaemon {
     pub call_paused_sources: Mutex<HashSet<String>>,
     pub call_state_seq: Mutex<u64>,
     pub clipboard_state: Mutex<ClipboardState>,
+    pub recently_copied_otps: Mutex<HashMap<(String, String), i64>>,
     pub app_settings: Mutex<AppSettings>,
     pub sftp_manager: SftpManager,
 }
@@ -342,6 +343,7 @@ impl KdeConnectDaemon {
                 last_content: String::new(),
                 last_timestamp_ms: 0,
             }),
+            recently_copied_otps: Mutex::new(HashMap::new()),
             app_settings: Mutex::new(app_settings),
             sftp_manager: SftpManager::new(),
         }))
@@ -2884,28 +2886,34 @@ impl KdeConnectDaemon {
     }
 
     /// Extracts a 4..=8 digit OTP / 2FA verification code when the notification text contains
-    /// verification/OTP context keywords (`otp`, `code`, `verification`, `verify`, `passcode`, `2fa`, `pin`, etc.).
+    /// explicit whole-word or multi-word OTP/2FA verification context.
     fn extract_otp_code(combined_text: &str) -> Option<String> {
         let lower = combined_text.to_ascii_lowercase();
-        const KEYWORDS: [&str; 16] = [
-            "otp",
-            "code",
-            "verification",
-            "verify",
-            "passcode",
-            "password",
-            "2fa",
-            "security",
-            "one-time",
-            "one time",
-            "auth",
-            "pin",
-            "login",
-            "confirm",
-            "is your",
-            "use ",
+        let has_explicit_otp_word = lower
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+            .any(|w| matches!(w, "otp" | "2fa" | "passcode" | "one-time" | "onetime"));
+
+        const OTP_PHRASES: [&str; 17] = [
+            "verification code",
+            "security code",
+            "login code",
+            "auth code",
+            "authentication code",
+            "confirmation code",
+            "access code",
+            "secret code",
+            "temporary code",
+            "verify your",
+            "one time password",
+            "one-time password",
+            "one time code",
+            "verification pin",
+            "temporary pin",
+            "your pin is",
+            "your code is",
         ];
-        if !KEYWORDS.iter().any(|kw| lower.contains(kw)) {
+
+        if !has_explicit_otp_word && !OTP_PHRASES.iter().any(|p| lower.contains(p)) {
             return None;
         }
 
@@ -2947,6 +2955,13 @@ impl KdeConnectDaemon {
             };
 
             if (4..=8).contains(&digits_only.len()) {
+                // Avoid false-matching 4-digit calendar years (e.g. `2026`) unless the word `otp` is explicitly present
+                if digits_only.len() == 4
+                    && !has_explicit_otp_word
+                    && (2024..=2035).contains(&digits_only.parse::<u16>().unwrap_or(0))
+                {
+                    continue;
+                }
                 return Some(digits_only);
             }
         }
@@ -3244,30 +3259,51 @@ impl KdeConnectDaemon {
             title.clone()
         };
 
-        // If an OTP is detected and auto-copy OTP is enabled for this device, always copy the OTP
-        // (regardless of `is_silent`) and show ONLY the "Copied OTP: {{otp}}" macOS system notification.
+        // If an OTP is detected and auto-copy OTP is enabled for this device, only auto-copy OTPs
+        // that arrived within the last 5 minutes (even if `is_silent` is true), so old OTPs sitting
+        // in the phone's notification shade from hours ago are never copied on reconnect.
         if let Some(ref code) = otp_code {
-            let is_recent_or_live =
-                !is_request_answer || (current_millis() - timestamp_ms).abs() <= 90_000;
-            if is_new_otp && is_recent_or_live && self.is_device_auto_copy_otp_allowed(device_id) {
-                log::info!(
-                    "[otp] Extracted OTP code '{}' from '{}' notification on '{}' (silent={}), auto-copying to Mac clipboard",
-                    code,
-                    app_name,
-                    device_name,
-                    is_silent
-                );
-                let _ = self.copy_text_to_clipboard(code);
+            const FIVE_MINUTES_MS: i64 = 5 * 60 * 1000;
+            const TEN_MINUTES_MS: i64 = 10 * 60 * 1000;
+            let now_ms = current_millis();
+            let age_ms = now_ms.saturating_sub(timestamp_ms);
+            let is_within_last_5_mins = (-60_000..=FIVE_MINUTES_MS).contains(&age_ms);
+            if is_new_otp
+                && is_within_last_5_mins
+                && self.is_device_auto_copy_otp_allowed(device_id)
+            {
+                let mut already_copied_recently = false;
+                if let Ok(mut copied_map) = self.recently_copied_otps.lock() {
+                    copied_map.retain(|_, &mut ts| now_ms.saturating_sub(ts) <= TEN_MINUTES_MS);
+                    let key = (device_id.to_string(), code.clone());
+                    if let std::collections::hash_map::Entry::Vacant(e) = copied_map.entry(key) {
+                        e.insert(now_ms);
+                    } else {
+                        already_copied_recently = true;
+                    }
+                }
 
-                let otp_notif_title = format!("Copied OTP: {}", code);
-                Self::show_macos_notification(
-                    &otp_notif_title,
-                    &notif_body,
-                    Some(device_id),
-                    Some(&raw_id_original),
-                    true,
-                );
-                return;
+                if !already_copied_recently {
+                    log::info!(
+                        "[otp] Extracted OTP code '{}' from '{}' notification on '{}' (silent={}, age_ms={}), auto-copying to Mac clipboard",
+                        code,
+                        app_name,
+                        device_name,
+                        is_silent,
+                        age_ms
+                    );
+                    let _ = self.copy_text_to_clipboard(code);
+
+                    let otp_notif_title = format!("Copied OTP: {}", code);
+                    Self::show_macos_notification(
+                        &otp_notif_title,
+                        &notif_body,
+                        Some(device_id),
+                        Some(&raw_id_original),
+                        true,
+                    );
+                    return;
+                }
             }
         }
 
