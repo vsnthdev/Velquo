@@ -470,8 +470,7 @@ impl KdeConnectDaemon {
         }
     }
 
-    /// Displays a native macOS system notification with the Velquo icon, click-to-focus support,
-    /// and an optional native "Dismiss" action button.
+    /// Displays a native macOS system notification with the Velquo icon and click-to-focus support.
     pub fn show_macos_notification(
         title: &str,
         body: &str,
@@ -489,6 +488,13 @@ impl KdeConnectDaemon {
                 notification_id,
                 dismissable,
             );
+        }
+    }
+
+    pub fn remove_macos_notifications(device_id: &str, notification_ids: &[String]) {
+        #[cfg(target_os = "macos")]
+        {
+            crate::macos_notify::remove_macos_notifications(device_id, notification_ids);
         }
     }
 
@@ -2856,6 +2862,7 @@ impl KdeConnectDaemon {
                     .retain(|n| Self::normalize_notif_id(&n.id) != norm_target);
             }
         }
+        Self::remove_macos_notifications(device_id, &[norm_target]);
         self.notify_ui();
         Ok(())
     }
@@ -2947,7 +2954,7 @@ impl KdeConnectDaemon {
         None
     }
 
-    fn normalize_notif_id(raw: &str) -> String {
+    pub(crate) fn normalize_notif_id(raw: &str) -> String {
         let mut s = raw.replace(['\r', '\n'], "").trim().to_string();
         if let Some(idx) = s.find("org.kde.kdeconnect_tp::") {
             s = s[idx + "org.kde.kdeconnect_tp::".len()..].to_string();
@@ -3007,12 +3014,19 @@ impl KdeConnectDaemon {
 
         if is_cancel {
             let mut removed = false;
+            let mut ids_to_remove = vec![norm_id.clone()];
             let cancel_pkg = Self::extract_notif_package(&norm_id).map(|s| s.to_string());
             let cancel_is_summary = Self::is_group_summary_notif_id(&norm_id);
 
             if let Ok(mut devices) = self.devices.lock() {
                 if let Some(entry) = devices.get_mut(device_id) {
-                    let before = entry.view.notifications.len();
+                    let before_ids: Vec<String> = entry
+                        .view
+                        .notifications
+                        .iter()
+                        .map(|n| Self::normalize_notif_id(&n.id))
+                        .collect();
+                    let before = before_ids.len();
 
                     // 1. Remove exact normalized ID match
                     entry.view.notifications.retain(|n| {
@@ -3077,9 +3091,22 @@ impl KdeConnectDaemon {
                         }
                     }
 
+                    let after_ids: Vec<String> = entry
+                        .view
+                        .notifications
+                        .iter()
+                        .map(|n| Self::normalize_notif_id(&n.id))
+                        .collect();
+                    for old_id in before_ids {
+                        if !after_ids.contains(&old_id) && !ids_to_remove.contains(&old_id) {
+                            ids_to_remove.push(old_id);
+                        }
+                    }
+
                     removed = entry.view.notifications.len() != before;
                 }
             }
+            Self::remove_macos_notifications(device_id, &ids_to_remove);
             if removed {
                 self.notify_ui();
             }

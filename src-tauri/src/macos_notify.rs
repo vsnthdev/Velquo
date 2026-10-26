@@ -186,7 +186,7 @@ pub fn show_macos_notification(
     body: &str,
     device_id: Option<&str>,
     notification_id: Option<&str>,
-    dismissable: bool,
+    _dismissable: bool,
 ) {
     let Some(ctx) = NOTIFY_CTX.get() else {
         return;
@@ -196,7 +196,7 @@ pub fn show_macos_notification(
     let subtitle_owned = subtitle.map(|s| s.to_string());
     let body_owned = body.to_string();
     let device_id_owned = device_id.map(|s| s.to_string());
-    let notif_id_owned = notification_id.map(|s| s.to_string());
+    let notif_id_owned = notification_id.map(KdeConnectDaemon::normalize_notif_id);
 
     let _ = ctx.app.run_on_main_thread(move || unsafe {
         let notification = NSUserNotification::new();
@@ -222,7 +222,7 @@ pub fn show_macos_notification(
             notification.setIdentifier(Some(&ident));
         }
 
-        // Attach deviceId and notificationId in userInfo so click & Dismiss handlers know which notification was activated
+        // Attach deviceId and notificationId in userInfo so click & phone-side cancel handlers can match it
         if device_id_owned.is_some() || notif_id_owned.is_some() {
             let k1 = NSString::from_str("deviceId");
             let k2 = NSString::from_str("notificationId");
@@ -236,19 +236,8 @@ pub fn show_macos_notification(
             notification.setUserInfo(Some(&dict));
         }
 
-        if dismissable && device_id_owned.is_some() && notif_id_owned.is_some() {
-            notification.setHasActionButton(true);
-            let dismiss_label = NSString::from_str("Dismiss");
-            notification.setActionButtonTitle(&dismiss_label);
-
-            let sel_shows = sel!(_setShowsButtons:);
-            let responds_shows: bool = msg_send![&*notification, respondsToSelector: sel_shows];
-            if responds_shows {
-                let _: () = msg_send![&*notification, _setShowsButtons: true];
-            }
-        } else {
-            notification.setHasActionButton(false);
-        }
+        // Deliver as a standard auto-dismissing macOS banner (without action buttons that force persistent alert mode)
+        notification.setHasActionButton(false);
 
         // Set the Velquo identity icon directly on the notification so it always renders with the Velquo icon
         if let Some(app_img) = load_velquo_app_nsimage() {
@@ -269,5 +258,71 @@ pub fn show_macos_notification(
 
         let center = NSUserNotificationCenter::defaultUserNotificationCenter();
         center.deliverNotification(&notification);
+    });
+}
+
+pub fn remove_macos_notifications(device_id: &str, notification_ids: &[String]) {
+    if notification_ids.is_empty() {
+        return;
+    }
+    let Some(ctx) = NOTIFY_CTX.get() else {
+        return;
+    };
+
+    let device_id_owned = device_id.to_string();
+    let targets: Vec<String> = notification_ids
+        .iter()
+        .map(|s| KdeConnectDaemon::normalize_notif_id(s))
+        .filter(|s| !s.is_empty())
+        .collect();
+    if targets.is_empty() {
+        return;
+    }
+
+    let _ = ctx.app.run_on_main_thread(move || {
+        let center = NSUserNotificationCenter::defaultUserNotificationCenter();
+        let delivered = center.deliveredNotifications();
+        let dev_key = NSString::from_str("deviceId");
+        let notif_key = NSString::from_str("notificationId");
+
+        for i in 0..delivered.count() {
+            let notif = delivered.objectAtIndex(i);
+            let mut matched = false;
+
+            if let Some(user_info) = notif.userInfo() {
+                let dev_val = user_info
+                    .objectForKey(&dev_key)
+                    .and_then(|v| v.downcast::<NSString>().ok())
+                    .map(|s| s.to_string());
+                let notif_val = user_info
+                    .objectForKey(&notif_key)
+                    .and_then(|v| v.downcast::<NSString>().ok())
+                    .map(|s| KdeConnectDaemon::normalize_notif_id(&s.to_string()));
+
+                if dev_val.as_deref() == Some(device_id_owned.as_str()) {
+                    if let Some(existing_norm) = notif_val {
+                        matched = targets.iter().any(|target| {
+                            existing_norm == *target
+                                || existing_norm.ends_with(&format!("::{}", target))
+                                || target.ends_with(&format!("::{}", existing_norm))
+                        });
+                    }
+                }
+            }
+
+            if !matched {
+                if let Some(ident) = notif.identifier() {
+                    let ident_str = ident.to_string();
+                    matched = targets.iter().any(|target| {
+                        let expected = format!("{}:{}", device_id_owned, target);
+                        ident_str == expected
+                    });
+                }
+            }
+
+            if matched {
+                center.removeDeliveredNotification(&notif);
+            }
+        }
     });
 }
