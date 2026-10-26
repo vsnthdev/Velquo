@@ -1164,7 +1164,7 @@ export function DeviceControlView({
                     </span>
 
                     {device.notifications && device.notifications.length > 0 ? (
-                        <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-2 px-1">
                             <AnimatePresence initial={false}>
                                 {device.notifications.map((notif) => {
                                     const displayBody =
