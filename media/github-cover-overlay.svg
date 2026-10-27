@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2330 1165" width="2330" height="1165">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@500;700&amp;display=swap');
+    </style>
+
+    <!-- Apple HIG Standard Squircle Shadow -->
+    <filter id="app-icon-squircle-shadow" x="-15%" y="-15%" width="130%" height="135%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.52" />
+    </filter>
+
+    <clipPath id="app-icon-squircle-clip">
+      <rect x="100" y="100" width="824" height="824" rx="185" ry="185" />
+    </clipPath>
+
+    <!-- Native macOS Dark Squircle Surface -->
+    <linearGradient id="app-icon-squircle-bg" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#252836" />
+      <stop offset="45%" stop-color="#161821" />
+      <stop offset="100%" stop-color="#0c0d12" />
+    </linearGradient>
+
+    <!-- Subtle Ambient Center Glow -->
+    <radialGradient id="app-icon-ambient-glow" cx="52%" cy="48%" r="46%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.22" />
+      <stop offset="55%" stop-color="#6366f1" stop-opacity="0.10" />
+      <stop offset="100%" stop-color="#0c0d12" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Native macOS Subtle Top-Lit Specular Rim Border -->
+    <linearGradient id="app-icon-squircle-rim" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.24" />
+      <stop offset="35%" stop-color="#ffffff" stop-opacity="0.10" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.04" />
+    </linearGradient>
+
+    <!-- Back Frame (Mac Display Portal): Electric Cyan -> Indigo -> Violet -->
+    <linearGradient id="app-icon-mac-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#a855f7" />
+    </linearGradient>
+
+    <!-- Front Frame (Phone Portal): Pure Pearl White -> Ice Blue -->
+    <linearGradient id="app-icon-phone-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="70%" stop-color="#f1f5f9" />
+      <stop offset="100%" stop-color="#bae6fd" />
+    </linearGradient>
+
+    <!-- Clean Perpendicular Masks on Straight Segments (maskUnits="userSpaceOnUse" prevents -10% stroke clipping!) -->
+    <!-- Intersection 1 at (390, 380): Phone top horizontal bar (y=380) passes OVER Mac left vertical bar (x=390) -->
+    <mask id="app-icon-mac-under-phone-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect x="0" y="0" width="1024" height="1024" fill="white" />
+      <line x1="330" y1="380" x2="450" y2="380" stroke="black" stroke-width="96" />
+    </mask>
+
+    <!-- Intersection 2 at (510, 600): Mac bottom horizontal bar (y=600) passes OVER Phone right vertical bar (x=510) -->
+    <mask id="app-icon-phone-under-mac-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect x="0" y="0" width="1024" height="1024" fill="white" />
+      <line x1="450" y1="600" x2="570" y2="600" stroke="black" stroke-width="96" />
+    </mask>
+
+    <filter id="app-icon-symbol-shadow" x="-20%" y="-20%" width="140%" height="145%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  
+
+    <!-- Deep obsidian scrim fading the wallpaper out behind the wordmark -->
+    <linearGradient id="scrim" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#080a11" stop-opacity="0.92" />
+      <stop offset="55%" stop-color="#080a11" stop-opacity="0.72" />
+      <stop offset="100%" stop-color="#080a11" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- Ambient cyan/indigo bloom behind the title -->
+    <radialGradient id="bloom" cx="50%" cy="26%" r="42%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.16" />
+      <stop offset="55%" stop-color="#6366f1" stop-opacity="0.07" />
+      <stop offset="100%" stop-color="#090a0f" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="2330" height="466" fill="url(#scrim)" />
+  <rect x="0" y="0" width="2330" height="559" fill="url(#bloom)" />
+
+  <g transform="translate(__ICON_LEFT__, 72) scale(0.150391)">
+    
+  
+
+  <!-- 1. Apple HIG 824x824 Squircle (Matches exact size & shadow of native macOS Dock icons) -->
+  <g filter="url(#app-icon-squircle-shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#app-icon-squircle-bg)" />
+  </g>
+
+  <g clip-path="url(#app-icon-squircle-clip)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#app-icon-ambient-glow)" />
+  </g>
+
+  <!-- Subtle Inner Glass Rim Border -->
+  <rect
+    x="105"
+    y="105"
+    width="814"
+    height="814"
+    rx="180"
+    ry="180"
+    fill="none"
+    stroke="url(#app-icon-squircle-rim)"
+    stroke-width="10"
+  />
+
+  <!-- 2. Central Symbol: 3D Interlocking Mac & Phone Continuity Portals -->
+  <g filter="url(#app-icon-symbol-shadow)">
+    <!-- Wide Mac Portal Ring (x=390..750, y=276..600, rx=74) -->
+    <g mask="url(#app-icon-mac-under-phone-mask)">
+      <rect
+        x="390"
+        y="276"
+        width="360"
+        height="324"
+        rx="74"
+        ry="74"
+        fill="none"
+        stroke="url(#app-icon-mac-ring-grad)"
+        stroke-width="60"
+      />
+    </g>
+
+    <!-- Tall Phone Portal Ring (x=274..510, y=380..748, rx=74) -->
+    <g mask="url(#app-icon-phone-under-mac-mask)">
+      <rect
+        x="274"
+        y="380"
+        width="236"
+        height="368"
+        rx="74"
+        ry="74"
+        fill="none"
+        stroke="url(#app-icon-phone-ring-grad)"
+        stroke-width="60"
+      />
+    </g>
+  </g>
+
+  </g>
+
+  <text
+    x="__TITLE_LEFT__"
+    y="189"
+    text-anchor="start"
+    font-family="Urbanist"
+    font-weight="700"
+    font-size="112"
+    letter-spacing="-2"
+    fill="#ffffff"
+  >Velquo</text>
+
+  <text
+    x="1165"
+    y="261"
+    text-anchor="middle"
+    font-family="Urbanist"
+    font-weight="500"
+    font-size="43"
+    fill="#c3cddb"
+  >KDE Connect, reborn natively for Apple Silicon Macs.</text>
+</svg>
