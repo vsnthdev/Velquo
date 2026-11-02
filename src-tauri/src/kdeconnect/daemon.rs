@@ -5,9 +5,10 @@ use crate::kdeconnect::clipboard::{
     get_macos_pasteboard_change_count, read_macos_clipboard_text, write_macos_clipboard_text,
 };
 use crate::kdeconnect::macos_media::{
-    get_cached_mac_album_art, get_mac_player_list, handle_incoming_mpris_request,
-    last_broadcast_sig_store, mac_media_notify, pause_mac_media_for_call, query_mac_player_status,
-    resume_mac_media_after_call, start_macos_media_bridge, DEFAULT_MAC_PLAYER,
+    disown_call_paused_media, get_cached_mac_album_art, get_mac_player_list,
+    handle_incoming_mpris_request, last_broadcast_sig_store, mac_media_notify,
+    pause_mac_media_for_call, query_mac_player_status, resume_mac_media_after_call,
+    start_macos_media_bridge, DEFAULT_MAC_PLAYER,
 };
 use crate::kdeconnect::packet::{
     current_millis, current_secs, NetworkPacket, PACKET_TYPE_BATTERY, PACKET_TYPE_BATTERY_REQUEST,
@@ -2253,6 +2254,8 @@ impl KdeConnectDaemon {
 
         match event {
             "ringing" | "talking" if !is_cancel => {
+                // Only run `pause_mac_media_for_call` if we haven't already paused Mac media for this call
+                // (prevents a `ringing` -> `talking` transition from sending a second pause!)
                 let already_paused_for_this_call = {
                     let mut state = self.call_media_state.lock().unwrap();
                     if state.is_pause_expired() {
@@ -2260,6 +2263,7 @@ impl KdeConnectDaemon {
                         state.paused_sources.clear();
                         state.paused_at = None;
                         state.paused_at_secs = None;
+                        disown_call_paused_media("previous call pause expired (> 1 hour)");
                     }
                     state
                         .active_events
@@ -2267,9 +2271,6 @@ impl KdeConnectDaemon {
                     state.seq = state.seq.wrapping_add(1);
                     !state.paused_sources.is_empty()
                 };
-
-                // Only run `pause_mac_media_for_call` if we haven't already paused Mac media for this call
-                // (prevents a `ringing` -> `talking` transition from sending a second toggle key!)
                 if !already_paused_for_this_call {
                     let daemon = Arc::clone(self);
                     tokio::spawn(async move {
@@ -2355,6 +2356,7 @@ impl KdeConnectDaemon {
                         "[pause-music] Skipping auto-resume after phone call ended: media was paused for {}s (> 1 hour)",
                         paused_duration.as_secs()
                     );
+                    disown_call_paused_media("call duration exceeded 1 hour");
                     return;
                 }
             }
@@ -2874,6 +2876,7 @@ impl KdeConnectDaemon {
                     state.paused_sources.clear();
                     state.paused_at = None;
                     state.paused_at_secs = None;
+                    disown_call_paused_media("pause_media_on_calls disabled for device");
                 }
             }
         }
