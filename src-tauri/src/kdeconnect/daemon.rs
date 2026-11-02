@@ -210,6 +210,38 @@ impl Default for AppSettings {
     }
 }
 
+const MAX_CALL_PAUSE_RESUME_DURATION: Duration = Duration::from_secs(60 * 60);
+
+#[derive(Default)]
+pub struct CallMediaState {
+    pub active_events: HashSet<String>,
+    pub paused_sources: HashSet<String>,
+    pub paused_at: Option<Instant>,
+    pub paused_at_secs: Option<i64>,
+    pub seq: u64,
+}
+
+impl CallMediaState {
+    fn pause_elapsed(&self) -> Option<Duration> {
+        let mono = self.paused_at.map(|t| t.elapsed());
+        let wall = self
+            .paused_at_secs
+            .and_then(|s| u64::try_from(current_secs().saturating_sub(s)).ok())
+            .map(Duration::from_secs);
+        match (mono, wall) {
+            (Some(m), Some(w)) => Some(m.max(w)),
+            (Some(m), None) => Some(m),
+            (None, Some(w)) => Some(w),
+            (None, None) => None,
+        }
+    }
+
+    fn is_pause_expired(&self) -> bool {
+        self.pause_elapsed()
+            .is_some_and(|elapsed| elapsed > MAX_CALL_PAUSE_RESUME_DURATION)
+    }
+}
+
 pub struct ClipboardState {
     pub last_change_count: isize,
     pub last_content: String,
@@ -243,9 +275,7 @@ pub struct KdeConnectDaemon {
     pub last_discovery_attempt_ms: Mutex<HashMap<String, i64>>,
     pub udp_socket: Mutex<Option<Arc<UdpSocket>>>,
     pub app_handle: Mutex<Option<AppHandle>>,
-    pub active_call_events: Mutex<HashSet<String>>,
-    pub call_paused_sources: Mutex<HashSet<String>>,
-    pub call_state_seq: Mutex<u64>,
+    pub call_media_state: Mutex<CallMediaState>,
     pub clipboard_state: Mutex<ClipboardState>,
     pub recently_copied_otps: Mutex<HashMap<(String, String), i64>>,
     pub app_settings: Mutex<AppSettings>,
@@ -335,9 +365,7 @@ impl KdeConnectDaemon {
             last_discovery_attempt_ms: Mutex::new(HashMap::new()),
             udp_socket: Mutex::new(None),
             app_handle: Mutex::new(None),
-            active_call_events: Mutex::new(HashSet::new()),
-            call_paused_sources: Mutex::new(HashSet::new()),
-            call_state_seq: Mutex::new(0),
+            call_media_state: Mutex::new(CallMediaState::default()),
             clipboard_state: Mutex::new(ClipboardState {
                 last_change_count: get_macos_pasteboard_change_count(),
                 last_content: String::new(),
@@ -2214,12 +2242,16 @@ impl KdeConnectDaemon {
         match event {
             "ringing" | "talking" if !is_cancel => {
                 let already_paused_for_this_call = {
-                    let mut active = self.active_call_events.lock().unwrap();
-                    active.insert(format!("{}:{}", device_id, event));
-                    let mut seq = self.call_state_seq.lock().unwrap();
-                    *seq = seq.wrapping_add(1);
-                    let paused = self.call_paused_sources.lock().unwrap();
-                    !paused.is_empty()
+                    let mut state = self.call_media_state.lock().unwrap();
+                    if state.is_pause_expired() {
+                        state.active_events.clear();
+                        state.paused_sources.clear();
+                        state.paused_at = None;
+                        state.paused_at_secs = None;
+                    }
+                    state.active_events.insert(format!("{}:{}", device_id, event));
+                    state.seq = state.seq.wrapping_add(1);
+                    !state.paused_sources.is_empty()
                 };
 
                 // Only run `pause_mac_media_for_call` if we haven't already paused Mac media for this call
@@ -2231,9 +2263,13 @@ impl KdeConnectDaemon {
                             tokio::task::spawn_blocking(pause_mac_media_for_call).await
                         {
                             if !newly_paused.is_empty() {
-                                let mut paused = daemon.call_paused_sources.lock().unwrap();
+                                let mut state = daemon.call_media_state.lock().unwrap();
+                                if state.paused_sources.is_empty() {
+                                    state.paused_at = Some(Instant::now());
+                                    state.paused_at_secs = Some(current_secs());
+                                }
                                 for src in newly_paused {
-                                    paused.insert(src);
+                                    state.paused_sources.insert(src);
                                 }
                             }
                         }
@@ -2242,75 +2278,72 @@ impl KdeConnectDaemon {
             }
             "ringing" | "talking" if is_cancel => {
                 let (all_calls_ended, snapshot_seq) = {
-                    let mut active = self.active_call_events.lock().unwrap();
-                    active.remove(&format!("{}:{}", device_id, event));
+                    let mut state = self.call_media_state.lock().unwrap();
+                    state.active_events.remove(&format!("{}:{}", device_id, event));
                     if event == "talking" {
-                        active.remove(&format!("{}:ringing", device_id));
+                        state.active_events.remove(&format!("{}:ringing", device_id));
                     }
-                    let mut seq = self.call_state_seq.lock().unwrap();
-                    *seq = seq.wrapping_add(1);
-                    (active.is_empty(), *seq)
+                    state.seq = state.seq.wrapping_add(1);
+                    (state.active_events.is_empty(), state.seq)
                 };
 
                 if all_calls_ended {
-                    let daemon = Arc::clone(self);
-                    tokio::spawn(async move {
-                        // Brief 450ms debounce so a `ringing (isCancel=true)` -> `talking` transition
-                        // when answering a call does not momentarily unpause media.
-                        tokio::time::sleep(Duration::from_millis(450)).await;
-                        let sources_to_resume: Vec<String> = {
-                            let active = daemon.active_call_events.lock().unwrap();
-                            let seq = *daemon.call_state_seq.lock().unwrap();
-                            if !active.is_empty() || seq != snapshot_seq {
-                                return;
-                            }
-                            let mut paused = daemon.call_paused_sources.lock().unwrap();
-                            paused.drain().collect()
-                        };
-
-                        if !sources_to_resume.is_empty() {
-                            let _ = tokio::task::spawn_blocking(move || {
-                                resume_mac_media_after_call(&sources_to_resume);
-                            })
-                            .await;
-                        }
-                    });
+                    self.schedule_call_media_resume(snapshot_seq);
                 }
             }
             "missedCall" if !is_cancel => {
                 let (all_calls_ended, snapshot_seq) = {
-                    let mut active = self.active_call_events.lock().unwrap();
-                    active.remove(&format!("{}:ringing", device_id));
-                    let mut seq = self.call_state_seq.lock().unwrap();
-                    *seq = seq.wrapping_add(1);
-                    (active.is_empty(), *seq)
+                    let mut state = self.call_media_state.lock().unwrap();
+                    state.active_events.remove(&format!("{}:ringing", device_id));
+                    state.seq = state.seq.wrapping_add(1);
+                    (state.active_events.is_empty(), state.seq)
                 };
 
                 if all_calls_ended {
-                    let daemon = Arc::clone(self);
-                    tokio::spawn(async move {
-                        tokio::time::sleep(Duration::from_millis(450)).await;
-                        let sources_to_resume: Vec<String> = {
-                            let active = daemon.active_call_events.lock().unwrap();
-                            let seq = *daemon.call_state_seq.lock().unwrap();
-                            if !active.is_empty() || seq != snapshot_seq {
-                                return;
-                            }
-                            let mut paused = daemon.call_paused_sources.lock().unwrap();
-                            paused.drain().collect()
-                        };
-
-                        if !sources_to_resume.is_empty() {
-                            let _ = tokio::task::spawn_blocking(move || {
-                                resume_mac_media_after_call(&sources_to_resume);
-                            })
-                            .await;
-                        }
-                    });
+                    self.schedule_call_media_resume(snapshot_seq);
                 }
             }
             _ => {}
         }
+    }
+
+    fn schedule_call_media_resume(self: &Arc<Self>, snapshot_seq: u64) {
+        let daemon = Arc::clone(self);
+        tokio::spawn(async move {
+            // Brief 450ms debounce so a `ringing (isCancel=true)` -> `talking` transition
+            // when answering a call does not momentarily unpause media.
+            tokio::time::sleep(Duration::from_millis(450)).await;
+            let (sources_to_resume, elapsed) = {
+                let mut state = daemon.call_media_state.lock().unwrap();
+                if !state.active_events.is_empty() || state.seq != snapshot_seq {
+                    return;
+                }
+                let elapsed = state.pause_elapsed();
+                state.paused_at = None;
+                state.paused_at_secs = None;
+                let sources: Vec<String> = state.paused_sources.drain().collect();
+                (sources, elapsed)
+            };
+
+            if sources_to_resume.is_empty() {
+                return;
+            }
+
+            if let Some(paused_duration) = elapsed {
+                if paused_duration > MAX_CALL_PAUSE_RESUME_DURATION {
+                    log::info!(
+                        "[pause-music] Skipping auto-resume after phone call ended: media was paused for {}s (> 1 hour)",
+                        paused_duration.as_secs()
+                    );
+                    return;
+                }
+            }
+
+            let _ = tokio::task::spawn_blocking(move || {
+                resume_mac_media_after_call(&sources_to_resume);
+            })
+            .await;
+        });
     }
 
     fn handle_pair_packet(
