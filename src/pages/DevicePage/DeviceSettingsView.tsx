@@ -22,6 +22,8 @@ interface DeviceSettingsViewProps {
     onToggleNotifications: () => void;
     autoCopyOtp: boolean;
     onToggleAutoCopyOtp: () => void;
+    pauseMediaOnCalls: boolean;
+    onTogglePauseMediaOnCalls: () => void;
     runCommands: RunCommandItem[];
     onAddRunCommand: (name: string, command: string) => Promise<void>;
     onRemoveRunCommand: (key: string) => Promise<void>;
@@ -49,6 +51,7 @@ export function DeviceSettingsView({
     fileSaveLocation,
     onTogglePresenter,
     syncNotifications,
+    pauseMediaOnCalls,
     onRemoveRunCommand,
     rightPaneContainer,
     onToggleAutoCopyOtp,
@@ -56,6 +59,7 @@ export function DeviceSettingsView({
     onToggleSyncClipboard,
     onToggleNotifications,
     onChangeFileSaveLocation,
+    onTogglePauseMediaOnCalls,
 }: DeviceSettingsViewProps) {
     const [isCommandsModalOpen, setIsCommandsModalOpen] =
         useState<boolean>(false);
@@ -289,6 +293,44 @@ export function DeviceSettingsView({
                         }}
                         animate={{
                             x: autoCopyOtp ? 20 : 0,
+                        }}
+                        className="h-5 w-5 rounded-full bg-white shadow-sm"
+                    />
+                </button>
+            </div>
+
+            {/* Pause media on calls toggle */}
+            <div
+                onClick={onTogglePauseMediaOnCalls}
+                className="flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
+            >
+                <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
+                    Pause media on calls
+                </span>
+
+                <button
+                    type="button"
+                    role="switch"
+                    aria-checked={pauseMediaOnCalls}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onTogglePauseMediaOnCalls();
+                    }}
+                    className={`relative flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors duration-200 ${
+                        pauseMediaOnCalls
+                            ? "bg-blue-600 dark:bg-blue-500"
+                            : "bg-zinc-300 dark:bg-zinc-700"
+                    }`}
+                >
+                    <motion.span
+                        layout
+                        transition={{
+                            damping: 34,
+                            type: "spring",
+                            stiffness: 560,
+                        }}
+                        animate={{
+                            x: pauseMediaOnCalls ? 20 : 0,
                         }}
                         className="h-5 w-5 rounded-full bg-white shadow-sm"
                     />

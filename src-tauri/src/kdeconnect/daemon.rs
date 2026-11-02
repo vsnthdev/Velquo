@@ -147,6 +147,7 @@ pub struct DeviceView {
     pub allow_presenter: bool,
     pub sync_notifications: bool,
     pub auto_copy_otp: bool,
+    pub pause_media_on_calls: bool,
     pub save_location: String,
     pub notifications: Vec<PhoneNotification>,
     pub run_commands: Vec<RunCommandItem>,
@@ -190,6 +191,8 @@ pub struct TrustedDeviceRecord {
     pub sync_notifications: bool,
     #[serde(default = "default_true")]
     pub auto_copy_otp: bool,
+    #[serde(default = "default_true")]
+    pub pause_media_on_calls: bool,
     #[serde(default)]
     pub save_location: Option<String>,
     #[serde(default)]
@@ -334,6 +337,7 @@ impl KdeConnectDaemon {
                         allow_presenter: rec.allow_presenter,
                         sync_notifications: rec.sync_notifications,
                         auto_copy_otp: rec.auto_copy_otp,
+                        pause_media_on_calls: rec.pause_media_on_calls,
                         save_location: device_save_loc,
                         notifications: Vec::new(),
                         run_commands: rec.run_commands.clone(),
@@ -1645,6 +1649,7 @@ impl KdeConnectDaemon {
             saved_allow_presenter,
             saved_sync_notifications,
             saved_auto_copy_otp,
+            saved_pause_media_on_calls,
             saved_save_location,
             saved_run_commands,
         ) = {
@@ -1672,12 +1677,14 @@ impl KdeConnectDaemon {
                     rec.allow_presenter,
                     rec.sync_notifications,
                     rec.auto_copy_otp,
+                    rec.pause_media_on_calls,
                     loc,
                     rec.run_commands.clone(),
                 )
             } else {
                 (
                     false,
+                    true,
                     true,
                     true,
                     true,
@@ -1798,6 +1805,7 @@ impl KdeConnectDaemon {
                         allow_presenter: saved_allow_presenter,
                         sync_notifications: saved_sync_notifications,
                         auto_copy_otp: saved_auto_copy_otp,
+                        pause_media_on_calls: saved_pause_media_on_calls,
                         save_location: saved_save_location,
                         notifications: prev_notifications,
                         run_commands: saved_run_commands,
@@ -2221,6 +2229,10 @@ impl KdeConnectDaemon {
         device_name: &str,
         packet: &NetworkPacket,
     ) {
+        if !self.is_device_pause_media_on_calls_allowed(device_id) {
+            return;
+        }
+
         let Some(event) = packet.get_str("event") else {
             return;
         };
@@ -2249,7 +2261,9 @@ impl KdeConnectDaemon {
                         state.paused_at = None;
                         state.paused_at_secs = None;
                     }
-                    state.active_events.insert(format!("{}:{}", device_id, event));
+                    state
+                        .active_events
+                        .insert(format!("{}:{}", device_id, event));
                     state.seq = state.seq.wrapping_add(1);
                     !state.paused_sources.is_empty()
                 };
@@ -2279,9 +2293,13 @@ impl KdeConnectDaemon {
             "ringing" | "talking" if is_cancel => {
                 let (all_calls_ended, snapshot_seq) = {
                     let mut state = self.call_media_state.lock().unwrap();
-                    state.active_events.remove(&format!("{}:{}", device_id, event));
+                    state
+                        .active_events
+                        .remove(&format!("{}:{}", device_id, event));
                     if event == "talking" {
-                        state.active_events.remove(&format!("{}:ringing", device_id));
+                        state
+                            .active_events
+                            .remove(&format!("{}:ringing", device_id));
                     }
                     state.seq = state.seq.wrapping_add(1);
                     (state.active_events.is_empty(), state.seq)
@@ -2294,7 +2312,9 @@ impl KdeConnectDaemon {
             "missedCall" if !is_cancel => {
                 let (all_calls_ended, snapshot_seq) = {
                     let mut state = self.call_media_state.lock().unwrap();
-                    state.active_events.remove(&format!("{}:ringing", device_id));
+                    state
+                        .active_events
+                        .remove(&format!("{}:ringing", device_id));
                     state.seq = state.seq.wrapping_add(1);
                     (state.active_events.is_empty(), state.seq)
                 };
@@ -2382,6 +2402,7 @@ impl KdeConnectDaemon {
                         allow_presenter: entry.view.allow_presenter,
                         sync_notifications: entry.view.sync_notifications,
                         auto_copy_otp: entry.view.auto_copy_otp,
+                        pause_media_on_calls: entry.view.pause_media_on_calls,
                         save_location: Some(entry.view.save_location.clone()),
                         run_commands: entry.view.run_commands.clone(),
                     };
@@ -2508,6 +2529,7 @@ impl KdeConnectDaemon {
                         allow_presenter: entry.view.allow_presenter,
                         sync_notifications: entry.view.sync_notifications,
                         auto_copy_otp: entry.view.auto_copy_otp,
+                        pause_media_on_calls: entry.view.pause_media_on_calls,
                         save_location: Some(entry.view.save_location.clone()),
                         run_commands: entry.view.run_commands.clone(),
                     });
@@ -2818,6 +2840,53 @@ impl KdeConnectDaemon {
             .get(device_id)
             .map(|d| d.view.pair_state == PairState::Paired && d.view.auto_copy_otp)
             .unwrap_or(false)
+    }
+
+    pub fn is_device_pause_media_on_calls_allowed(&self, device_id: &str) -> bool {
+        let devices = self.devices.lock().unwrap();
+        devices
+            .get(device_id)
+            .map(|d| d.view.pair_state == PairState::Paired && d.view.pause_media_on_calls)
+            .unwrap_or(false)
+    }
+
+    pub fn set_device_pause_media_on_calls(&self, device_id: &str, enabled: bool) -> Result<()> {
+        if let Ok(mut devices) = self.devices.lock() {
+            if let Some(entry) = devices.get_mut(device_id) {
+                entry.view.pause_media_on_calls = enabled;
+                log::info!(
+                    "[pause-music] Set pause_media_on_calls={} for '{}' ({})",
+                    enabled,
+                    entry.view.device_name,
+                    device_id
+                );
+            }
+        }
+
+        if !enabled {
+            let prefix = format!("{}:", device_id);
+            let mut state = self.call_media_state.lock().unwrap();
+            let prev_len = state.active_events.len();
+            state.active_events.retain(|ev| !ev.starts_with(&prefix));
+            if state.active_events.len() != prev_len {
+                state.seq = state.seq.wrapping_add(1);
+                if state.active_events.is_empty() {
+                    state.paused_sources.clear();
+                    state.paused_at = None;
+                    state.paused_at_secs = None;
+                }
+            }
+        }
+
+        {
+            let mut trusted = self.trusted_devices.lock().unwrap();
+            if let Some(rec) = trusted.get_mut(device_id) {
+                rec.pause_media_on_calls = enabled;
+            }
+        }
+        self.save_trusted_devices();
+        self.notify_ui();
+        Ok(())
     }
 
     pub fn set_device_auto_copy_otp(&self, device_id: &str, enabled: bool) -> Result<()> {

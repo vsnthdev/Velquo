@@ -604,6 +604,13 @@ export default function App() {
                                         enabled: !selectedDevice.autoCopyOtp,
                                     })
                                 }
+                                pauseMediaOnCalls={selectedDevice.pauseMediaOnCalls}
+                                onTogglePauseMediaOnCalls={() =>
+                                    invoke("set_device_pause_media_on_calls", {
+                                        deviceId: selectedDevice.deviceId,
+                                        enabled: !selectedDevice.pauseMediaOnCalls,
+                                    })
+                                }
                                 onAddRunCommand={async (name, command) => {
                                     await invoke("add_device_run_command", {
                                         name,

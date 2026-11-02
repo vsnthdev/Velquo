@@ -294,6 +294,22 @@ fn set_device_auto_copy_otp(
 }
 
 #[tauri::command]
+fn set_device_pause_media_on_calls(
+    device_id: String,
+    enabled: bool,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<(), String> {
+    log::info!(
+        "[ui] Setting pause_media_on_calls={} for device_id={}",
+        enabled,
+        device_id
+    );
+    daemon
+        .set_device_pause_media_on_calls(&device_id, enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn dismiss_notification(
     device_id: String,
     notification_id: String,
@@ -1144,6 +1160,7 @@ pub fn run() {
             set_device_presenter,
             set_device_notifications_sync,
             set_device_auto_copy_otp,
+            set_device_pause_media_on_calls,
             dismiss_notification,
             copy_text_to_clipboard,
             set_ignore_whatsapp_conversations,

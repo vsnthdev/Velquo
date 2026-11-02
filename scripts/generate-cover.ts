@@ -258,11 +258,11 @@ console.log(
 );
 console.log("[38] Running sharp composite pipeline...");
 const compositedBytes = await sharp(originalBytes)
-    .extract({ left: 0, top: 0, width: originalW, height: cropH })
+    .extract({ top: 0, left: 0, height: cropH, width: originalW })
     .ensureAlpha()
     .composite([
-        { blend: "over", input: overlayPng, left: 0, top: 0 },
-        { blend: "dest-in", input: cornerMask, left: 0, top: 0 },
+        { top: 0, left: 0, blend: "over", input: overlayPng },
+        { top: 0, left: 0, blend: "dest-in", input: cornerMask },
     ])
     .png()
     .toBuffer();

@@ -28,6 +28,8 @@ interface DevicePageProps {
     onToggleNotifications: () => void;
     autoCopyOtp: boolean;
     onToggleAutoCopyOtp: () => void;
+    pauseMediaOnCalls: boolean;
+    onTogglePauseMediaOnCalls: () => void;
     onAddRunCommand: (name: string, command: string) => Promise<void>;
     onRemoveRunCommand: (key: string) => Promise<void>;
     rightPaneContainer: HTMLElement | null;
@@ -58,6 +60,7 @@ export function DevicePage({
     fileSaveLocation,
     onTogglePresenter,
     syncNotifications,
+    pauseMediaOnCalls,
     hasArtworkBackdrop,
     onRemoveRunCommand,
     rightPaneContainer,
@@ -67,6 +70,7 @@ export function DevicePage({
     onToggleNotifications,
     highlightedNotification,
     onChangeFileSaveLocation,
+    onTogglePauseMediaOnCalls,
 }: DevicePageProps) {
     const isSettingsOpen = subview == "settings";
 
@@ -177,6 +181,8 @@ export function DevicePage({
                         onToggleNotifications={onToggleNotifications}
                         autoCopyOtp={autoCopyOtp}
                         onToggleAutoCopyOtp={onToggleAutoCopyOtp}
+                        pauseMediaOnCalls={pauseMediaOnCalls}
+                        onTogglePauseMediaOnCalls={onTogglePauseMediaOnCalls}
                         runCommands={device.runCommands || []}
                         onAddRunCommand={onAddRunCommand}
                         onRemoveRunCommand={onRemoveRunCommand}
