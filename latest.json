@@ -1,10 +1,10 @@
 {
-    "pub_date": "2026-10-26T06:14:09Z",
-    "version": "1.2.3",
+    "pub_date": "2026-11-02T08:18:02Z",
+    "version": "1.2.4",
     "platforms": {
         "darwin-aarch64": {
-            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRak9iRWxRUWppdTVacDBSb1RPZU5RNW12aDhlQUpWWE16V3FsemNGalRNNXQya1RUVTFZV29JQTN2THJYWXZVMG93U21oc2pITzJ4OFJJaDVsNFRHYXk2bmhXVDgraFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyOTk1MjQ5CWZpbGU6VmVscXVvLmFwcC50YXIuZ3oJdmVyc2lvbjoxLjIuMwpKQVJuS0RXbWpNNTBMWGhMMnEybXlnRTBZbUhzUlFZL1dIZXpka3dlS2NKWDRiOUVMQ2dOV0JpblZkUkZxd1ZqMjlubVFNRUdPM0JZQjA2QmhtV2RDZz09Cg==",
-            "url": "https://github.com/vsnthdev/Velquo/releases/download/v1.2.3/Velquo.app.tar.gz"
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRak9iRWxRUWppdTFsNlRVSHlnckVNOC9ydUtsL1RXNDBBRzFJYjkzYXJGcnNNVncvcldVS3kvMmdIQ1I2U0dqNFBZMzVVY2NzMGVDUG5IUk1jRHNXUVcvR2JOSHo3OFFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNjA3NDgyCWZpbGU6VmVscXVvLmFwcC50YXIuZ3oJdmVyc2lvbjoxLjIuNAphK1JUenMrdzJOZlA4OHZnQ3BEWVdURWtpU0hFUGlCRUluL05PUjJQVEpyR2FBM3oyd2dsTW0vWW1tYlM3MHJDdVg0VVowMERIQkhrclU5b3FVTytBZz09Cg==",
+            "url": "https://github.com/vsnthdev/Velquo/releases/download/v1.2.4/Velquo.app.tar.gz"
         }
     }
 }
