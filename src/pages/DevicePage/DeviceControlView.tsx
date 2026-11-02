@@ -101,9 +101,10 @@ export function DeviceControlView({
     const [isRemoteInputOpen, setIsRemoteInputOpen] = useState<boolean>(false);
     const [nowTickMs, setNowTickMs] = useState<number>(() => Date.now());
     const [copiedNotifId, setCopiedNotifId] = useState<string | null>(null);
-    const [activeHighlightNotifId, setActiveHighlightNotifId] = useState<
-    string | null
-    >(null);
+    const [activeHighlight, setActiveHighlight] = useState<{
+        id: string;
+        seq: number;
+    } | null>(null);
     const notifRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const remoteInputZoneRef = useRef<HTMLDivElement | null>(null);
 
@@ -222,7 +223,8 @@ export function DeviceControlView({
         }
 
         const targetId = highlightedNotification.notificationId;
-        setActiveHighlightNotifId(targetId);
+        const targetSeq = highlightedNotification.seq;
+        setActiveHighlight({ id: targetId, seq: targetSeq });
 
         const scrollTimer = setTimeout(() => {
             const el = notifRefs.current.get(targetId);
@@ -232,7 +234,9 @@ export function DeviceControlView({
         }, 120);
 
         const clearTimer = setTimeout(() => {
-            setActiveHighlightNotifId((prev) => (prev == targetId ? null : prev));
+            setActiveHighlight((prev) =>
+                prev?.id == targetId && prev?.seq == targetSeq ? null : prev,
+            );
         }, 3200);
 
         return () => {
@@ -1164,7 +1168,7 @@ export function DeviceControlView({
                     </span>
 
                     {device.notifications && device.notifications.length > 0 ? (
-                        <div className="flex flex-col gap-2 px-1">
+                        <div className="flex flex-col gap-2">
                             <AnimatePresence initial={false}>
                                 {device.notifications.map((notif) => {
                                     const displayBody =
@@ -1174,7 +1178,9 @@ export function DeviceControlView({
                                         .toLowerCase()
                                         .includes("sensitive notification content hidden");
                                     const isCopied = copiedNotifId == notif.id;
-                                    const isHighlighted = activeHighlightNotifId == notif.id;
+                                    const isHighlighted = activeHighlight?.id == notif.id;
+                                    const isDimmedBySpotlight =
+                                        activeHighlight != null && !isHighlighted;
 
                                     return (
                                         <motion.div
@@ -1188,23 +1194,86 @@ export function DeviceControlView({
                                             }}
                                             layout
                                             initial={{ y: 6, opacity: 0, scale: 0.98 }}
-                                            animate={{ y: 0, scale: 1, opacity: 1 }}
+                                            animate={{
+                                                y: isHighlighted ? -1 : 0,
+                                                opacity: isDimmedBySpotlight ? 0.48 : 1,
+                                                scale: isHighlighted
+                                                    ? 1.008
+                                                    : isDimmedBySpotlight
+                                                        ? 0.992
+                                                        : 1,
+                                            }}
                                             exit={{ height: 0, opacity: 0, scale: 0.97 }}
                                             transition={{
-                                                damping: 34,
+                                                damping: 32,
                                                 type: "spring",
-                                                stiffness: 460,
+                                                stiffness: 440,
                                             }}
-                                            className={`flex items-start justify-between gap-3 rounded-xl border px-3.5 py-2.5 transition-all duration-300 ${
+                                            onMouseDown={() => {
+                                                if (activeHighlight) {
+                                                    setActiveHighlight(null);
+                                                }
+                                            }}
+                                            className={`relative flex items-start justify-between gap-3 overflow-hidden rounded-xl border px-3.5 py-2.5 transition-[background-color,border-color,box-shadow] duration-300 ${
                                                 isHighlighted
-                                                    ? "border-blue-500/60 bg-blue-500/[0.08] ring-2 ring-blue-500/25 dark:border-blue-400/60 dark:bg-blue-500/[0.12] dark:ring-blue-400/25"
+                                                    ? "z-10 border-blue-500/35 bg-white shadow-[0_10px_28px_-6px_rgba(37,99,235,0.16),0_2px_8px_-2px_rgba(0,0,0,0.05)] dark:border-blue-400/35 dark:bg-zinc-800/90 dark:shadow-[0_12px_30px_-6px_rgba(0,0,0,0.55),0_0_20px_-4px_rgba(59,130,246,0.16),inset_0_1px_0_0_rgba(255,255,255,0.08)]"
                                                     : "border-black/10 bg-black/[0.02] dark:border-white/10 dark:bg-white/[0.02]"
                                             }`}
                                         >
-                                            <div className="flex min-w-0 flex-1 flex-col">
+                                            <AnimatePresence>
+                                                {isHighlighted && (
+                                                    <motion.div
+                                                        key={`highlight-fx-${activeHighlight?.seq ?? 0}`}
+                                                        initial={{ opacity: 0 }}
+                                                        animate={{ opacity: 1 }}
+                                                        exit={{ opacity: 0 }}
+                                                        transition={{ duration: 0.28, ease: "easeOut" }}
+                                                        className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-xl"
+                                                    >
+                                                        {/* Soft directional ambient wash from the left */}
+                                                        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/[0.08] via-blue-500/[0.025] to-transparent dark:from-blue-500/[0.15] dark:via-blue-500/[0.04] dark:to-transparent" />
+
+                                                        {/* Crisp glowing left accent indicator bar */}
+                                                        <motion.span
+                                                            initial={{ scaleY: 0, opacity: 0 }}
+                                                            animate={{ scaleY: 1, opacity: 1 }}
+                                                            exit={{ scaleY: 0, opacity: 0 }}
+                                                            transition={{
+                                                                damping: 28,
+                                                                type: "spring",
+                                                                stiffness: 480,
+                                                            }}
+                                                            className="absolute top-2 bottom-2 left-0 w-[3px] origin-center rounded-r-full bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.55)] dark:bg-blue-400 dark:shadow-[0_0_12px_rgba(96,165,250,0.65)]"
+                                                        />
+
+                                                        {/* Silky one-shot diagonal light sheen sweep */}
+                                                        <motion.div
+                                                            initial={{ x: "-120%" }}
+                                                            animate={{ x: "220%" }}
+                                                            transition={{
+                                                                delay: 0.1,
+                                                                duration: 0.85,
+                                                                ease: [0.22, 1, 0.36, 1],
+                                                            }}
+                                                            className="absolute inset-y-0 left-0 w-1/2 -skew-x-12 bg-gradient-to-r from-transparent via-blue-500/[0.09] to-transparent dark:via-white/[0.08]"
+                                                        />
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+
+                                            <div className="relative z-10 flex min-w-0 flex-1 flex-col">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="rounded-md bg-black/[0.06] px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-600 dark:bg-white/[0.08] dark:text-zinc-300">
-                                                        {notif.appName}
+                                                    <span
+                                                        className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium transition-colors duration-300 ${
+                                                            isHighlighted
+                                                                ? "bg-blue-500/12 text-blue-600 dark:bg-[#102648] dark:text-[#60a5fa]"
+                                                                : "bg-black/[0.06] text-zinc-600 dark:bg-white/[0.08] dark:text-zinc-300"
+                                                        }`}
+                                                    >
+                                                        {isHighlighted && (
+                                                            <span className="h-1.5 w-1.5 rounded-full bg-blue-600 dark:bg-[#60a5fa]" />
+                                                        )}
+                                                        <span>{notif.appName}</span>
                                                     </span>
                                                     {notif.title && notif.title != notif.appName && (
                                                         <span className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
@@ -1237,7 +1306,7 @@ export function DeviceControlView({
                                                 )}
                                             </div>
 
-                                            <div className="flex shrink-0 items-center gap-1.5">
+                                            <div className="relative z-10 flex shrink-0 items-center gap-1.5">
                                                 {notif.otpCode && (
                                                     <motion.button
                                                         type="button"

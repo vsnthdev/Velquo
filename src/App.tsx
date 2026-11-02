@@ -259,6 +259,17 @@ export default function App() {
         };
     }, []);
 
+    // Automatically expire the highlighted notification signal so remounting views later won't replay it
+    useEffect(() => {
+        if (!highlightedNotification) return;
+        const timer = setTimeout(() => {
+            setHighlightedNotification((prev) =>
+                prev?.seq == highlightedNotification.seq ? null : prev,
+            );
+        }, 3400);
+        return () => clearTimeout(timer);
+    }, [highlightedNotification]);
+
     const pairedDevices = devices.filter((d) => d.pairState == "Paired");
     const unpairedDevices = devices.filter(
         (d) => d.pairState != "Paired" && d.reachable,
