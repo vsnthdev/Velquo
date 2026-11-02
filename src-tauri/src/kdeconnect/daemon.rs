@@ -34,6 +34,7 @@ use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -263,6 +264,16 @@ pub struct DeviceEntry {
     pub active_mpris_player: Option<String>,
     pub album_art_cache: HashMap<String, String>,
     pub album_art_in_flight: HashSet<String>,
+    /// Lock-free copy of `view.pair_state == PairState::Paired` for the hot packet path.
+    pub paired: Arc<AtomicBool>,
+}
+
+impl DeviceEntry {
+    fn set_pair_state(&mut self, state: PairState) {
+        self.view.pair_state = state;
+        self.paired
+            .store(state == PairState::Paired, Ordering::Release);
+    }
 }
 
 pub struct KdeConnectDaemon {
@@ -352,6 +363,7 @@ impl KdeConnectDaemon {
                     active_mpris_player: None,
                     album_art_cache: HashMap::new(),
                     album_art_in_flight: HashSet::new(),
+                    paired: Arc::new(AtomicBool::new(true)),
                 },
             );
         }
@@ -1700,7 +1712,7 @@ impl KdeConnectDaemon {
         let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
         let (abort_tx, mut abort_rx) = oneshot::channel::<()>();
 
-        let generation = {
+        let (generation, paired_flag) = {
             let mut devices = self.devices.lock().unwrap();
             let mut prev_abort: Option<oneshot::Sender<()>> = None;
             let next_gen = if let Some(existing) = devices.get_mut(&device_id) {
@@ -1714,14 +1726,21 @@ impl KdeConnectDaemon {
                 let _ = old_abort.send(());
             }
 
+            let existing_pair_state = devices
+                .get(&device_id)
+                .map(|d| d.view.pair_state)
+                .unwrap_or(PairState::NotPaired);
             let pair_state = if is_trusted {
                 PairState::Paired
             } else {
-                devices
-                    .get(&device_id)
-                    .map(|d| d.view.pair_state)
-                    .unwrap_or(PairState::NotPaired)
+                match existing_pair_state {
+                    // A trusted record is the source of truth. Never allow a stale
+                    // `Paired` view to survive after trust was removed.
+                    PairState::Requested | PairState::RequestedByPeer => existing_pair_state,
+                    _ => PairState::NotPaired,
+                }
             };
+            let paired_flag = Arc::new(AtomicBool::new(pair_state == PairState::Paired));
 
             let verification_key = devices
                 .get(&device_id)
@@ -1820,9 +1839,10 @@ impl KdeConnectDaemon {
                     active_mpris_player: prev_active_mpris,
                     album_art_cache: prev_art_cache,
                     album_art_in_flight: HashSet::new(),
+                    paired: Arc::clone(&paired_flag),
                 },
             );
-            next_gen
+            (next_gen, paired_flag)
         };
 
         log::info!(
@@ -1934,7 +1954,15 @@ impl KdeConnectDaemon {
                             }
                             match NetworkPacket::parse_line(raw_line.as_bytes()) {
                                 Ok(pkt) => {
-                                    self.handle_incoming_packet(&device_id, &device_name, peer_addr.ip(), &peer_cert_der, pkt).await;
+                                    self.handle_incoming_packet(
+                                        &device_id,
+                                        &device_name,
+                                        peer_addr.ip(),
+                                        &peer_cert_der,
+                                        &paired_flag,
+                                        pkt,
+                                    )
+                                    .await;
                                 }
                                 Err(e) => {
                                     log::warn!("[device] Failed to parse packet from '{}': {} | raw={}", device_name, e, raw_line.trim());
@@ -1995,9 +2023,23 @@ impl KdeConnectDaemon {
         device_name: &str,
         peer_ip: IpAddr,
         peer_cert_der: &[u8],
+        paired: &AtomicBool,
         packet: NetworkPacket,
     ) {
         if packet.packet_type == "velquo.keepalive" || packet.packet_type == "soduto.keepalive" {
+            return;
+        }
+
+        // Pairing is the only plugin allowed before trust is established. This
+        // check is lock-free because it runs for every incoming packet,
+        // including high-frequency mousepad/presenter traffic.
+        if packet.packet_type != PACKET_TYPE_PAIR && !paired.load(Ordering::Acquire) {
+            log::trace!(
+                "[packet-in] Dropping '{}' from unpaired device '{}' ({})",
+                packet.packet_type,
+                device_name,
+                device_id
+            );
             return;
         }
 
@@ -2126,6 +2168,17 @@ impl KdeConnectDaemon {
                 let dev_name = device_name.to_string();
                 let pkt_clone = packet.clone();
                 tokio::spawn(async move {
+                    // Pairing may change between packet receipt and this task;
+                    // re-check before executing any MPRIS action.
+                    if !daemon.is_device_paired(&dev_id) {
+                        log::debug!(
+                            "[mpris-host] Ignoring request from unpaired device '{}' ({})",
+                            dev_name,
+                            dev_id
+                        );
+                        return;
+                    }
+
                     if let Some(requested_art_url) = pkt_clone.get_str("albumArtUrl") {
                         let player = pkt_clone
                             .get_str("player")
@@ -2392,7 +2445,7 @@ impl KdeConnectDaemon {
                         device_name,
                         device_id
                     );
-                    entry.view.pair_state = PairState::Paired;
+                    entry.set_pair_state(PairState::Paired);
                     entry.view.verification_key = None;
                     let rec = TrustedDeviceRecord {
                         device_id: device_id.to_string(),
@@ -2425,7 +2478,7 @@ impl KdeConnectDaemon {
                         device_id,
                         vkey
                     );
-                    entry.view.pair_state = PairState::RequestedByPeer;
+                    entry.set_pair_state(PairState::RequestedByPeer);
                     entry.view.verification_key = vkey;
                     drop(devices);
                 }
@@ -2443,7 +2496,7 @@ impl KdeConnectDaemon {
                 device_name,
                 device_id
             );
-            entry.view.pair_state = PairState::NotPaired;
+            entry.set_pair_state(PairState::NotPaired);
             entry.view.verification_key = None;
             entry.view.now_playing = None;
             entry.view.notifications.clear();
@@ -2494,7 +2547,7 @@ impl KdeConnectDaemon {
 
         if let Ok(mut devices) = self.devices.lock() {
             if let Some(entry) = devices.get_mut(device_id) {
-                entry.view.pair_state = PairState::Requested;
+                entry.set_pair_state(PairState::Requested);
                 if let Some(peer_cert) = &entry.peer_cert_der {
                     entry.view.verification_key =
                         compute_verification_key(&self.host.cert_der, peer_cert, ts);
@@ -2518,7 +2571,7 @@ impl KdeConnectDaemon {
         let mut trusted_record = None;
         if let Ok(mut devices) = self.devices.lock() {
             if let Some(entry) = devices.get_mut(device_id) {
-                entry.view.pair_state = PairState::Paired;
+                entry.set_pair_state(PairState::Paired);
                 entry.view.verification_key = None;
                 if let Some(cert_der) = &entry.peer_cert_der {
                     trusted_record = Some(TrustedDeviceRecord {
@@ -3424,6 +3477,18 @@ impl KdeConnectDaemon {
         }
     }
 
+    pub fn is_device_paired(&self, device_id: &str) -> bool {
+        self.devices
+            .lock()
+            .ok()
+            .and_then(|devices| {
+                devices
+                    .get(device_id)
+                    .map(|entry| entry.paired.load(Ordering::Acquire))
+            })
+            .unwrap_or(false)
+    }
+
     pub fn is_device_presenter_allowed(&self, device_id: &str) -> bool {
         let devices = self.devices.lock().unwrap();
         devices
@@ -4046,6 +4111,15 @@ impl KdeConnectDaemon {
         peer_ip: IpAddr,
         packet: &NetworkPacket,
     ) {
+        if !self.is_device_paired(device_id) {
+            log::debug!(
+                "[mpris] Ignoring packet from unpaired device '{}' ({})",
+                device_name,
+                device_id
+            );
+            return;
+        }
+
         // 0. Handle incoming album art binary payload transfer (transferringAlbumArt: true)
         if packet.get_bool("transferringAlbumArt").unwrap_or(false) {
             let Some(port) = packet.payload_port() else {
@@ -4401,7 +4475,7 @@ impl KdeConnectDaemon {
 
         if let Ok(mut devices) = self.devices.lock() {
             let should_remove = if let Some(entry) = devices.get_mut(device_id) {
-                entry.view.pair_state = PairState::NotPaired;
+                entry.set_pair_state(PairState::NotPaired);
                 entry.view.verification_key = None;
                 entry.view.now_playing = None;
                 entry.view.battery_charge = None;
@@ -4440,6 +4514,15 @@ impl KdeConnectDaemon {
         peer_ip: IpAddr,
         packet: NetworkPacket,
     ) {
+        if !self.is_device_paired(device_id) {
+            log::debug!(
+                "[share-in] Ignoring packet from unpaired device '{}' ({})",
+                device_name,
+                device_id
+            );
+            return;
+        }
+
         // Case 1: File transfer via auxiliary TLS payload socket
         if let Some(port) = packet.payload_port() {
             let raw_filename = packet
@@ -5123,6 +5206,10 @@ impl KdeConnectDaemon {
         device_id: &str,
         path: Option<String>,
     ) -> Result<SftpBrowseResponse> {
+        if !self.is_device_paired(device_id) {
+            return Err(anyhow!("Device is not paired"));
+        }
+
         self.sftp_manager
             .browse(device_id, path, &self.config_dir, || {
                 self.send_packet_to_device(device_id, &NetworkPacket::sftp_start_browsing())
@@ -5136,6 +5223,10 @@ impl KdeConnectDaemon {
         remote_path: &str,
         file_name: &str,
     ) -> Result<String> {
+        if !self.is_device_paired(device_id) {
+            return Err(anyhow!("Device is not paired"));
+        }
+
         let clean_name = Path::new(file_name)
             .file_name()
             .and_then(|s| s.to_str())
@@ -5160,6 +5251,10 @@ impl KdeConnectDaemon {
         remote_path: &str,
         is_dir: bool,
     ) -> Result<()> {
+        if !self.is_device_paired(device_id) {
+            return Err(anyhow!("Device is not paired"));
+        }
+
         self.sftp_manager
             .delete_entry(device_id, remote_path, is_dir, &self.config_dir, || {
                 self.send_packet_to_device(device_id, &NetworkPacket::sftp_start_browsing())
