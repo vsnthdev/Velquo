@@ -1,7 +1,8 @@
 use crate::kdeconnect::daemon::*;
 use crate::kdeconnect::packet::*;
 use anyhow::{anyhow, Result};
-use std::net::Ipv4Addr;
+use rustls::pki_types::CertificateDer;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::atomic::Ordering;
 
 impl KdeConnectDaemon {
@@ -154,5 +155,77 @@ impl KdeConnectDaemon {
         for id in paired_online_ids {
             let _ = self.send_packet_to_device(&id, pkt);
         }
+    }
+    pub(super) fn payload_peer_identity(&self, device_id: &str) -> Result<(IpAddr, Vec<u8>)> {
+        let devices = self.devices.lock().unwrap();
+        let entry = devices
+            .get(device_id)
+            .ok_or_else(|| anyhow!("Device {} not found", device_id))?;
+        if !entry.paired.load(Ordering::Acquire) {
+            return Err(anyhow!("Device {} is not paired", device_id));
+        }
+        if !entry.view.reachable {
+            return Err(anyhow!("Device {} is offline", device_id));
+        }
+        let expected_ip = entry
+            .view
+            .address
+            .parse::<IpAddr>()
+            .map_err(|_| anyhow!("Device {} has no valid payload address", device_id))?;
+        let expected_cert = entry
+            .peer_cert_der
+            .clone()
+            .ok_or_else(|| anyhow!("Device {} has no pinned certificate", device_id))?;
+        Ok((expected_ip, expected_cert))
+    }
+
+    pub(super) fn verify_pinned_payload_cert(
+        device_id: &str,
+        peer_cert: Option<&CertificateDer<'_>>,
+        expected_cert_der: &[u8],
+    ) -> Result<()> {
+        let peer_cert = peer_cert.ok_or_else(|| {
+            anyhow!(
+                "Payload peer for device {} presented no TLS certificate",
+                device_id
+            )
+        })?;
+        if peer_cert.as_ref() != expected_cert_der {
+            return Err(anyhow!(
+                "Payload TLS certificate mismatch for device {}",
+                device_id
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_matching_payload_certificate() {
+        let cert = CertificateDer::from(vec![1, 2, 3, 4]);
+        assert!(
+            KdeConnectDaemon::verify_pinned_payload_cert("device", Some(&cert), &[1, 2, 3, 4])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn rejects_mismatched_payload_certificate() {
+        let cert = CertificateDer::from(vec![1, 2, 3, 4]);
+        assert!(
+            KdeConnectDaemon::verify_pinned_payload_cert("device", Some(&cert), &[4, 3, 2, 1])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_missing_payload_certificate() {
+        assert!(
+            KdeConnectDaemon::verify_pinned_payload_cert("device", None, &[1, 2, 3, 4]).is_err()
+        );
     }
 }

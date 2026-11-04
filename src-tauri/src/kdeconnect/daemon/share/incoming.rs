@@ -209,14 +209,24 @@ impl KdeConnectDaemon {
     async fn download_payload_file(
         &self,
         transfer_id: &str,
-        _device_id: &str,
+        device_id: &str,
         _device_name: &str,
         peer_ip: IpAddr,
         port: u16,
         expected_bytes: u64,
         dest_path: &Path,
     ) -> Result<PathBuf> {
-        let target = SocketAddr::new(peer_ip, port);
+        let (expected_ip, expected_cert) = self.payload_peer_identity(device_id)?;
+        if peer_ip != expected_ip {
+            return Err(anyhow!(
+                "Payload peer IP mismatch for device {} (main link {}, payload {})",
+                device_id,
+                expected_ip,
+                peer_ip
+            ));
+        }
+
+        let target = SocketAddr::new(expected_ip, port);
         log::debug!("[share-in] Connecting to payload socket at {}...", target);
         let tcp = tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(target))
             .await
@@ -233,6 +243,13 @@ impl KdeConnectDaemon {
         .await
         .context("Payload TLS handshake timed out")?
         .context("Payload TLS handshake failed")?;
+
+        let peer_cert = tls_stream
+            .get_ref()
+            .1
+            .peer_certificates()
+            .and_then(|certs| certs.first());
+        Self::verify_pinned_payload_cert(device_id, peer_cert, &expected_cert)?;
 
         log::info!(
             "[share-in] Payload TLS client connected to {}, streaming to {:?}",

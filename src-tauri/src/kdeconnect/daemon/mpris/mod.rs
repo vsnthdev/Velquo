@@ -48,7 +48,7 @@ impl KdeConnectDaemon {
             let dev_name = device_name.to_string();
             tokio::spawn(async move {
                 match daemon
-                    .download_album_art_payload(peer_ip, port, payload_size)
+                    .download_album_art_payload(&dev_id, peer_ip, port, payload_size)
                     .await
                 {
                     Ok(data_url) => {

@@ -1,6 +1,6 @@
 use crate::kdeconnect::daemon::*;
 use crate::kdeconnect::packet::current_millis;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use std::path::Path;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -9,15 +9,33 @@ use tokio::net::TcpListener;
 impl KdeConnectDaemon {
     pub(super) async fn serve_outgoing_payload(
         &self,
+        device_id: &str,
         transfer_id: &str,
         listener: &TcpListener,
         file_path: &Path,
         file_size: u64,
     ) -> Result<()> {
-        let (tcp_stream, peer_addr) =
-            tokio::time::timeout(Duration::from_secs(30), listener.accept())
-                .await
-                .context("Timed out waiting for peer to connect to payload port")??;
+        let (expected_ip, expected_cert) = self.payload_peer_identity(device_id)?;
+
+        // Accept only the paired device's IP. Other hosts on the LAN can reach
+        // the payload port, so keep waiting instead of failing the transfer.
+        let accept = async {
+            loop {
+                let (stream, addr) = listener.accept().await?;
+                if addr.ip() == expected_ip {
+                    return Ok::<_, std::io::Error>((stream, addr));
+                }
+                log::warn!(
+                    "[share-out] Ignoring payload connection from unexpected IP {} (expected {})",
+                    addr.ip(),
+                    expected_ip
+                );
+                drop(stream);
+            }
+        };
+        let (tcp_stream, peer_addr) = tokio::time::timeout(Duration::from_secs(30), accept)
+            .await
+            .context("Timed out waiting for peer to connect to payload port")??;
 
         log::info!(
             "[share-out] Peer {} connected to payload socket, starting TLS Server handshake...",
@@ -31,6 +49,14 @@ impl KdeConnectDaemon {
         .await
         .context("Payload TLS Server handshake timed out")?
         .context("Payload TLS Server handshake failed")?;
+
+        let peer_cert = tls_stream
+            .get_ref()
+            .1
+            .peer_certificates()
+            .and_then(|certs| certs.first());
+        Self::verify_pinned_payload_cert(device_id, peer_cert, &expected_cert)
+            .map_err(|e| anyhow!("Rejected payload peer for '{}': {}", device_id, e))?;
 
         log::info!(
             "[share-out] Payload TLS Server handshake succeeded with {}, streaming {} bytes...",

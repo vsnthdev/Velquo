@@ -34,6 +34,18 @@ impl KdeConnectDaemon {
             return;
         };
 
+        let (expected_ip, expected_cert) = match self.payload_peer_identity(device_id) {
+            Ok(identity) => identity,
+            Err(e) => {
+                log::warn!(
+                    "[mpris-host] Refusing album-art payload transfer to '{}': {}",
+                    device_name,
+                    e
+                );
+                return;
+            }
+        };
+
         let mut payload_listener = None;
         let mut payload_port = MIN_PAYLOAD_PORT;
         for port in MIN_PAYLOAD_PORT..=MAX_PAYLOAD_PORT {
@@ -84,34 +96,86 @@ impl KdeConnectDaemon {
             device_name
         );
 
-        if let Ok(Ok((tcp_stream, _peer_addr))) =
-            tokio::time::timeout(Duration::from_secs(10), listener.accept()).await
-        {
-            if let Ok(Ok(mut tls_stream)) =
-                tokio::time::timeout(Duration::from_secs(8), self.tls_acceptor.accept(tcp_stream))
-                    .await
-            {
-                let _ = tls_stream.write_all(&art_bytes).await;
-                let _ = tls_stream.flush().await;
-                let _ = tls_stream.shutdown().await;
-                log::info!(
-                    "[mpris-host] Finished streaming Mac album art ({} bytes) to '{}'",
-                    art_bytes.len(),
-                    device_name
+        let accept = async {
+            loop {
+                let (stream, addr) = listener.accept().await?;
+                if addr.ip() == expected_ip {
+                    return Ok::<_, std::io::Error>((stream, addr));
+                }
+                log::warn!(
+                    "[mpris-host] Ignoring album-art payload connection from unexpected IP {} (expected {})",
+                    addr.ip(),
+                    expected_ip
                 );
+                drop(stream);
             }
+        };
+
+        let Ok(Ok((tcp_stream, peer_addr))) =
+            tokio::time::timeout(Duration::from_secs(10), accept).await
+        else {
+            log::warn!(
+                "[mpris-host] Timed out waiting for '{}' to connect to album-art payload port",
+                device_name
+            );
+            return;
+        };
+
+        let Ok(Ok(mut tls_stream)) =
+            tokio::time::timeout(Duration::from_secs(8), self.tls_acceptor.accept(tcp_stream))
+                .await
+        else {
+            log::warn!(
+                "[mpris-host] Album-art payload TLS handshake failed with {}",
+                peer_addr
+            );
+            return;
+        };
+
+        let peer_cert = tls_stream
+            .get_ref()
+            .1
+            .peer_certificates()
+            .and_then(|certs| certs.first());
+        if let Err(e) = Self::verify_pinned_payload_cert(device_id, peer_cert, &expected_cert) {
+            log::warn!(
+                "[mpris-host] Rejected album-art payload peer for '{}': {}",
+                device_name,
+                e
+            );
+            return;
         }
+
+        let _ = tls_stream.write_all(&art_bytes).await;
+        let _ = tls_stream.flush().await;
+        let _ = tls_stream.shutdown().await;
+        log::info!(
+            "[mpris-host] Finished streaming Mac album art ({} bytes) to '{}'",
+            art_bytes.len(),
+            device_name
+        );
     }
 
     /// Reads the host MacBook's battery percentage (0..=100) and charging status directly via `IOKit.framework` (`IOPSCopyPowerSourcesInfo`).
     #[cfg(target_os = "macos")]
     pub(super) async fn download_album_art_payload(
         &self,
+        device_id: &str,
         peer_ip: IpAddr,
         port: u16,
         expected_bytes: usize,
     ) -> Result<String> {
-        let target = SocketAddr::new(peer_ip, port);
+        let (expected_ip, expected_cert) = self.payload_peer_identity(device_id)?;
+        if peer_ip != expected_ip {
+            return Err(anyhow!(
+                "Album-art payload peer IP mismatch for device {} (main link {}, payload {})",
+                device_id,
+                expected_ip,
+                peer_ip
+            ));
+        }
+
+        let target = SocketAddr::new(expected_ip, port);
         let tcp = tokio::time::timeout(Duration::from_secs(8), TcpStream::connect(target))
             .await
             .context("Album art TCP connection timed out")?
@@ -127,6 +191,13 @@ impl KdeConnectDaemon {
         .await
         .context("Album art TLS handshake timed out")?
         .context("Album art TLS handshake failed")?;
+
+        let peer_cert = tls_stream
+            .get_ref()
+            .1
+            .peer_certificates()
+            .and_then(|certs| certs.first());
+        Self::verify_pinned_payload_cert(device_id, peer_cert, &expected_cert)?;
 
         let mut bytes = Vec::with_capacity(expected_bytes.min(5 * 1024 * 1024));
         let mut buf = [0u8; 16 * 1024];

@@ -219,7 +219,7 @@ impl KdeConnectDaemon {
                 }
 
                 match daemon
-                    .serve_outgoing_payload(&tid, &listener, &path_buf, file_size)
+                    .serve_outgoing_payload(&dev_id, &tid, &listener, &path_buf, file_size)
                     .await
                 {
                     Ok(()) => {

@@ -735,7 +735,7 @@ fn render_svg_rgba(svg: &str, size: u32) -> Option<Vec<u8>> {
 
     // Convert tiny-skia premultiplied RGBA pixels into straight RGBA for tauri::image::Image
     let mut rgba = pixmap.take();
-    for px in rgba.chunks_exact_mut(4) {
+    for px in rgba.as_chunks_mut::<4>().0 {
         let a = px[3];
         if a > 0 && a < 255 {
             let af = a as f32 / 255.0;

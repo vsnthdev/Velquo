@@ -10,7 +10,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       Unpaired TLS peers can trigger `share.request` (URL auto-open, file/text write), `ping`, `findmyphone.request`, `mpris`/`mpris.request`, and `sftp`. The TLS verifier accepts any self-signed cert (`tls.rs:39–52`, `102–111`).  
       Fix: reject every packet except `kdeconnect.pair` unless `view.pair_state == PairState::Paired`; add the same check inside `handle_share_request`, `handle_mpris_packet`, `handle_incoming_mpris_request`, and SFTP commands.
 
-- [ ] **Pin payload TLS peers to the paired certificate**  
+- [x] **Pin payload TLS peers to the paired certificate** — Implemented for outgoing files, incoming files, outgoing album art, and incoming album art using peer IP checks plus pinned certificate verification.
       Outgoing file/art listeners bind `0.0.0.0` and accept any TLS client: `daemon.rs:4804–4822`, `4955–4978`, `3741–3793`.  
       Incoming payload clients accept any server cert: `daemon.rs:4641–4647`, `4358–4364`; verifier at `tls.rs:39–52`.  
       Fix: after every payload handshake, compare `peer_certificates()` against `DeviceEntry.peer_cert_der`; bind outgoing listeners to the peer IP instead of `Ipv4Addr::UNSPECIFIED`.
