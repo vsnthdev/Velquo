@@ -716,7 +716,10 @@ async fn open_file_browser_window(
         return Ok(());
     }
 
-    let url = format!("index.html?window=file-browser&deviceId={}", device_id);
+    let url = format!(
+        "index.html?window=file-browser&deviceId={}",
+        urlencoding::encode(&device_id)
+    );
     let builder =
         tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(url.into()))
             .title(format!("{} — Files", device_name))

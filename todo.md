@@ -89,7 +89,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 
 - [ ] Catch unhandled `invoke()` rejections in pairing buttons, toggles, and run-command removal (`App.tsx:484–616`, `DeviceControlView.tsx:141–201`, `DeviceSettingsView.tsx:490`).
 - [ ] Guard `handleSeekClick` against `rect.width == 0` (`DeviceControlView.tsx:380–385`).
-- [ ] URL-encode `device_id` in the file-browser query (`lib.rs:663`).
+- [x] URL-encode `device_id` in the file-browser query — The file-browser window URL now percent-encodes the device ID; the frontend `URLSearchParams` decodes it automatically.
 - [ ] Reject/ignore IPv6 in `probe_device_ip` or use a matching socket (`daemon.rs:1195–1209`).
 - [x] Remove unused helpers — Removed `is_macos_audio_output_running`, the unused `share_text` / `share_request_update` constructors, `has_online_paired_device` / `broadcast_to_paired_devices`, and `velquo_mr_get` / `velquo_mr_control`.
 - [x] Remove or handle advertised-but-unhandled `PACKET_TYPE_MOUSEPAD_ECHO` — Removed the unused echo constant and stopped advertising it in both capability lists. Velquo never requests mousepad acknowledgements, so no compliant peer should send it.

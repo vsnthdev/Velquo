@@ -84,6 +84,7 @@ objc2-foundation = { version = "0.3", features = [
 ] }
 objc2-user-notifications = "0.3.2"
 block2 = "0.6"
+urlencoding = "2"
 
 [profile.release]
 strip = "none"
