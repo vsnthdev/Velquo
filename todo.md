@@ -47,7 +47,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       `sftp_browse/download/delete` (`lib.rs:411–481`, `daemon.rs:5121–5168`) do not check pair state.  
       Fix: clear the SFTP manager, close the matching window, and enforce pairing in SFTP commands.
 
-- [ ] **Handle pair requests from already-paired devices correctly**  
+- [x] **Handle pair requests from already-paired devices correctly** — Implemented a dedicated `PairState::Paired` arm: redundant `pair: true` requests are re-acknowledged, the device stays paired and reachable, no verification prompt is shown, and telemetry is refreshed.
       `handle_pair_packet` treats `PairState::Paired` like `NotPaired` and sets `RequestedByPeer` (`daemon.rs:2419–2431`), removing the device from `pairedDevices` in `App.tsx:273`.  
       Fix: separate the `Paired` arm and re-acknowledge/ignore redundant pair requests without changing state.
 

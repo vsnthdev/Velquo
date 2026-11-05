@@ -58,7 +58,22 @@ impl KdeConnectDaemon {
                     self.save_trusted_devices();
                     self.request_device_telemetry(device_id);
                 }
-                PairState::NotPaired | PairState::Paired => {
+                PairState::Paired => {
+                    // The device is already trusted and connected. Re-acknowledge the
+                    // redundant request so the peer can recover if it lost its local
+                    // pairing state, but never downgrade the local trust state.
+                    log::info!(
+                        "[pair] Redundant pairing request from already-paired device '{}' ({}); re-acknowledging",
+                        device_name,
+                        device_id
+                    );
+                    entry.view.reachable = true;
+                    entry.view.verification_key = None;
+                    drop(devices);
+                    let _ = self.send_packet_to_device(device_id, &NetworkPacket::pair_accept());
+                    self.request_device_telemetry(device_id);
+                }
+                PairState::NotPaired => {
                     let vkey =
                         compute_verification_key(&self.host.cert_der, peer_cert_der, timestamp);
                     log::info!(
