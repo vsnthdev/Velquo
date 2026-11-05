@@ -100,12 +100,13 @@ impl KdeConnectDaemon {
                         if let Ok(mut devices) = daemon.devices.lock() {
                             if let Some(entry) = devices.get_mut(&dev_id) {
                                 entry.album_art_in_flight.remove(&album_art_url);
-                                // Clear any retained artwork for the failed URL so the UI can
-                                // fall back instead of showing stale art indefinitely.
+                                // Clear the failed URL and any retained artwork so the UI can
+                                // stop waiting for native art and fall back immediately.
                                 for p_info in entry.mpris_players.values_mut() {
                                     if p_info.album_art_url.as_deref()
                                         == Some(album_art_url.as_str())
                                     {
+                                        p_info.album_art_url = None;
                                         p_info.album_art_data = None;
                                     }
                                 }

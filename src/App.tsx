@@ -22,6 +22,10 @@ import {
     type MouseEvent,
 } from "react";
 
+// How long a previous cover may stay visible while the phone is uploading native
+// artwork for the current track. This mirrors the backend album-art request timeout.
+const NATIVE_ART_WAIT_MS = 5000;
+
 export default function App() {
     const [devices, setDevices] = useState<DeviceView[]>([]);
     const [transfers, setTransfers] = useState<TransferItem[]>([]);
@@ -40,6 +44,7 @@ export default function App() {
         deviceId: string;
         src: string;
     } | null>(null);
+    const [nativeArtPending, setNativeArtPending] = useState<boolean>(false);
     const [ignoreWhatsappConversations, setIgnoreWhatsappConversations] =
         useState<boolean>(true);
     const [rightPaneEl, setRightPaneEl] = useState<HTMLDivElement | null>(null);
@@ -385,6 +390,7 @@ export default function App() {
 
     const nowPlaying = selectedDevice?.nowPlaying ?? null;
     const nativeArtData = nowPlaying?.albumArtData ?? null;
+    const nativeArtUrl = nowPlaying?.albumArtUrl ?? null;
     const trackTitle = nowPlaying?.title ?? "";
     const trackArtist = nowPlaying?.artist ?? "";
     const trackAlbum = nowPlaying?.album ?? "";
@@ -392,8 +398,25 @@ export default function App() {
     const fallbackArtKey = `${selectedDeviceId}|${trackArtist}|${trackTitle}|${trackAlbum}`;
     const fallbackArtworkUrl =
         fallbackArtwork?.key == fallbackArtKey ? fallbackArtwork.url : null;
+    const fallbackArtworkSettled = fallbackArtwork?.key == fallbackArtKey;
     const retainedArtworkSrc =
         retainedArtwork?.deviceId == selectedDeviceId ? retainedArtwork.src : null;
+
+    // Bound the native artwork wait so a phone that silently ignores the album-art
+    // request cannot keep the previous track's cover on screen indefinitely.
+    useEffect(() => {
+        if (!nativeArtUrl || nativeArtData) {
+            setNativeArtPending(false);
+            return;
+        }
+
+        setNativeArtPending(true);
+        const timer = setTimeout(
+            () => setNativeArtPending(false),
+            NATIVE_ART_WAIT_MS,
+        );
+        return () => clearTimeout(timer);
+    }, [nativeArtData, nativeArtUrl]);
 
     // Fallback to iTunes Search API if KDE Connect hasn't provided native album art
     useEffect(() => {
@@ -424,14 +447,30 @@ export default function App() {
                     .filter(Boolean)
                     .join(" ")
                     .trim();
-                if (!searchTerm) return;
+                if (!searchTerm) {
+                    if (!cancelled) {
+                        setFallbackArtwork({
+                            url: null,
+                            key: fallbackArtKey,
+                        });
+                    }
+                    return;
+                }
 
                 const resp = await fetch(
                     `https://itunes.apple.com/search?term=${encodeURIComponent(
                         searchTerm,
                     )}&entity=song&limit=1`,
                 );
-                if (!resp.ok) return;
+                if (!resp.ok) {
+                    if (!cancelled) {
+                        setFallbackArtwork({
+                            url: null,
+                            key: fallbackArtKey,
+                        });
+                    }
+                    return;
+                }
                 const data = await resp.json();
                 const rawUrl: string | undefined = data?.results?.[0]?.artworkUrl100;
                 const hiResUrl = rawUrl
@@ -443,7 +482,11 @@ export default function App() {
                     setFallbackArtwork({ url: hiResUrl, key: fallbackArtKey });
                 }
             } catch {
-                // Ignore network errors on fallback lookup
+                // A failed lookup must still settle the current track so stale retained
+                // artwork is cleared instead of sticking forever.
+                if (!cancelled) {
+                    setFallbackArtwork({ url: null, key: fallbackArtKey });
+                }
             }
         }, 550);
 
@@ -453,18 +496,33 @@ export default function App() {
         };
     }, [nativeArtData, trackTitle, trackArtist, trackAlbum, fallbackArtKey]);
 
-    // Retain the last non-null artwork for the selected device so a track change does not
-    // blank the artwork while the phone uploads the next payload.
+    // Retain the last non-null artwork for the selected device only while the current
+    // track's artwork is still resolving. If resolution settles without artwork, the
+    // cover must be dropped instead of sticking to the previous track forever.
     useEffect(() => {
         const nextArtwork = nativeArtData || fallbackArtworkUrl;
         if (nextArtwork) {
             setRetainedArtwork({ src: nextArtwork, deviceId: selectedDeviceId });
-        } else if (!trackTitle) {
-            setRetainedArtwork(null);
+            return;
         }
+
+        if (!trackTitle) {
+            setRetainedArtwork(null);
+            return;
+        }
+
+        // Artwork is still resolving for this track: the iTunes fallback has not settled,
+        // or the phone may still be uploading the native payload.
+        if (!fallbackArtworkSettled || nativeArtPending) return;
+
+        // Everything settled without artwork, so drop the previous cover and let the
+        // music notes placeholder show instead of keeping a stale album cover forever.
+        setRetainedArtwork(null);
     }, [
         nativeArtData,
         fallbackArtworkUrl,
+        fallbackArtworkSettled,
+        nativeArtPending,
         trackTitle,
         selectedDeviceId,
     ]);

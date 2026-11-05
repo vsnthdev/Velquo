@@ -140,11 +140,10 @@ pub(super) fn handle_player_metadata_update(
         } else {
             prev_player.as_ref().and_then(|p| p.album_art_url.clone())
         };
-        // Keep the previous artwork visible while a new payload is in flight. Replacing it
-        // with `None` makes the UI drop to a placeholder/fallback for a moment on every
-        // track change. An explicitly empty URL still clears the art so the iTunes
-        // fallback can take over.
-        let previous_album_art_data = prev_player.as_ref().and_then(|p| p.album_art_data.clone());
+        // Only expose artwork that actually belongs to the current `album_art_url`.
+        // Retaining the previous track's cover here would make the UI treat it as native
+        // artwork for the new track (skipping the iTunes fallback), and if the phone never
+        // answers `mpris_request_album_art` the stale cover would stay stuck forever.
         let album_art_data = if let Some(ref url) = album_art_url {
             if let Some(cached) = entry.album_art_cache.get(url) {
                 Some(cached.clone())
@@ -163,7 +162,14 @@ pub(super) fn handle_player_metadata_update(
                     .album_art_in_flight
                     .retain(|_, requested_at| is_album_art_request_fresh(Some(requested_at), now));
 
-                previous_album_art_data
+                let same_art_url = prev_player
+                    .as_ref()
+                    .is_some_and(|p| p.album_art_url.as_deref() == Some(url.as_str()));
+                if same_art_url {
+                    prev_player.as_ref().and_then(|p| p.album_art_data.clone())
+                } else {
+                    None
+                }
             }
         } else {
             None
@@ -261,10 +267,18 @@ pub(super) fn handle_player_metadata_update(
                 e
             );
             // Do not leave the URL marked as in-flight: the next metadata update should
-            // be able to retry immediately.
+            // be able to retry immediately. Also clear the failed URL and any retained
+            // artwork so the UI stops waiting for native art and falls back right away.
             if let Ok(mut devices) = daemon.devices.lock() {
                 if let Some(entry) = devices.get_mut(device_id) {
                     entry.album_art_in_flight.remove(&req_url);
+                    for p_info in entry.mpris_players.values_mut() {
+                        if p_info.album_art_url.as_deref() == Some(req_url.as_str()) {
+                            p_info.album_art_url = None;
+                            p_info.album_art_data = None;
+                        }
+                    }
+                    KdeConnectDaemon::recompute_active_mpris(entry);
                 }
             }
         }
