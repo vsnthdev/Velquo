@@ -1,5 +1,7 @@
 use crate::kdeconnect::packet::{NetworkPacket, PACKET_TYPE_MPRIS};
 use base64::Engine;
+use objc2::runtime::AnyObject;
+use objc2_foundation::{NSDictionary, NSNumber, NSString};
 use serde::Deserialize;
 use serde_json::{json, Map};
 use sha2::{Digest, Sha256};
@@ -15,8 +17,6 @@ use std::time::{Duration, Instant};
 use tokio::sync::Notify;
 
 pub const DEFAULT_MAC_PLAYER: &str = "macOS Media";
-pub const PLAYER_SPOTIFY: &str = "Spotify";
-pub const PLAYER_APPLE_MUSIC: &str = "Music";
 
 // MediaRemote command IDs (from MediaRemote.framework)
 const MR_CMD_PLAY: i32 = 0;
@@ -1007,7 +1007,7 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
                 s.is_playing = target;
             }
         }
-        execute_mac_player_action(player, action);
+        execute_mac_player_action(action);
         if matches!(action, "Next" | "Previous") {
             std::thread::sleep(std::time::Duration::from_millis(180));
             pre_action_snap = query_mac_player_status(player);
@@ -1023,7 +1023,7 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
             player
         );
         let clamped_pos = pos_ms.max(0);
-        set_mac_player_position_ms(player, clamped_pos);
+        set_mac_player_position_ms(clamped_pos);
         if let Some(ref mut s) = pre_action_snap {
             s.position_ms = clamped_pos;
         }
@@ -1037,7 +1037,7 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
             offset_us,
             player
         );
-        seek_mac_player_offset_us(player, offset_us);
+        seek_mac_player_offset_us(offset_us);
         if let Some(ref mut s) = pre_action_snap {
             s.position_ms = (s.position_ms + (offset_us / 1000)).clamp(0, s.length_ms.max(0));
         }
@@ -1075,7 +1075,7 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
     responses
 }
 
-fn execute_mac_player_action(player: &str, action: &str) {
+fn execute_mac_player_action(action: &str) {
     // 1. Send directly to Control Center's active Now Playing app via MediaRemote
     let mr_cmd = match action {
         "Play" => Some(MR_CMD_PLAY),
@@ -1093,22 +1093,7 @@ fn execute_mac_player_action(player: &str, action: &str) {
         }
     }
 
-    // 2. Fallback to AppleScript if specifically targeting Spotify / Music
-    if player == PLAYER_SPOTIFY || player == PLAYER_APPLE_MUSIC {
-        let apple_cmd = match action {
-            "PlayPause" => "playpause",
-            "Play" => "play",
-            "Pause" | "Stop" => "pause",
-            "Next" => "next track",
-            "Previous" => "previous track",
-            _ => return,
-        };
-        let script = format!(r#"tell application "{}" to {}"#, player, apple_cmd);
-        let _ = run_osascript(&script);
-        return;
-    }
-
-    // 3. Hardware media key fallback
+    // 2. Hardware media key fallback
     let media_key = match action {
         "PlayPause" | "Play" | "Pause" | "Stop" => Some(NX_KEYTYPE_PLAY),
         "Next" => Some(NX_KEYTYPE_NEXT),
@@ -1121,22 +1106,11 @@ fn execute_mac_player_action(player: &str, action: &str) {
     }
 }
 
-fn set_mac_player_position_ms(player: &str, pos_ms: i64) {
-    if send_control_center_mr_command(None, Some(pos_ms.max(0))) {
-        return;
-    }
-
-    let secs = (pos_ms as f64) / 1000.0;
-    if player == PLAYER_SPOTIFY || player == PLAYER_APPLE_MUSIC {
-        let script = format!(
-            r#"tell application "{}" to set player position to {:.3}"#,
-            player, secs
-        );
-        let _ = run_osascript(&script);
-    }
+fn set_mac_player_position_ms(pos_ms: i64) {
+    let _ = send_control_center_mr_command(None, Some(pos_ms.max(0)));
 }
 
-fn seek_mac_player_offset_us(player: &str, offset_us: i64) {
+fn seek_mac_player_offset_us(offset_us: i64) {
     if let Some(cc) = query_control_center_now_playing(false) {
         let target_ms = (cc.position_ms + (offset_us / 1000)).clamp(0, cc.duration_ms.max(0));
         if send_control_center_mr_command(None, Some(target_ms)) {
@@ -1144,14 +1118,7 @@ fn seek_mac_player_offset_us(player: &str, offset_us: i64) {
         }
     }
 
-    let offset_secs = (offset_us as f64) / 1_000_000.0;
-    if player == PLAYER_SPOTIFY || player == PLAYER_APPLE_MUSIC {
-        let script = format!(
-            r#"tell application "{}" to set player position to ((player position) + ({:.3}))"#,
-            player, offset_secs
-        );
-        let _ = run_osascript(&script);
-    } else if offset_us > 0 {
+    if offset_us > 0 {
         send_macos_media_key(NX_KEYTYPE_FAST);
     } else if offset_us < 0 {
         send_macos_media_key(NX_KEYTYPE_REWIND);
@@ -1365,15 +1332,16 @@ extern "C" {
 fn send_macos_media_key(key: i32) {
     unsafe {
         if !CHECKED_AX_TRUST.swap(true, Ordering::SeqCst) {
-            let trusted = AXIsProcessTrustedWithOptions(std::ptr::null());
+            let prompt_key = NSString::from_str("AXTrustedCheckOptionPrompt");
+            let prompt_value = NSNumber::new_bool(true);
+            let value_obj: &AnyObject = &prompt_value;
+            let options = NSDictionary::from_slices(&[&*prompt_key], &[value_obj]);
+            let options_ptr = &*options as *const _ as *const c_void;
+            let trusted = AXIsProcessTrustedWithOptions(options_ptr);
             if !trusted {
                 log::warn!(
-                    "[mpris-host] Accessibility permission not yet granted to Velquo; prompting user via System Settings if needed"
+                    "[mpris-host] Accessibility permission not yet granted to Velquo; prompted user via the macOS Accessibility settings dialog"
                 );
-                let _ = Command::new("/usr/bin/osascript")
-                    .arg("-e")
-                    .arg(r#"tell application "System Events" to key code 0 using {}"#)
-                    .output();
             }
         }
 

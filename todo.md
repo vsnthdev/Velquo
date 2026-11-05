@@ -59,9 +59,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 
 - [x] **Show update-check failures as errors, not “up to date”** — Added a dedicated `loadError` state. Failed checks now show a “Could not check for updates” screen with the error and a retry button, while a successful check with no update still shows “You have the latest version.”
 
-- [ ] **Add `NSAppleEventsUsageDescription`**  
-      `Info.plist:4–24` lacks it, but `macos_media.rs` runs `osascript` for Spotify/Music/System Events (`918`, `1066`, `1326`, `1351`, `1370`, `1461`, `1498`, `1649`).  
-      Fix: add the key/description and verify the Automation prompt on a clean machine.
+- [x] ~~**Add `NSAppleEventsUsageDescription`**~~ — **Cancelled**: all Spotify/Music AppleScript fallbacks and the System Events prompt were removed. Remaining `osascript` calls use only Standard Additions for system volume and do not send Apple Events to another application. Accessibility prompting now uses `AXIsProcessTrustedWithOptions` directly.
 
 ## Medium
 
