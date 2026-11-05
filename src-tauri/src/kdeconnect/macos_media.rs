@@ -39,7 +39,6 @@ struct CachedAlbumArt {
     track_key: String,
     album_art_url: String,
     bytes: Vec<u8>,
-    itunes_checked: bool,
 }
 
 static ALBUM_ART_CACHE: OnceLock<Mutex<HashMap<String, Vec<u8>>>> = OnceLock::new();
@@ -63,7 +62,6 @@ struct PausedMediaTarget {
     bundle_id: String,
     title: String,
     artist: String,
-    observed_paused: bool,
     paused_at: Instant,
 }
 
@@ -148,7 +146,6 @@ fn on_control_center_state_emitted(cc_opt: Option<&ControlCenterNowPlaying>) {
         }
 
         if !cc.is_playing {
-            target.observed_paused = true;
             target.title = cc.title.clone();
             target.artist = cc.artist.clone();
             true
@@ -593,14 +590,12 @@ fn spawn_itunes_hires_upgrade(track_key: String, title: String, artist: String) 
                     );
                     cached.album_art_url = hires_url;
                     cached.bytes = hires_bytes;
-                    cached.itunes_checked = true;
                 }
             } else {
                 *last_guard = Some(CachedAlbumArt {
                     track_key,
                     album_art_url: hires_url,
                     bytes: hires_bytes,
-                    itunes_checked: true,
                 });
             }
         }
@@ -680,7 +675,6 @@ fn resolve_and_cache_artwork_for_cc(cc: &ControlCenterNowPlaying) -> String {
             track_key: track_key.clone(),
             album_art_url: initial_url.clone(),
             bytes: initial_bytes,
-            itunes_checked: false,
         });
     }
 
@@ -842,7 +836,6 @@ pub fn pause_mac_media_for_call() -> Vec<String> {
             bundle_id: cc.bundle_id.clone(),
             title: cc.title.clone(),
             artist: cc.artist.clone(),
-            observed_paused: false,
             paused_at: Instant::now(),
         }];
     }
@@ -1364,62 +1357,6 @@ extern "C" {
     fn objc_msgSend();
     fn CGEventPost(tap: u32, event: *mut c_void);
     fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
-}
-
-/// Checks via macOS `CoreAudio.framework` (`kAudioDevicePropertyDeviceIsRunningSomewhere`)
-/// whether the default output audio device is actively rendering audio from any application.
-#[cfg(target_os = "macos")]
-pub fn is_macos_audio_output_running() -> bool {
-    const K_AUDIO_OBJECT_SYSTEM_OBJECT: u32 = 1;
-    const K_AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE: u32 = u32::from_be_bytes(*b"dOut");
-    const K_AUDIO_DEVICE_PROPERTY_DEVICE_IS_RUNNING_SOMEWHERE: u32 = u32::from_be_bytes(*b"gone");
-    const K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL: u32 = u32::from_be_bytes(*b"glob");
-    const K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN: u32 = 0;
-
-    unsafe {
-        let mut default_device_id: u32 = 0;
-        let mut data_size = std::mem::size_of::<u32>() as u32;
-        let default_dev_addr = AudioObjectPropertyAddress {
-            m_selector: K_AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE,
-            m_scope: K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL,
-            m_element: K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN,
-        };
-
-        let status = AudioObjectGetPropertyData(
-            K_AUDIO_OBJECT_SYSTEM_OBJECT,
-            &default_dev_addr,
-            0,
-            std::ptr::null(),
-            &mut data_size,
-            &mut default_device_id as *mut u32 as *mut c_void,
-        );
-        if status != 0 || default_device_id == 0 {
-            return false;
-        }
-
-        let mut is_running: u32 = 0;
-        let mut running_size = std::mem::size_of::<u32>() as u32;
-        let running_addr = AudioObjectPropertyAddress {
-            m_selector: K_AUDIO_DEVICE_PROPERTY_DEVICE_IS_RUNNING_SOMEWHERE,
-            m_scope: K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL,
-            m_element: K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN,
-        };
-
-        let run_status = AudioObjectGetPropertyData(
-            default_device_id,
-            &running_addr,
-            0,
-            std::ptr::null(),
-            &mut running_size,
-            &mut is_running as *mut u32 as *mut c_void,
-        );
-        run_status == 0 && is_running != 0
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn is_macos_audio_output_running() -> bool {
-    false
 }
 
 /// Posts a system-wide macOS media key event (`NX_SUBTYPE_AUX_CONTROL_BUTTONS`) via `NSEvent` + `CGEventPost`,

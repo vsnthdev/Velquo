@@ -87,9 +87,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       `update-version.ts:123–137` falls back to the previous `latest.json` signature while publishing a new archive, causing update verification failure.  
       Fix: `process.exit(1)` if the fresh `.sig` is absent.
 
-- [ ] **Fix remote-input dialog controlled state**  
-      `DeviceControlView.tsx:1020–1029` has no `onOpenChange` and ignores pair state.  
-      Fix: add `onOpenChange={setIsRemoteInputOpen}` and require `pairState == "Paired"`.
+- [x] ~~**Fix remote-input dialog controlled state**~~ — **Cancelled**: omitting `onOpenChange` is intentional. The dialog must capture Escape and outside interactions for the Android device, and only the explicit X button should close it. The observed auto-dismiss is a separate issue caused by `open` depending on `device.reachable`, which closes the dialog when the device briefly disconnects.
 
 - [ ] **Remove or wire up the dead in-device pairing banner**  
       `App.tsx:273`, `278–283` only select paired devices, so the banner in `DeviceControlView.tsx:458–540` is unreachable.  
@@ -105,9 +103,9 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 - [ ] Guard `handleSeekClick` against `rect.width == 0` (`DeviceControlView.tsx:380–385`).
 - [ ] URL-encode `device_id` in the file-browser query (`lib.rs:663`).
 - [ ] Reject/ignore IPv6 in `probe_device_ip` or use a matching socket (`daemon.rs:1195–1209`).
-- [ ] Remove unused helpers: `is_macos_audio_output_running` (`macos_media.rs:1585`, `1634`), `share_text` / `share_request_update` (`packet.rs:373–390`), `has_online_paired_device` / `broadcast_to_paired_devices` (`daemon.rs:3659–3678`), `velquo_mr_get` / `velquo_mr_control` (`velquo_mr_bridge.m:224–264`).
+- [x] Remove unused helpers — Removed `is_macos_audio_output_running`, the unused `share_text` / `share_request_update` constructors, `has_online_paired_device` / `broadcast_to_paired_devices`, and `velquo_mr_get` / `velquo_mr_control`.
 - [ ] Remove or handle advertised-but-unhandled `PACKET_TYPE_MOUSEPAD_ECHO` (`packet.rs:23`, `86`).
-- [ ] Remove unread fields `CachedAlbumArt.itunes_checked` (`macos_media.rs:651`, `658`, `738`) and `observed_paused` (`175`).
+- [x] Remove unread fields — Removed `CachedAlbumArt.itunes_checked` and `PausedMediaTarget.observed_paused`.
 - [ ] Populate or remove `DeviceView.storage_free_gb`, currently always `None` (`daemon.rs:145`, `335`, `1803`).
 - [ ] **Set a real CSP** instead of `"csp": null` (`tauri.conf.json:34–36`), allowing Tauri, Google Fonts, iTunes, and GitHub as needed.
 - [ ] **Remove the fragile AppKit ivar mirror** in `mark_menu_icons_as_template` (`lib.rs:824–882`) or add version/layout guards; it is undefined behavior if AppKit changes.

@@ -136,26 +136,6 @@ impl KdeConnectDaemon {
         })
     }
 
-    pub fn has_online_paired_device(&self) -> bool {
-        let devices = self.devices.lock().unwrap();
-        devices
-            .values()
-            .any(|d| d.view.reachable && d.view.pair_state == PairState::Paired)
-    }
-
-    pub fn broadcast_to_paired_devices(&self, pkt: &NetworkPacket) {
-        let paired_online_ids: Vec<String> = {
-            let devices = self.devices.lock().unwrap();
-            devices
-                .values()
-                .filter(|d| d.view.reachable && d.view.pair_state == PairState::Paired)
-                .map(|d| d.view.device_id.clone())
-                .collect()
-        };
-        for id in paired_online_ids {
-            let _ = self.send_packet_to_device(&id, pkt);
-        }
-    }
     pub(super) fn payload_peer_identity(&self, device_id: &str) -> Result<(IpAddr, Vec<u8>)> {
         let devices = self.devices.lock().unwrap();
         let entry = devices

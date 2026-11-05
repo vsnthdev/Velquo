@@ -13,7 +13,6 @@
 
 typedef bool (*MRMediaRemoteSendCommand_t)(int command, id userInfo);
 typedef void (*MRMediaRemoteSetElapsedTime_t)(double elapsedTime);
-typedef void (*MRMediaRemoteGetNowPlayingApplicationPID_t)(dispatch_queue_t queue, void (^completion)(int pid));
 typedef void (*MRMediaRemoteRegisterForNowPlayingNotifications_t)(dispatch_queue_t queue);
 
 static void *load_mediaremote(void) {
@@ -218,48 +217,6 @@ static void velquo_mr_emit_state(BOOL forceArtwork) {
             printf("null\n");
         }
         fflush(stdout);
-    }
-}
-
-void velquo_mr_get(void) {
-    velquo_mr_emit_state(NO);
-}
-
-void velquo_mr_control(void) {
-    @autoreleasepool {
-        void *handle = load_mediaremote();
-        if (!handle) return;
-
-        const char *cmdEnv = getenv("VELQUO_MR_COMMAND");
-        const char *seekMsEnv = getenv("VELQUO_MR_SEEK_MS");
-
-        dispatch_queue_t q = dispatch_queue_create("dev.vsnth.velquo.mr.ctrl", DISPATCH_QUEUE_SERIAL);
-
-        if (cmdEnv && strlen(cmdEnv) > 0) {
-            int cmdId = atoi(cmdEnv);
-            MRMediaRemoteSendCommand_t sendCmd = (MRMediaRemoteSendCommand_t)dlsym(handle, "MRMediaRemoteSendCommand");
-            if (sendCmd) {
-                sendCmd(cmdId, nil);
-            }
-        }
-
-        if (seekMsEnv && strlen(seekMsEnv) > 0) {
-            double posSec = atof(seekMsEnv) / 1000.0;
-            if (posSec < 0.0) posSec = 0.0;
-            MRMediaRemoteSetElapsedTime_t setElapsed = (MRMediaRemoteSetElapsedTime_t)dlsym(handle, "MRMediaRemoteSetElapsedTime");
-            if (setElapsed) {
-                setElapsed(posSec);
-            }
-        }
-
-        MRMediaRemoteGetNowPlayingApplicationPID_t getPid = (MRMediaRemoteGetNowPlayingApplicationPID_t)dlsym(handle, "MRMediaRemoteGetNowPlayingApplicationPID");
-        if (getPid) {
-            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-            getPid(q, ^(int pid) {
-                dispatch_semaphore_signal(sem);
-            });
-            dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 500 * NSEC_PER_MSEC));
-        }
     }
 }
 
