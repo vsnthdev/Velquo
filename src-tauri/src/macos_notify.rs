@@ -1,17 +1,27 @@
-#![allow(deprecated)]
-
 use crate::kdeconnect::daemon::KdeConnectDaemon;
 use crate::open_main_window;
+use block2::RcBlock;
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, NSObjectProtocol, ProtocolObject};
-use objc2::{define_class, msg_send, sel, AllocAnyThread, MainThreadOnly};
+use objc2::runtime::{AnyObject, Bool, NSObjectProtocol, ProtocolObject};
+use objc2::{define_class, msg_send, AllocAnyThread, MainThreadOnly};
 use objc2_app_kit::{NSApplication, NSImage};
 use objc2_foundation::{
-    MainThreadMarker, NSData, NSDictionary, NSNumber, NSObject, NSString, NSUserNotification,
-    NSUserNotificationActivationType, NSUserNotificationCenter, NSUserNotificationCenterDelegate,
+    MainThreadMarker, NSArray, NSData, NSDictionary, NSError, NSObject, NSSet, NSString,
 };
-use std::sync::{Arc, OnceLock};
-use tauri::{AppHandle, Emitter};
+use objc2_user_notifications::{
+    UNAuthorizationOptions, UNMutableNotificationContent, UNNotification, UNNotificationAction,
+    UNNotificationActionOptions, UNNotificationCategory, UNNotificationCategoryOptions,
+    UNNotificationDefaultActionIdentifier, UNNotificationPresentationOptions,
+    UNNotificationRequest, UNNotificationResponse, UNNotificationSound, UNUserNotificationCenter,
+    UNUserNotificationCenterDelegate,
+};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use tauri::{AppHandle, Emitter, Manager};
+use uuid::Uuid;
+
+const NOTIFICATION_CATEGORY: &str = "velquo-phone-notification";
+const DISMISS_ACTION: &str = "dismiss";
 
 struct NotificationContext {
     app: AppHandle,
@@ -19,6 +29,66 @@ struct NotificationContext {
 }
 
 static NOTIFY_CTX: OnceLock<NotificationContext> = OnceLock::new();
+static ACTIVE_DEVICE_ID: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+static NOTIFICATIONS_AVAILABLE: AtomicBool = AtomicBool::new(false);
+static NOTIFICATIONS_AUTHORIZED: AtomicBool = AtomicBool::new(false);
+
+fn is_running_from_app_bundle() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.canonicalize().ok())
+        .map(|path| path.to_string_lossy().contains(".app/Contents/MacOS/"))
+        .unwrap_or(false)
+}
+
+fn active_device_store() -> &'static Mutex<Option<String>> {
+    ACTIVE_DEVICE_ID.get_or_init(|| Mutex::new(None))
+}
+
+/// Tracks the device control page currently visible in the app. macOS notifications
+/// for that same device are suppressed while the app is foreground because the user
+/// can already see them in the in-app notification list.
+pub fn set_active_notification_device(device_id: Option<&str>) {
+    if let Ok(mut guard) = active_device_store().lock() {
+        *guard = device_id.map(str::to_string);
+    }
+}
+
+fn user_info_string(
+    content: &objc2_user_notifications::UNNotificationContent,
+    key: &str,
+) -> Option<String> {
+    let info = content.userInfo();
+    let key = NSString::from_str(key);
+    info.objectForKey(&key)
+        .and_then(|value| value.downcast::<NSString>().ok())
+        .map(|value| value.to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn main_window_is_focused() -> bool {
+    NOTIFY_CTX
+        .get()
+        .and_then(|ctx| ctx.app.get_webview_window("main"))
+        .and_then(|window| window.is_focused().ok())
+        .unwrap_or(false)
+}
+
+fn should_suppress_notification(content: &objc2_user_notifications::UNNotificationContent) -> bool {
+    let Some(device_id) = user_info_string(content, "deviceId") else {
+        return false;
+    };
+    if user_info_string(content, "notificationId").is_none() || !main_window_is_focused() {
+        return false;
+    }
+
+    active_device_store()
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .as_deref()
+        == Some(device_id.as_str())
+}
 
 define_class!(
     #[unsafe(super(NSObject))]
@@ -28,83 +98,65 @@ define_class!(
 
     unsafe impl NSObjectProtocol for VelquoNotificationDelegate {}
 
-    unsafe impl NSUserNotificationCenterDelegate for VelquoNotificationDelegate {
-        #[unsafe(method(userNotificationCenter:shouldPresentNotification:))]
-        fn should_present(
+    unsafe impl UNUserNotificationCenterDelegate for VelquoNotificationDelegate {
+        #[unsafe(method(userNotificationCenter:willPresentNotification:withCompletionHandler:))]
+        fn will_present(
             &self,
-            _center: &NSUserNotificationCenter,
-            _notification: &NSUserNotification,
-        ) -> bool {
-            true
+            _center: &UNUserNotificationCenter,
+            notification: &UNNotification,
+            completion_handler: &block2::DynBlock<dyn Fn(UNNotificationPresentationOptions)>,
+        ) {
+            let content = notification.request().content();
+            let options = if should_suppress_notification(&content) {
+                UNNotificationPresentationOptions::empty()
+            } else {
+                UNNotificationPresentationOptions::Banner
+                    | UNNotificationPresentationOptions::Sound
+                    | UNNotificationPresentationOptions::List
+            };
+            completion_handler.call((options,));
         }
 
-        #[unsafe(method(userNotificationCenter:didActivateNotification:))]
-        fn did_activate(
+        #[unsafe(method(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:))]
+        fn did_receive(
             &self,
-            center: &NSUserNotificationCenter,
-            notification: &NSUserNotification,
+            center: &UNUserNotificationCenter,
+            response: &UNNotificationResponse,
+            completion_handler: &block2::DynBlock<dyn Fn()>,
         ) {
-            let activation_type = notification.activationType();
-            let mut device_id_opt: Option<String> = None;
-            let mut notif_id_opt: Option<String> = None;
+            let request = response.notification().request();
+            let content = request.content();
+            let device_id = user_info_string(&content, "deviceId");
+            let notification_id = user_info_string(&content, "notificationId");
+            let action_id = response.actionIdentifier().to_string();
 
-            if let Some(user_info) = notification.userInfo() {
-                let dev_key = NSString::from_str("deviceId");
-                let notif_key = NSString::from_str("notificationId");
-
-                if let Some(val) = user_info.objectForKey(&dev_key) {
-                    if let Ok(ns_str) = val.downcast::<NSString>() {
-                        let s = ns_str.to_string();
-                        if !s.is_empty() {
-                            device_id_opt = Some(s);
-                        }
-                    }
-                }
-                if let Some(val) = user_info.objectForKey(&notif_key) {
-                    if let Ok(ns_str) = val.downcast::<NSString>() {
-                        let s = ns_str.to_string();
-                        if !s.is_empty() {
-                            notif_id_opt = Some(s);
-                        }
-                    }
-                }
-            }
-
-            // Remove the activated notification from macOS Notification Center
-            center.removeDeliveredNotification(notification);
-
-            let Some(ctx) = NOTIFY_CTX.get() else {
-                return;
-            };
-
-            if activation_type == NSUserNotificationActivationType::ActionButtonClicked {
-                if let (Some(device_id), Some(notif_id)) = (device_id_opt, notif_id_opt) {
-                    log::info!(
-                        "[macos-notify] Dismiss action clicked in macOS notification for device='{}' id='{}'",
-                        device_id,
-                        notif_id
-                    );
+            if action_id == DISMISS_ACTION {
+                if let (Some(device_id), Some(notification_id), Some(ctx)) =
+                    (device_id, notification_id, NOTIFY_CTX.get())
+                {
                     let _ = ctx
                         .daemon
-                        .dismiss_device_notification(&device_id, &notif_id);
+                        .dismiss_device_notification(&device_id, &notification_id);
                 }
-            } else if activation_type == NSUserNotificationActivationType::ContentsClicked {
-                log::info!(
-                    "[macos-notify] Notification body clicked (device={:?}, notification={:?})",
-                    device_id_opt,
-                    notif_id_opt
-                );
-                open_main_window(&ctx.app);
-                if let Some(device_id) = device_id_opt {
-                    let _ = ctx.app.emit(
-                        "velquo://focus-notification",
-                        serde_json::json!({
-                            "deviceId": device_id,
-                            "notificationId": notif_id_opt,
-                        }),
-                    );
+            } else if action_id == unsafe { UNNotificationDefaultActionIdentifier.to_string() } {
+                if let Some(ctx) = NOTIFY_CTX.get() {
+                    open_main_window(&ctx.app);
+                    if let Some(device_id) = device_id {
+                        let _ = ctx.app.emit(
+                            "velquo://focus-notification",
+                            serde_json::json!({
+                                "deviceId": device_id,
+                                "notificationId": notification_id,
+                            }),
+                        );
+                    }
                 }
             }
+
+            let identifier = request.identifier();
+            let identifiers = NSArray::from_slice(&[&*identifier]);
+            center.removeDeliveredNotificationsWithIdentifiers(&identifiers);
+            completion_handler.call(());
         }
     }
 );
@@ -157,16 +209,60 @@ pub fn init_macos_notifications(app: AppHandle, daemon: Arc<KdeConnectDaemon>) {
         daemon,
     });
 
+    if !is_running_from_app_bundle() {
+        log::warn!(
+            "[macos-notify] UserNotifications require a bundled .app. Notifications are disabled for this unbundled dev binary. Launch a bundled debug/release build to test notifications."
+        );
+        return;
+    }
+    NOTIFICATIONS_AVAILABLE.store(true, Ordering::Release);
+
     let _ = app.run_on_main_thread(move || unsafe {
         let mtm = MainThreadMarker::new_unchecked();
+        let center = UNUserNotificationCenter::currentNotificationCenter();
+
+        let dismiss_action = UNNotificationAction::actionWithIdentifier_title_options(
+            &NSString::from_str(DISMISS_ACTION),
+            &NSString::from_str("Dismiss"),
+            UNNotificationActionOptions::empty(),
+        );
+        let actions = NSArray::from_slice(&[&*dismiss_action]);
+        let intent_identifiers = NSArray::<NSString>::from_slice(&[]);
+        let category =
+            UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+                &NSString::from_str(NOTIFICATION_CATEGORY),
+                &actions,
+                &intent_identifiers,
+                UNNotificationCategoryOptions::empty(),
+            );
+        let categories = NSSet::from_slice(&[&*category]);
+        center.setNotificationCategories(&categories);
 
         let delegate = VelquoNotificationDelegate::new(mtm);
-        let center = NSUserNotificationCenter::defaultUserNotificationCenter();
-        let proto = ProtocolObject::from_retained(delegate);
+        let proto: Retained<ProtocolObject<dyn UNUserNotificationCenterDelegate>> =
+            ProtocolObject::from_retained(delegate);
         center.setDelegate(Some(&proto));
-        // Keep the delegate alive for the lifetime of the application
+        // The notification center keeps a weak delegate reference.
         std::mem::forget(proto);
-        log::info!("[macos-notify] Initialized native NSUserNotificationCenter delegate");
+
+        let authorization = RcBlock::new(|granted: Bool, error: *mut NSError| {
+            NOTIFICATIONS_AUTHORIZED.store(granted.as_bool(), Ordering::Release);
+            if granted.as_bool() {
+                log::info!("[macos-notify] Notification authorization granted");
+            } else if !error.is_null() {
+                let error = &*error;
+                log::warn!(
+                    "[macos-notify] Notification authorization failed: {}",
+                    error.localizedDescription()
+                );
+            } else {
+                log::warn!("[macos-notify] Notification authorization denied");
+            }
+        });
+        center.requestAuthorizationWithOptions_completionHandler(
+            UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound,
+            &authorization,
+        );
     });
 }
 
@@ -178,175 +274,98 @@ pub fn show_macos_notification(
     notification_id: Option<&str>,
     dismissable: bool,
 ) {
-    let Some(ctx) = NOTIFY_CTX.get() else {
+    if !NOTIFICATIONS_AVAILABLE.load(Ordering::Acquire)
+        || !NOTIFICATIONS_AUTHORIZED.load(Ordering::Acquire)
+    {
         return;
-    };
+    }
 
-    let title_owned = title.to_string();
-    let subtitle_owned = subtitle.map(|s| s.to_string());
-    let body_owned = body.to_string();
-    let device_id_owned = device_id.map(|s| s.to_string());
-    // Keep the raw notification ID in `userInfo` so the UI can highlight and dismiss
-    // notifications using the same ID that is shown in `PhoneNotification.id`.
-    let notif_id_raw = notification_id.map(str::to_string);
-    // The OS-level identifier only needs to be stable and unique; normalize it the same
-    // way notification removal does.
-    let notif_id_norm = notification_id.map(KdeConnectDaemon::normalize_notif_id);
+    let center = UNUserNotificationCenter::currentNotificationCenter();
+    let content = UNMutableNotificationContent::new();
 
-    let _ = ctx.app.run_on_main_thread(move || unsafe {
-        let notification = NSUserNotification::new();
+    content.setTitle(&NSString::from_str(title));
+    if let Some(subtitle) = subtitle.filter(|value| !value.is_empty()) {
+        content.setSubtitle(&NSString::from_str(subtitle));
+    }
+    content.setBody(&NSString::from_str(body));
 
-        let ns_title = NSString::from_str(&title_owned);
-        notification.setTitle(Some(&ns_title));
+    let sound = UNNotificationSound::soundNamed(&NSString::from_str("Glass"));
+    content.setSound(Some(&sound));
 
-        if let Some(sub) = &subtitle_owned {
-            if !sub.is_empty() {
-                let ns_sub = NSString::from_str(sub);
-                notification.setSubtitle(Some(&ns_sub));
-            }
-        }
+    let raw_id = notification_id.map(str::to_string);
+    let normalized_id = notification_id.map(KdeConnectDaemon::normalize_notif_id);
 
-        let ns_body = NSString::from_str(&body_owned);
-        notification.setInformativeText(Some(&ns_body));
-
-        let sound = NSString::from_str("Glass");
-        notification.setSoundName(Some(&sound));
-
-        if let (Some(dev_id), Some(n_id)) = (&device_id_owned, &notif_id_norm) {
-            let ident = NSString::from_str(&format!("{}:{}", dev_id, n_id));
-            notification.setIdentifier(Some(&ident));
-        }
-
-        // Attach the raw device and notification IDs so click handlers can highlight and
-        // dismiss using the same IDs that the frontend uses.
-        if device_id_owned.is_some() || notif_id_raw.is_some() {
-            let k1 = NSString::from_str("deviceId");
-            let k2 = NSString::from_str("notificationId");
-            let v1 = NSString::from_str(device_id_owned.as_deref().unwrap_or(""));
-            let v2 = NSString::from_str(notif_id_raw.as_deref().unwrap_or(""));
-
-            let v1_obj: &AnyObject = &v1;
-            let v2_obj: &AnyObject = &v2;
-
-            let dict = NSDictionary::from_slices(&[&*k1, &*k2], &[v1_obj, v2_obj]);
-            notification.setUserInfo(Some(&dict));
-        }
-
-        // Keep the native banner behavior while still exposing the dismiss action. A
-        // plain NSUserNotification action button would force persistent alert mode, so
-        // enable the private `_showsButtons` flag that lets banners render the action.
-        // If the private ivar is unavailable, keep the banner non-interactive rather
-        // than forcing persistent alert notifications.
-        let wants_dismiss_action = dismissable && notif_id_raw.is_some();
-        let banner_buttons_supported = wants_dismiss_action && {
-            // `_showsButtons` is a private ivar on _NSConcreteUserNotification. KVC can
-            // set it, but only use it when the runtime actually exposes the ivar.
-            let has_shows_buttons_ivar = notification
-                .class()
-                .instance_variable(c"_showsButtons")
-                .is_some();
-            if has_shows_buttons_ivar {
-                let key = NSString::from_str("_showsButtons");
-                let value = NSNumber::new_bool(true);
-                let _: () = msg_send![
-                    &*notification,
-                    setValue: &*value,
-                    forKey: &*key
-                ];
-            }
-            has_shows_buttons_ivar
+    if device_id.is_some() || raw_id.is_some() {
+        let device_key = NSString::from_str("deviceId");
+        let notification_key = NSString::from_str("notificationId");
+        let device_value = NSString::from_str(device_id.unwrap_or(""));
+        let notification_value = NSString::from_str(raw_id.as_deref().unwrap_or(""));
+        let device_object: &AnyObject = &device_value;
+        let notification_object: &AnyObject = &notification_value;
+        let user_info = NSDictionary::from_slices(
+            &[&*device_key, &*notification_key],
+            &[device_object, notification_object],
+        );
+        // `setUserInfo` takes the erased `NSDictionary` type, while `from_slices`
+        // returns a concretely-typed dictionary. The runtime object is identical.
+        let user_info_untyped = unsafe {
+            &*(&*user_info as *const NSDictionary<NSString, AnyObject> as *const NSDictionary)
         };
-
-        notification.setHasActionButton(banner_buttons_supported);
-        if banner_buttons_supported {
-            let dismiss_title = NSString::from_str("Dismiss");
-            notification.setActionButtonTitle(&dismiss_title);
+        unsafe {
+            content.setUserInfo(user_info_untyped);
         }
+    }
 
-        // Set the Velquo identity icon directly on the notification so it always renders with the Velquo icon
-        if let Some(app_img) = load_velquo_app_nsimage() {
-            let sel_identity = sel!(_setIdentityImage:);
-            let responds_identity: bool =
-                msg_send![&*notification, respondsToSelector: sel_identity];
-            if responds_identity {
-                let _: () = msg_send![&*notification, _setIdentityImage: &*app_img];
-            }
+    if dismissable && raw_id.is_some() {
+        content.setCategoryIdentifier(&NSString::from_str(NOTIFICATION_CATEGORY));
+    }
 
-            let sel_style = sel!(_setIdentityImageStyle:);
-            let responds_style: bool = msg_send![&*notification, respondsToSelector: sel_style];
-            if responds_style {
-                let style: isize = 0;
-                let _: () = msg_send![&*notification, _setIdentityImageStyle: style];
-            }
+    let identifier = match (device_id, normalized_id.as_deref()) {
+        (Some(device_id), Some(normalized_id)) if !normalized_id.is_empty() => {
+            format!("{}:{}", device_id, normalized_id)
         }
+        _ => format!("velquo-{}", Uuid::new_v4()),
+    };
+    let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
+        &NSString::from_str(&identifier),
+        &content,
+        None,
+    );
 
-        let center = NSUserNotificationCenter::defaultUserNotificationCenter();
-        center.deliverNotification(&notification);
+    let completion = RcBlock::new(|error: *mut NSError| {
+        if !error.is_null() {
+            let error = unsafe { &*error };
+            log::warn!(
+                "[macos-notify] Failed to deliver notification: {}",
+                error.localizedDescription()
+            );
+        }
     });
+    center.addNotificationRequest_withCompletionHandler(&request, Some(&completion));
 }
 
 pub fn remove_macos_notifications(device_id: &str, notification_ids: &[String]) {
-    if notification_ids.is_empty() {
+    if !NOTIFICATIONS_AVAILABLE.load(Ordering::Acquire) {
         return;
     }
-    let Some(ctx) = NOTIFY_CTX.get() else {
-        return;
-    };
 
-    let device_id_owned = device_id.to_string();
     let targets: Vec<String> = notification_ids
         .iter()
-        .map(|s| KdeConnectDaemon::normalize_notif_id(s))
-        .filter(|s| !s.is_empty())
+        .map(|notification_id| KdeConnectDaemon::normalize_notif_id(notification_id))
+        .filter(|notification_id| !notification_id.is_empty())
         .collect();
     if targets.is_empty() {
         return;
     }
 
-    let _ = ctx.app.run_on_main_thread(move || {
-        let center = NSUserNotificationCenter::defaultUserNotificationCenter();
-        let delivered = center.deliveredNotifications();
-        let dev_key = NSString::from_str("deviceId");
-        let notif_key = NSString::from_str("notificationId");
-
-        for i in 0..delivered.count() {
-            let notif = delivered.objectAtIndex(i);
-            let mut matched = false;
-
-            if let Some(user_info) = notif.userInfo() {
-                let dev_val = user_info
-                    .objectForKey(&dev_key)
-                    .and_then(|v| v.downcast::<NSString>().ok())
-                    .map(|s| s.to_string());
-                let notif_val = user_info
-                    .objectForKey(&notif_key)
-                    .and_then(|v| v.downcast::<NSString>().ok())
-                    .map(|s| KdeConnectDaemon::normalize_notif_id(&s.to_string()));
-
-                if dev_val.as_deref() == Some(device_id_owned.as_str()) {
-                    if let Some(existing_norm) = notif_val {
-                        matched = targets.iter().any(|target| {
-                            existing_norm == *target
-                                || existing_norm.ends_with(&format!("::{}", target))
-                                || target.ends_with(&format!("::{}", existing_norm))
-                        });
-                    }
-                }
-            }
-
-            if !matched {
-                if let Some(ident) = notif.identifier() {
-                    let ident_str = ident.to_string();
-                    matched = targets.iter().any(|target| {
-                        let expected = format!("{}:{}", device_id_owned, target);
-                        ident_str == expected
-                    });
-                }
-            }
-
-            if matched {
-                center.removeDeliveredNotification(&notif);
-            }
-        }
-    });
+    let identifiers: Vec<Retained<NSString>> = targets
+        .iter()
+        .map(|target| NSString::from_str(&format!("{}:{}", device_id, target)))
+        .collect();
+    let identifier_refs: Vec<&NSString> =
+        identifiers.iter().map(|identifier| &**identifier).collect();
+    let identifier_array = NSArray::from_slice(&identifier_refs);
+    let center = UNUserNotificationCenter::currentNotificationCenter();
+    center.removeDeliveredNotificationsWithIdentifiers(&identifier_array);
+    center.removePendingNotificationRequestsWithIdentifiers(&identifier_array);
 }

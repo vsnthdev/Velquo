@@ -12,8 +12,6 @@
 	<string>APPL</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>NSUserNotificationAlertStyle</key>
-	<string>banner</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Velquo uses your local Wi-Fi network to discover, pair, transfer files, and sync with your KDE Connect devices.</string>
 	<key>NSBonjourServices</key>

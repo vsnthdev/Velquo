@@ -97,7 +97,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 - [ ] Populate or remove `DeviceView.storage_free_gb`, currently always `None` (`daemon.rs:145`, `335`, `1803`).
 - [x] ~~**Set a real CSP** instead of `"csp": null` (`tauri.conf.json:34–36`), allowing Tauri, Google Fonts, iTunes, and GitHub as needed.~~ — **Cancelled**
 - [ ] **Remove the fragile AppKit ivar mirror** in `mark_menu_icons_as_template` (`lib.rs:824–882`) or add version/layout guards; it is undefined behavior if AppKit changes.
-- [ ] **Replace deprecated `NSUserNotification`** (`macos_notify.rs:1–12`, `183–261`) with `UserNotifications` when feasible.
+- [x] **Replace deprecated `NSUserNotification`** — Migrated to `UserNotifications`: authorization request, category-based Dismiss action, banner/sound/list foreground presentation, click and dismiss routing, identifier-based removal, and active-device suppression when the matching device control page is focused. Removed the deprecated API, private `_showsButtons`, and the old alert-style Info.plist key.
 - [x] Retry media bridge startup if dylib setup fails — The bridge supervisor now retries dylib preparation every 10 seconds in the background instead of exiting. Thread-spawn failures reset `MR_STREAM_STARTED` so a future startup attempt can run.
 - [x] ~~Consider removing the project-wide “no strict equality” ESLint rule (`eslint.config.js:20–60`, `165`)~~ — **Cancelled**: the rule is intentional project style.
 - [x] ~~Update README/docs stale versions (`README.md:44` says `0.1.0`; `docs/releasing.md` examples use `0.3.0`).~~ — **Cancelled**

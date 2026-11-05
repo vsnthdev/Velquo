@@ -325,6 +325,16 @@ fn dismiss_notification(
         .map_err(|e| e.to_string())
 }
 
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn set_active_notification_device(device_id: Option<String>) {
+    crate::macos_notify::set_active_notification_device(device_id.as_deref());
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn set_active_notification_device(_device_id: Option<String>) {}
+
 #[tauri::command]
 fn copy_text_to_clipboard(
     text: String,
@@ -1208,6 +1218,7 @@ pub fn run() {
             set_device_auto_copy_otp,
             set_device_pause_media_on_calls,
             dismiss_notification,
+            set_active_notification_device,
             copy_text_to_clipboard,
             set_ignore_whatsapp_conversations,
             add_device_run_command,

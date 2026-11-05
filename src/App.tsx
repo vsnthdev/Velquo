@@ -284,6 +284,17 @@ export default function App() {
         null)
             : null;
 
+    const activeNotificationDeviceId =
+        activeView.kind == "device" && activeView.subview == "control"
+            ? (selectedDevice?.deviceId ?? null)
+            : null;
+
+    useEffect(() => {
+        invoke("set_active_notification_device", {
+            deviceId: activeNotificationDeviceId,
+        }).catch(() => {});
+    }, [activeNotificationDeviceId]);
+
     useEffect(() => {
         activeViewRef.current = activeView;
         selectedDeviceRef.current = selectedDevice;
