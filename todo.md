@@ -53,9 +53,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 
 - [x] **Make notification IDs consistent across click, highlight, and dismiss** — `NSUserNotification.userInfo` now stores the raw notification ID, while `NSUserNotification.identifier` and internal removal matching normalize it. Click, highlight, and dismiss now all use the same raw `PhoneNotification.id`, and `notification_cancel` sends the raw ID back to the phone.
 
-- [ ] **Fix SFTP “unconfigured” response delivery**  
-      `handle_incoming_sftp_packet` calls `clear_device` (`daemon.rs:132`), which drops pending oneshot senders, then tries to remove them again (`133–141`). The `Unconfigured` result never reaches `browse`, so the dedicated UI in `FileBrowserWindow.tsx:532–564` never appears.  
-      Fix: take waiters before clearing, or clear only `active`, then send `Unconfigured`.
+- [x] **Fix SFTP “unconfigured” response delivery** — `clear_device_and_take_waiters` now removes and returns pending handshake waiters before clearing the cached session, so the `errorMessage` path can deliver `SftpHandshakeOutcome::Unconfigured` and the dedicated UI appears. Added a regression test for waiter delivery.
 
 - [ ] **Fix updater resource leaks**  
       `check_for_update` registers an `Update` on every call (`lib.rs:509–526`, `545–557`); `runUpdateCheck` discards `rid` (`App.tsx:59–79`); `get_pending_update` registers another on every call (`lib.rs:560–570`); `UpdateWindow` replaces updates without `close()` (`UpdateWindow.tsx:57–70`, `145–149`, `183–193`).  

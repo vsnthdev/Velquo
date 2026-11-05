@@ -112,12 +112,23 @@ impl SftpManager {
     }
 
     pub fn clear_device(&self, device_id: &str) {
+        let _ = self.clear_device_and_take_waiters(device_id);
+    }
+
+    /// Clears the cached session and returns any pending handshake waiters so the caller can
+    /// deliver a final `SftpHandshakeOutcome` instead of dropping their channels.
+    fn clear_device_and_take_waiters(
+        &self,
+        device_id: &str,
+    ) -> Vec<oneshot::Sender<SftpHandshakeOutcome>> {
         if let Ok(mut active) = self.active.lock() {
             active.remove(device_id);
         }
-        if let Ok(mut pending) = self.pending_handshakes.lock() {
-            pending.remove(device_id);
-        }
+        self.pending_handshakes
+            .lock()
+            .ok()
+            .and_then(|mut map| map.remove(device_id))
+            .unwrap_or_default()
     }
 
     pub fn handle_incoming_sftp_packet(
@@ -145,13 +156,7 @@ impl SftpManager {
                 device_id,
                 err_msg
             );
-            self.clear_device(device_id);
-            let waiters = self
-                .pending_handshakes
-                .lock()
-                .ok()
-                .and_then(|mut map| map.remove(device_id))
-                .unwrap_or_default();
+            let waiters = self.clear_device_and_take_waiters(device_id);
             for tx in waiters {
                 let _ = tx.send(SftpHandshakeOutcome::Unconfigured(err_msg.to_string()));
             }
@@ -931,7 +936,8 @@ async fn delete_sftp_directory_recursive(sftp: &Arc<SftpSession>, root_dir: &str
 
 #[cfg(test)]
 mod tests {
-    use super::sftp_window_label;
+    use super::{sftp_window_label, SftpHandshakeOutcome, SftpManager};
+    use tokio::sync::oneshot;
 
     #[test]
     fn sftp_window_label_sanitizes_device_id() {
@@ -940,5 +946,36 @@ mod tests {
             "sftp-4c7a9956e49a4930"
         );
         assert_eq!(sftp_window_label("a/b c_d-e"), "sftp-abc_d-e");
+    }
+
+    #[test]
+    fn clearing_device_returns_pending_waiters() {
+        let manager = SftpManager::new();
+        let (tx, mut rx) = oneshot::channel();
+
+        manager
+            .pending_handshakes
+            .lock()
+            .unwrap()
+            .entry("device".to_string())
+            .or_default()
+            .push(tx);
+
+        let waiters = manager.clear_device_and_take_waiters("device");
+        assert_eq!(waiters.len(), 1);
+
+        for tx in waiters {
+            tx.send(SftpHandshakeOutcome::Unconfigured(
+                "not configured".to_string(),
+            ))
+            .unwrap();
+        }
+
+        match rx.try_recv().unwrap() {
+            SftpHandshakeOutcome::Unconfigured(message) => {
+                assert_eq!(message, "not configured");
+            }
+            SftpHandshakeOutcome::Ready(_) => panic!("expected unconfigured outcome"),
+        }
     }
 }
