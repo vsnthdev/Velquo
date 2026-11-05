@@ -51,9 +51,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       `handle_pair_packet` treats `PairState::Paired` like `NotPaired` and sets `RequestedByPeer` (`daemon.rs:2419–2431`), removing the device from `pairedDevices` in `App.tsx:273`.  
       Fix: separate the `Paired` arm and re-acknowledge/ignore redundant pair requests without changing state.
 
-- [ ] **Make notification IDs consistent across click, highlight, and dismiss**  
-      `macos_notify.rs` normalizes IDs into `userInfo` (`199`, `220–236`) and emits normalized IDs (`70–115`), while `PhoneNotification.id` is raw (`daemon.rs:3273`). Frontend compares raw vs normalized (`App.tsx:226–243`, `DeviceControlView.tsx:225–240`, `1181`). Dismiss sends normalized from macOS click (`macos_notify.rs:97–99`, `daemon.rs:2959`) but raw from the app (`DeviceControlView.tsx:1356–1359`).  
-      Fix: store/emit the raw ID, use normalized only for `NSUserNotification.identifier` and removal matching, and send raw in `notification_cancel`.
+- [x] **Make notification IDs consistent across click, highlight, and dismiss** — `NSUserNotification.userInfo` now stores the raw notification ID, while `NSUserNotification.identifier` and internal removal matching normalize it. Click, highlight, and dismiss now all use the same raw `PhoneNotification.id`, and `notification_cancel` sends the raw ID back to the phone.
 
 - [ ] **Fix SFTP “unconfigured” response delivery**  
       `handle_incoming_sftp_packet` calls `clear_device` (`daemon.rs:132`), which drops pending oneshot senders, then tries to remove them again (`133–141`). The `Unconfigured` result never reaches `browse`, so the dedicated UI in `FileBrowserWindow.tsx:532–564` never appears.  

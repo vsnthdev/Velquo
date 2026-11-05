@@ -7,6 +7,8 @@ use anyhow::Result;
 use std::sync::Arc;
 
 impl KdeConnectDaemon {
+    /// Dismiss a notification using the raw ID exposed to the UI. Internal list and macOS
+    /// notification-center matching always compares normalized IDs.
     pub fn dismiss_device_notification(
         &self,
         device_id: &str,

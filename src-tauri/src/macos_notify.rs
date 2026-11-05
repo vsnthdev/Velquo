@@ -196,7 +196,12 @@ pub fn show_macos_notification(
     let subtitle_owned = subtitle.map(|s| s.to_string());
     let body_owned = body.to_string();
     let device_id_owned = device_id.map(|s| s.to_string());
-    let notif_id_owned = notification_id.map(KdeConnectDaemon::normalize_notif_id);
+    // Keep the raw notification ID in `userInfo` so the UI can highlight and dismiss
+    // notifications using the same ID that is shown in `PhoneNotification.id`.
+    let notif_id_raw = notification_id.map(str::to_string);
+    // The OS-level identifier only needs to be stable and unique; normalize it the same
+    // way notification removal does.
+    let notif_id_norm = notification_id.map(KdeConnectDaemon::normalize_notif_id);
 
     let _ = ctx.app.run_on_main_thread(move || unsafe {
         let notification = NSUserNotification::new();
@@ -217,17 +222,18 @@ pub fn show_macos_notification(
         let sound = NSString::from_str("Glass");
         notification.setSoundName(Some(&sound));
 
-        if let (Some(dev_id), Some(n_id)) = (&device_id_owned, &notif_id_owned) {
+        if let (Some(dev_id), Some(n_id)) = (&device_id_owned, &notif_id_norm) {
             let ident = NSString::from_str(&format!("{}:{}", dev_id, n_id));
             notification.setIdentifier(Some(&ident));
         }
 
-        // Attach deviceId and notificationId in userInfo so click & phone-side cancel handlers can match it
-        if device_id_owned.is_some() || notif_id_owned.is_some() {
+        // Attach the raw device and notification IDs so click handlers can highlight and
+        // dismiss using the same IDs that the frontend uses.
+        if device_id_owned.is_some() || notif_id_raw.is_some() {
             let k1 = NSString::from_str("deviceId");
             let k2 = NSString::from_str("notificationId");
             let v1 = NSString::from_str(device_id_owned.as_deref().unwrap_or(""));
-            let v2 = NSString::from_str(notif_id_owned.as_deref().unwrap_or(""));
+            let v2 = NSString::from_str(notif_id_raw.as_deref().unwrap_or(""));
 
             let v1_obj: &AnyObject = &v1;
             let v2_obj: &AnyObject = &v2;
