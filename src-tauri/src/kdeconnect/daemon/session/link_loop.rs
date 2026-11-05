@@ -157,12 +157,11 @@ where
         if let Some(entry) = devices.get_mut(&device_id) {
             if entry.connection_generation == generation {
                 entry.view.reachable = false;
-                entry.view.now_playing = None;
                 entry.view.notifications.clear();
-                entry.mpris_players.clear();
-                entry.mpris_player_order.clear();
-                entry.active_mpris_player = None;
-                entry.album_art_cache.clear();
+                // Keep Now Playing metadata and cached album art across transient reconnects.
+                // `link_init` reuses these fields, so a reconnect can show the last known
+                // track immediately instead of flashing an empty state while MPRIS data
+                // is fetched again. Pending artwork fetches belong to the old connection.
                 entry.album_art_in_flight.clear();
                 entry.sender = None;
                 entry.abort_tx = None;

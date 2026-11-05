@@ -597,7 +597,6 @@ export function DeviceControlView({
                                     <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-emerald-500/12 text-emerald-600 shadow-sm ring-1 ring-black/10 dark:bg-emerald-500/15 dark:text-emerald-400 dark:ring-white/15">
                                         {artworkSrc ? (
                                             <motion.img
-                                                key={artworkSrc}
                                                 src={artworkSrc}
                                                 alt={device.nowPlaying.title}
                                                 initial={{ opacity: 0, scale: 0.92 }}

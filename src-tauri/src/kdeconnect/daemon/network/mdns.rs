@@ -1,17 +1,26 @@
 use crate::kdeconnect::daemon::*;
 use crate::kdeconnect::packet::PROTOCOL_VERSION;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::runtime::Handle;
+
+/// mDNS only advertises how to reach a peer; it is not a liveness signal for an already
+/// established TCP session. Android re-registers its mDNS record frequently, so give the
+/// phone time to reconnect before tearing down a session that is still healthy.
+const MDNS_REMOVAL_GRACE: Duration = Duration::from_secs(8);
 
 pub(super) fn spawn_mdns(daemon: Arc<KdeConnectDaemon>, port: u16) {
+    let handle = Handle::current();
     tokio::task::spawn_blocking(move || {
-        daemon.run_mdns_service(port);
+        daemon.run_mdns_service(port, handle);
     });
 }
 
 impl KdeConnectDaemon {
-    pub(super) fn run_mdns_service(self: Arc<Self>, tcp_port: u16) {
+    pub(super) fn run_mdns_service(self: Arc<Self>, tcp_port: u16, handle: Handle) {
         log::info!("[mdns] Starting mDNS daemon for _kdeconnect._udp.local.");
         let mdns = match ServiceDaemon::new() {
             Ok(d) => d,
@@ -61,6 +70,9 @@ impl KdeConnectDaemon {
             }
         }
 
+        let removal_generation: Arc<Mutex<HashMap<String, u64>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
         match mdns.browse(service_type) {
             Ok(receiver) => {
                 log::info!("[mdns] Browsing for _kdeconnect._udp.local. services...");
@@ -80,6 +92,12 @@ impl KdeConnectDaemon {
 
                             if txt_id.is_empty() || txt_id == self.host.device_id {
                                 continue;
+                            }
+
+                            // A resolved service cancels any pending removal grace period.
+                            if let Ok(mut generations) = removal_generation.lock() {
+                                let token = generations.entry(txt_id.clone()).or_insert(0);
+                                *token = token.wrapping_add(1);
                             }
 
                             let proto = info
@@ -108,15 +126,57 @@ impl KdeConnectDaemon {
                         }
                         ServiceEvent::ServiceRemoved(_ty, fullname) => {
                             let removed_id = fullname.split('.').next().unwrap_or("").to_string();
-                            if !removed_id.is_empty() && removed_id != self.host.device_id {
+                            if removed_id.is_empty() || removed_id == self.host.device_id {
+                                continue;
+                            }
+
+                            let (generation, last_seen_secs) = {
+                                let Ok(devices) = self.devices.lock() else {
+                                    continue;
+                                };
+                                match devices.get(&removed_id) {
+                                    Some(entry) if entry.view.reachable => {
+                                        (entry.connection_generation, entry.view.last_seen_secs)
+                                    }
+                                    _ => continue,
+                                }
+                            };
+
+                            let removal_token = {
+                                let Ok(mut generations) = removal_generation.lock() else {
+                                    continue;
+                                };
+                                let token = generations.entry(removed_id.clone()).or_insert(0);
+                                *token = token.wrapping_add(1);
+                                *token
+                            };
+
+                            let daemon = Arc::clone(&self);
+                            let removal_generation = Arc::clone(&removal_generation);
+                            handle.spawn(async move {
+                                tokio::time::sleep(MDNS_REMOVAL_GRACE).await;
+
+                                let service_came_back = removal_generation
+                                    .lock()
+                                    .ok()
+                                    .and_then(|generations| generations.get(&removed_id).copied())
+                                    != Some(removal_token);
+                                if service_came_back {
+                                    return;
+                                }
+
                                 let mut aborted = false;
-                                if let Ok(mut devices) = self.devices.lock() {
+                                if let Ok(mut devices) = daemon.devices.lock() {
                                     if let Some(entry) = devices.get_mut(&removed_id) {
-                                        if entry.view.reachable {
+                                        if entry.view.reachable
+                                            && entry.connection_generation == generation
+                                            && entry.view.last_seen_secs == last_seen_secs
+                                        {
                                             log::info!(
-                                                "[mdns] Peer '{}' ({}) unregistered mDNS service, closing active session",
+                                                "[mdns] Peer '{}' ({}) did not reconnect within {:?}; closing stale session",
                                                 entry.view.device_name,
-                                                removed_id
+                                                removed_id,
+                                                MDNS_REMOVAL_GRACE
                                             );
                                             if let Some(abort_tx) = entry.abort_tx.take() {
                                                 let _ = abort_tx.send(());
@@ -126,9 +186,9 @@ impl KdeConnectDaemon {
                                     }
                                 }
                                 if aborted {
-                                    self.notify_ui();
+                                    daemon.notify_ui();
                                 }
-                            }
+                            });
                         }
                         _ => {}
                     }

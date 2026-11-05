@@ -32,9 +32,14 @@ export default function App() {
     });
     const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
     const [justDroppedCount, setJustDroppedCount] = useState<number>(0);
-    const [fallbackArtworkUrl, setFallbackArtworkUrl] = useState<string | null>(
-        null,
-    );
+    const [fallbackArtwork, setFallbackArtwork] = useState<{
+        key: string;
+        url: string | null;
+    } | null>(null);
+    const [retainedArtwork, setRetainedArtwork] = useState<{
+        deviceId: string;
+        src: string;
+    } | null>(null);
     const [ignoreWhatsappConversations, setIgnoreWhatsappConversations] =
         useState<boolean>(true);
     const [rightPaneEl, setRightPaneEl] = useState<HTMLDivElement | null>(null);
@@ -375,23 +380,32 @@ export default function App() {
     const trackTitle = nowPlaying?.title ?? "";
     const trackArtist = nowPlaying?.artist ?? "";
     const trackAlbum = nowPlaying?.album ?? "";
+    const selectedDeviceId = selectedDevice?.deviceId ?? "";
+    const fallbackArtKey = `${selectedDeviceId}|${trackArtist}|${trackTitle}|${trackAlbum}`;
+    const fallbackArtworkUrl =
+        fallbackArtwork?.key == fallbackArtKey ? fallbackArtwork.url : null;
+    const retainedArtworkSrc =
+        retainedArtwork?.deviceId == selectedDeviceId ? retainedArtwork.src : null;
 
     // Fallback to iTunes Search API if KDE Connect hasn't provided native album art
     useEffect(() => {
         if (!trackTitle) {
             itunesArtCache.clear();
-            setFallbackArtworkUrl(null);
+            setFallbackArtwork({ url: null, key: fallbackArtKey });
             return;
         }
 
         if (nativeArtData) {
-            setFallbackArtworkUrl(null);
+            setFallbackArtwork({ url: null, key: fallbackArtKey });
             return;
         }
 
         const queryKey = `${trackArtist} - ${trackTitle} - ${trackAlbum}`.trim();
         if (itunesArtCache.has(queryKey)) {
-            setFallbackArtworkUrl(itunesArtCache.get(queryKey) ?? null);
+            setFallbackArtwork({
+                key: fallbackArtKey,
+                url: itunesArtCache.get(queryKey) ?? null,
+            });
             return;
         }
 
@@ -418,7 +432,7 @@ export default function App() {
                 itunesArtCache.clear();
                 itunesArtCache.set(queryKey, hiResUrl);
                 if (!cancelled) {
-                    setFallbackArtworkUrl(hiResUrl);
+                    setFallbackArtwork({ url: hiResUrl, key: fallbackArtKey });
                 }
             } catch {
                 // Ignore network errors on fallback lookup
@@ -429,9 +443,25 @@ export default function App() {
             cancelled = true;
             clearTimeout(timer);
         };
-    }, [nativeArtData, trackTitle, trackArtist, trackAlbum]);
+    }, [nativeArtData, trackTitle, trackArtist, trackAlbum, fallbackArtKey]);
 
-    const artworkSrc = nativeArtData || fallbackArtworkUrl;
+    // Retain the last non-null artwork for the selected device so a track change does not
+    // blank the artwork while the phone uploads the next payload.
+    useEffect(() => {
+        const nextArtwork = nativeArtData || fallbackArtworkUrl;
+        if (nextArtwork) {
+            setRetainedArtwork({ src: nextArtwork, deviceId: selectedDeviceId });
+        } else if (!trackTitle) {
+            setRetainedArtwork(null);
+        }
+    }, [
+        nativeArtData,
+        fallbackArtworkUrl,
+        trackTitle,
+        selectedDeviceId,
+    ]);
+
+    const artworkSrc = nativeArtData || fallbackArtworkUrl || retainedArtworkSrc;
     const hasActiveMedia = Boolean(
         activeView.kind == "device" &&
     activeView.subview == "control" &&
@@ -521,7 +551,7 @@ export default function App() {
                     <AnimatePresence>
                         {hasArtworkBackdrop && artworkSrc && (
                             <motion.div
-                                key={artworkSrc}
+                                key="artwork-backdrop"
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
                                 exit={{ opacity: 0 }}

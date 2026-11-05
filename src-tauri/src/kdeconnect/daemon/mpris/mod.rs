@@ -6,6 +6,10 @@ use crate::kdeconnect::packet::*;
 use std::net::IpAddr;
 use std::sync::Arc;
 
+/// Album-art payloads are full data URLs, so keep only a small bounded set of recent
+/// tracks. Clearing the entire cache on every download forced repeated network fetches.
+const MAX_ALBUM_ART_CACHE_ENTRIES: usize = 24;
+
 impl KdeConnectDaemon {
     pub(super) fn handle_mpris_packet(
         self: &Arc<Self>,
@@ -61,7 +65,15 @@ impl KdeConnectDaemon {
                         if let Ok(mut devices) = daemon.devices.lock() {
                             if let Some(entry) = devices.get_mut(&dev_id) {
                                 entry.album_art_in_flight.remove(&album_art_url);
-                                entry.album_art_cache.clear();
+                                if entry.album_art_cache.len() >= MAX_ALBUM_ART_CACHE_ENTRIES
+                                    && !entry.album_art_cache.contains_key(&album_art_url)
+                                {
+                                    if let Some(evicted_key) =
+                                        entry.album_art_cache.keys().next().cloned()
+                                    {
+                                        entry.album_art_cache.remove(&evicted_key);
+                                    }
+                                }
                                 entry
                                     .album_art_cache
                                     .insert(album_art_url.clone(), data_url.clone());
@@ -88,8 +100,19 @@ impl KdeConnectDaemon {
                         if let Ok(mut devices) = daemon.devices.lock() {
                             if let Some(entry) = devices.get_mut(&dev_id) {
                                 entry.album_art_in_flight.remove(&album_art_url);
+                                // Clear any retained artwork for the failed URL so the UI can
+                                // fall back instead of showing stale art indefinitely.
+                                for p_info in entry.mpris_players.values_mut() {
+                                    if p_info.album_art_url.as_deref()
+                                        == Some(album_art_url.as_str())
+                                    {
+                                        p_info.album_art_data = None;
+                                    }
+                                }
+                                Self::recompute_active_mpris(entry);
                             }
                         }
+                        daemon.notify_ui();
                     }
                 }
             });

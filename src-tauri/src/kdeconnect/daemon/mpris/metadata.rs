@@ -130,6 +130,11 @@ pub(super) fn handle_player_metadata_update(
         } else {
             prev_player.as_ref().and_then(|p| p.album_art_url.clone())
         };
+        // Keep the previous artwork visible while a new payload is in flight. Replacing it
+        // with `None` makes the UI drop to a placeholder/fallback for a moment on every
+        // track change. An explicitly empty URL still clears the art so the iTunes
+        // fallback can take over.
+        let previous_album_art_data = prev_player.as_ref().and_then(|p| p.album_art_data.clone());
         let album_art_data = if let Some(ref url) = album_art_url {
             if let Some(cached) = entry.album_art_cache.get(url) {
                 Some(cached.clone())
@@ -138,7 +143,7 @@ pub(super) fn handle_player_metadata_update(
                     entry.album_art_in_flight.insert(url.clone());
                     art_to_request = Some((player.to_string(), url.clone()));
                 }
-                None
+                previous_album_art_data
             }
         } else {
             None
