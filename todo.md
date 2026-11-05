@@ -83,9 +83,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 
 - [x] **Fix album-art request retry blocking** — `album_art_in_flight` now stores the request time, expires after 5 seconds, and is cleared immediately if sending the request fails. Expired entries are pruned on metadata updates so stale URLs cannot block retries or grow the map. Added expiry tests.
 
-- [ ] **Abort release when fresh updater signature is missing**  
-      `update-version.ts:123–137` falls back to the previous `latest.json` signature while publishing a new archive, causing update verification failure.  
-      Fix: `process.exit(1)` if the fresh `.sig` is absent.
+- [x] **Abort release when fresh updater signature is missing** — The release script now deletes any stale `.sig` before building, refuses to write `latest.json` if the fresh signature is missing or empty, and never falls back to the previous release’s signature.
 
 - [x] ~~**Fix remote-input dialog controlled state**~~ — **Cancelled**: omitting `onOpenChange` is intentional. The dialog must capture Escape and outside interactions for the Android device, and only the explicit X button should close it. The observed auto-dismiss is a separate issue caused by `open` depending on `device.reachable`, which closes the dialog when the device briefly disconnects.
 

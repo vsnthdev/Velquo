@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import prompts from "prompts";
+import { unlink } from "node:fs/promises";
 
 const rootUrl = new URL("../", import.meta.url);
 const rootPath = new URL(".", rootUrl).pathname;
@@ -28,12 +29,11 @@ if (gitStatusExit != 0 || gitStatusOutput.length > 0) {
 const pkgFile = Bun.file(new URL("package.json", rootUrl));
 const cargoTomlFile = Bun.file(new URL("src-tauri/Cargo.toml", rootUrl));
 const latestJsonFile = Bun.file(new URL("latest.json", rootUrl));
-const sigFile = Bun.file(
-    new URL(
-        "src-tauri/target/release/bundle/macos/Velquo.app.tar.gz.sig",
-        rootUrl,
-    ),
+const sigFileUrl = new URL(
+    "src-tauri/target/release/bundle/macos/Velquo.app.tar.gz.sig",
+    rootUrl,
 );
+const sigFile = Bun.file(sigFileUrl);
 
 const pkg = (await pkgFile.json()) as {
     version: string;
@@ -107,6 +107,20 @@ const spawnEnv: Record<string, string | undefined> = {
     TAURI_SIGNING_PRIVATE_KEY: signingPrivateKey,
 };
 
+// Remove any signature left over from a previous build so a signing failure
+// cannot be masked by a stale .sig file.
+if (await sigFile.exists()) {
+    try {
+        await unlink(sigFileUrl);
+        console.log("==> Removed stale update signature before rebuilding.");
+    } catch (err) {
+        console.error(
+            `==> Error: Could not remove stale update signature at ${sigFileUrl.pathname}: ${err}`,
+        );
+        process.exit(1);
+    }
+}
+
 console.log(`\n==> Building and signing release bundle for v${nextVersion}...`);
 const bundleProc = Bun.spawn(["bun", "run", "bundle"], {
     cwd: rootPath,
@@ -120,21 +134,25 @@ if (exitCode != 0) {
     process.exit(exitCode);
 }
 
-// 4. Read the freshly generated v${nextVersion} signature and write latest.json
-let signature = "";
-if (await sigFile.exists()) {
-    signature = (await sigFile.text()).trim();
-    console.log(
-        "==> Loaded fresh signature from src-tauri/target/release/bundle/macos/Velquo.app.tar.gz.sig",
+// 4. Require the freshly generated v${nextVersion} signature before writing latest.json.
+// Reusing a previous signature would publish a new archive that fails updater verification.
+if (!(await sigFile.exists())) {
+    console.error(
+        `==> Error: Fresh update signature not found at ${sigFileUrl.pathname}. Refusing to publish an unsigned or mismatched update.`,
     );
-} else if (await latestJsonFile.exists()) {
-    try {
-        const currentLatest = await latestJsonFile.json();
-        signature = currentLatest?.platforms?.["darwin-aarch64"]?.signature ?? "";
-    } catch {
-        // Ignore malformed existing latest.json
-    }
+    process.exit(1);
 }
+
+const signature = (await sigFile.text()).trim();
+if (!signature) {
+    console.error(
+        `==> Error: Fresh update signature is empty at ${sigFileUrl.pathname}. Refusing to publish an unsigned update.`,
+    );
+    process.exit(1);
+}
+console.log(
+    "==> Loaded fresh signature from src-tauri/target/release/bundle/macos/Velquo.app.tar.gz.sig",
+);
 
 const pubDate = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 const downloadUrl = `${repoBaseUrl}/releases/download/v${nextVersion}/Velquo.app.tar.gz`;
