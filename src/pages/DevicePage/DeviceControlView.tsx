@@ -122,6 +122,11 @@ export function DeviceControlView({
     const progressPctStyle = useTransform(progressPctMv, (v) => `${v}%`);
 
     const nowPlaying = device.nowPlaying;
+    // Animate only when the actual track changes. Player, album, position, and artwork
+    // updates can arrive later for the same song and must not retrigger the transition.
+    const trackKey = nowPlaying
+        ? `${nowPlaying.title}\u0000${nowPlaying.artist}`
+        : "";
 
     useEffect(() => {
         setIsShareLinkOpen(false);
@@ -595,37 +600,110 @@ export function DeviceControlView({
                                 <div className="flex min-w-0 items-center gap-3.5">
                                     {/* Crisp Album Artwork Thumbnail (or MusicNotes fallback) */}
                                     <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-emerald-500/12 text-emerald-600 shadow-sm ring-1 ring-black/10 dark:bg-emerald-500/15 dark:text-emerald-400 dark:ring-white/15">
-                                        {artworkSrc ? (
-                                            <motion.img
-                                                src={artworkSrc}
-                                                alt={device.nowPlaying.title}
-                                                initial={{ opacity: 0, scale: 0.92 }}
-                                                animate={{ scale: 1, opacity: 1 }}
-                                                transition={{ duration: 0.25 }}
-                                                className="h-full w-full object-cover"
-                                            />
-                                        ) : (
-                                            <MusicNotesIcon size={20} weight="fill" />
-                                        )}
+                                        <AnimatePresence initial={false}>
+                                            {artworkSrc ? (
+                                                <motion.img
+                                                    key={artworkSrc}
+                                                    src={artworkSrc}
+                                                    alt={device.nowPlaying.title}
+                                                    initial={{
+                                                        y: 8,
+                                                        opacity: 0,
+                                                        scale: 1.18,
+                                                        filter: "blur(10px)",
+                                                    }}
+                                                    animate={{
+                                                        y: 0,
+                                                        scale: 1,
+                                                        opacity: 1,
+                                                        filter: "blur(0px)",
+                                                    }}
+                                                    exit={{
+                                                        y: -8,
+                                                        opacity: 0,
+                                                        scale: 0.88,
+                                                        filter: "blur(10px)",
+                                                    }}
+                                                    transition={{
+                                                        duration: 0.6,
+                                                        ease: [0.16, 1, 0.3, 1],
+                                                    }}
+                                                    draggable={false}
+                                                    className="absolute inset-0 h-full w-full object-cover"
+                                                />
+                                            ) : (
+                                                <motion.div
+                                                    key={`${trackKey}:fallback`}
+                                                    initial={{
+                                                        opacity: 0,
+                                                        scale: 0.8,
+                                                        rotate: -10,
+                                                    }}
+                                                    animate={{
+                                                        scale: 1,
+                                                        rotate: 0,
+                                                        opacity: 1,
+                                                    }}
+                                                    exit={{
+                                                        rotate: 10,
+                                                        opacity: 0,
+                                                        scale: 0.8,
+                                                    }}
+                                                    transition={{
+                                                        duration: 0.35,
+                                                        ease: [0.16, 1, 0.3, 1],
+                                                    }}
+                                                    className="absolute inset-0 flex items-center justify-center"
+                                                >
+                                                    <MusicNotesIcon size={20} weight="fill" />
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
                                     </div>
 
-                                    <div className="flex min-w-0 flex-col">
-                                        <div className="flex items-center gap-2">
-                                            <span className="truncate text-[14px] font-semibold text-zinc-900 dark:text-zinc-100">
-                                                {device.nowPlaying.title}
-                                            </span>
-                                            {device.nowPlaying.player && (
-                                                <span className="shrink-0 rounded-md bg-black/[0.07] px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-700 backdrop-blur-md dark:bg-white/[0.10] dark:text-zinc-300">
-                                                    {device.nowPlaying.player}
-                                                </span>
-                                            )}
-                                        </div>
+                                    <div className="grid min-w-0">
+                                        <AnimatePresence initial={false}>
+                                            <motion.div
+                                                key={trackKey}
+                                                initial={{
+                                                    y: 14,
+                                                    opacity: 0,
+                                                    filter: "blur(6px)",
+                                                }}
+                                                animate={{
+                                                    y: 0,
+                                                    opacity: 1,
+                                                    filter: "blur(0px)",
+                                                }}
+                                                exit={{
+                                                    y: -14,
+                                                    opacity: 0,
+                                                    filter: "blur(6px)",
+                                                }}
+                                                transition={{
+                                                    duration: 0.45,
+                                                    ease: [0.16, 1, 0.3, 1],
+                                                }}
+                                                className="col-start-1 row-start-1 flex min-w-0 flex-col"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <span className="truncate text-[14px] font-semibold text-zinc-900 dark:text-zinc-100">
+                                                        {device.nowPlaying.title}
+                                                    </span>
+                                                    {device.nowPlaying.player && (
+                                                        <span className="shrink-0 rounded-md bg-black/[0.07] px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-700 backdrop-blur-md dark:bg-white/[0.10] dark:text-zinc-300">
+                                                            {device.nowPlaying.player}
+                                                        </span>
+                                                    )}
+                                                </div>
 
-                                        <span className="mt-0.5 truncate text-[12.5px] text-zinc-600 dark:text-zinc-400">
-                                            {[device.nowPlaying.artist, device.nowPlaying.album]
-                                                .filter(Boolean)
-                                                .join(" — ") || "Playing on device"}
-                                        </span>
+                                                <span className="mt-0.5 truncate text-[12.5px] text-zinc-600 dark:text-zinc-400">
+                                                    {[device.nowPlaying.artist, device.nowPlaying.album]
+                                                        .filter(Boolean)
+                                                        .join(" — ") || "Playing on device"}
+                                                </span>
+                                            </motion.div>
+                                        </AnimatePresence>
                                     </div>
                                 </div>
 

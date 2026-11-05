@@ -559,11 +559,25 @@ export default function App() {
                                 }}
                                 className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[300px] overflow-hidden"
                             >
-                                <img
-                                    src={artworkSrc}
-                                    alt=""
-                                    className="h-full w-full scale-125 object-cover opacity-90 brightness-95 blur-2xl saturate-150 dark:opacity-75 dark:brightness-100"
-                                />
+                                <AnimatePresence initial={false}>
+                                    <motion.div
+                                        key={artworkSrc}
+                                        initial={{ opacity: 0, scale: 1.06 }}
+                                        animate={{ scale: 1, opacity: 1 }}
+                                        exit={{ opacity: 0, scale: 1.04 }}
+                                        transition={{
+                                            duration: 0.85,
+                                            ease: [0.16, 1, 0.3, 1],
+                                        }}
+                                        className="absolute inset-0"
+                                    >
+                                        <img
+                                            src={artworkSrc}
+                                            alt=""
+                                            className="h-full w-full scale-125 object-cover opacity-90 brightness-95 blur-2xl saturate-150 dark:opacity-75 dark:brightness-100"
+                                        />
+                                    </motion.div>
+                                </AnimatePresence>
                                 {/* Subtle top scrim so pure white text always pops even on light album covers */}
                                 <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/20 to-transparent dark:from-black/30 dark:via-transparent" />
                             </motion.div>
