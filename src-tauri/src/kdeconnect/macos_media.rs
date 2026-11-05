@@ -302,14 +302,24 @@ pub fn start_macos_media_bridge() {
         return;
     }
 
-    let _ = std::thread::Builder::new()
+    let spawn_result = std::thread::Builder::new()
         .name("velquo-mr-stream".into())
         .spawn(|| {
-            let Some(dylib_path) = ensure_mr_bridge_dylib() else {
-                return;
-            };
-            let Some(dylib_str) = dylib_path.to_str().map(|s| s.to_string()) else {
-                return;
+            let dylib_str = loop {
+                if let Some(dylib_path) = ensure_mr_bridge_dylib() {
+                    match dylib_path.to_str() {
+                        Some(path) => break path.to_string(),
+                        None => {
+                            log::warn!(
+                                "[mpris-host] Media bridge dylib path is not valid UTF-8; retrying"
+                            );
+                        }
+                    }
+                }
+
+                // A transient write/rename failure must not permanently disable media
+                // integration. Keep retrying in the background.
+                std::thread::sleep(Duration::from_secs(10));
             };
 
             let perl_code = r#"my $h = DynaLoader::dl_load_file($ARGV[0], 0) or exit 1; my $s = DynaLoader::dl_find_symbol($h, "velquo_mr_stream") or exit 1; DynaLoader::dl_install_xsub("main::run", $s); run();"#;
@@ -375,6 +385,11 @@ pub fn start_macos_media_bridge() {
                 std::thread::sleep(Duration::from_secs(2));
             }
         });
+
+    if let Err(e) = spawn_result {
+        MR_STREAM_STARTED.store(false, Ordering::SeqCst);
+        log::warn!("[mpris-host] Failed to spawn media bridge thread: {}", e);
+    }
 }
 
 #[cfg(not(target_os = "macos"))]

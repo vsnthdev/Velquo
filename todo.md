@@ -98,8 +98,8 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 - [ ] **Set a real CSP** instead of `"csp": null` (`tauri.conf.json:34–36`), allowing Tauri, Google Fonts, iTunes, and GitHub as needed.
 - [ ] **Remove the fragile AppKit ivar mirror** in `mark_menu_icons_as_template` (`lib.rs:824–882`) or add version/layout guards; it is undefined behavior if AppKit changes.
 - [ ] **Replace deprecated `NSUserNotification`** (`macos_notify.rs:1–12`, `183–261`) with `UserNotifications` when feasible.
-- [ ] Retry media bridge startup if dylib setup fails; `MR_STREAM_STARTED` is set before setup (`macos_media.rs:358–370`).
-- [ ] Consider removing the project-wide “no strict equality” ESLint rule (`eslint.config.js:20–60`, `165`); it forces coercive `==` and removes a safety net.
+- [x] Retry media bridge startup if dylib setup fails — The bridge supervisor now retries dylib preparation every 10 seconds in the background instead of exiting. Thread-spawn failures reset `MR_STREAM_STARTED` so a future startup attempt can run.
+- [x] ~~Consider removing the project-wide “no strict equality” ESLint rule (`eslint.config.js:20–60`, `165`)~~ — **Cancelled**: the rule is intentional project style.
 - [x] ~~Update README/docs stale versions (`README.md:44` says `0.1.0`; `docs/releasing.md` examples use `0.3.0`).~~ — **Cancelled**
 
 ## Verification
