@@ -168,6 +168,11 @@ export function AppSettingsPage({
                 <motion.button
                     type="button"
                     disabled={checkStatus == "checking"}
+                    title={
+                        checkStatus == "error"
+                            ? "Check failed — click to try again"
+                            : undefined
+                    }
                     whileHover={checkStatus == "checking" ? undefined : { scale: 1.02 }}
                     whileTap={checkStatus == "checking" ? undefined : { scale: 0.97 }}
                     onClick={handleManualUpdateCheck}
@@ -175,7 +180,7 @@ export function AppSettingsPage({
                         checkStatus == "up-to-date"
                             ? "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
                             : checkStatus == "error"
-                                ? "border-amber-500/30 bg-amber-500/12 text-amber-700 dark:text-amber-300"
+                                ? "border-red-500/30 bg-red-500/12 text-red-700 dark:text-red-300"
                                 : "border-black/12 bg-black/[0.04] text-zinc-800 hover:border-black/20 hover:bg-black/[0.07] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.09]"
                     }`}
                 >
@@ -195,7 +200,7 @@ export function AppSettingsPage({
                                 {checkStatus == "checking"
                                     ? "Checking..."
                                     : checkStatus == "error"
-                                        ? "Up to date"
+                                        ? "Check failed"
                                         : "Check now"}
                             </span>
                         </>

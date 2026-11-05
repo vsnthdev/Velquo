@@ -73,9 +73,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       `openAddCommandSignal` is never reset (`App.tsx:41`, `183–190`); `DeviceSettingsView.tsx:71–77` reopens the modal on every mount.  
       Fix: reset the signal after consuming it, or use a one-shot token.
 
-- [ ] **Fix update error label**  
-      `AppSettingsPage.tsx:194–199` renders “Up to date” when `checkStatus == "error"` (amber styling).  
-      Fix: use “Check failed” / “Try again”.
+- [x] **Fix update error label** — The Settings “Check for updates” control now shows “Check failed” with red error styling when a check fails, and its tooltip makes the retry action explicit. A successful check with no update still shows “Up to date”.
 
 - [ ] **Handle text-share write failures**  
       `daemon.rs:4529` ignores `fs::write` errors, then records `Completed` with a path at lines 4545–4560.  
