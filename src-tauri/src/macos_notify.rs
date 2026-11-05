@@ -7,7 +7,7 @@ use objc2::runtime::{AnyObject, NSObjectProtocol, ProtocolObject};
 use objc2::{define_class, msg_send, sel, AllocAnyThread, MainThreadOnly};
 use objc2_app_kit::{NSApplication, NSImage};
 use objc2_foundation::{
-    MainThreadMarker, NSData, NSDictionary, NSObject, NSString, NSUserNotification,
+    MainThreadMarker, NSData, NSDictionary, NSNumber, NSObject, NSString, NSUserNotification,
     NSUserNotificationActivationType, NSUserNotificationCenter, NSUserNotificationCenterDelegate,
 };
 use std::sync::{Arc, OnceLock};
@@ -77,17 +77,7 @@ define_class!(
                 return;
             };
 
-            let additional_action_id = notification
-                .additionalActivationAction()
-                .and_then(|a| a.identifier())
-                .map(|s| s.to_string());
-
-            let is_dismiss_clicked = activation_type
-                == NSUserNotificationActivationType::ActionButtonClicked
-                || (activation_type == NSUserNotificationActivationType::AdditionalActionClicked
-                    && additional_action_id.as_deref() == Some("dismiss"));
-
-            if is_dismiss_clicked {
+            if activation_type == NSUserNotificationActivationType::ActionButtonClicked {
                 if let (Some(device_id), Some(notif_id)) = (device_id_opt, notif_id_opt) {
                     log::info!(
                         "[macos-notify] Dismiss action clicked in macOS notification for device='{}' id='{}'",
@@ -186,7 +176,7 @@ pub fn show_macos_notification(
     body: &str,
     device_id: Option<&str>,
     notification_id: Option<&str>,
-    _dismissable: bool,
+    dismissable: bool,
 ) {
     let Some(ctx) = NOTIFY_CTX.get() else {
         return;
@@ -242,8 +232,36 @@ pub fn show_macos_notification(
             notification.setUserInfo(Some(&dict));
         }
 
-        // Deliver as a standard auto-dismissing macOS banner (without action buttons that force persistent alert mode)
-        notification.setHasActionButton(false);
+        // Keep the native banner behavior while still exposing the dismiss action. A
+        // plain NSUserNotification action button would force persistent alert mode, so
+        // enable the private `_showsButtons` flag that lets banners render the action.
+        // If the private ivar is unavailable, keep the banner non-interactive rather
+        // than forcing persistent alert notifications.
+        let wants_dismiss_action = dismissable && notif_id_raw.is_some();
+        let banner_buttons_supported = wants_dismiss_action && {
+            // `_showsButtons` is a private ivar on _NSConcreteUserNotification. KVC can
+            // set it, but only use it when the runtime actually exposes the ivar.
+            let has_shows_buttons_ivar = notification
+                .class()
+                .instance_variable(c"_showsButtons")
+                .is_some();
+            if has_shows_buttons_ivar {
+                let key = NSString::from_str("_showsButtons");
+                let value = NSNumber::new_bool(true);
+                let _: () = msg_send![
+                    &*notification,
+                    setValue: &*value,
+                    forKey: &*key
+                ];
+            }
+            has_shows_buttons_ivar
+        };
+
+        notification.setHasActionButton(banner_buttons_supported);
+        if banner_buttons_supported {
+            let dismiss_title = NSString::from_str("Dismiss");
+            notification.setActionButtonTitle(&dismiss_title);
+        }
 
         // Set the Velquo identity icon directly on the notification so it always renders with the Velquo icon
         if let Some(app_img) = load_velquo_app_nsimage() {

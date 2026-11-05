@@ -91,9 +91,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       `App.tsx:273`, `278–283` only select paired devices, so the banner in `DeviceControlView.tsx:458–540` is unreachable.  
       Fix: either include reachable unpaired devices in selection or remove the banner.
 
-- [ ] **Remove dead notification-dismiss branch or implement actions**  
-      `macos_notify.rs:85–100` is unreachable because `setHasActionButton(false)` is set at `240` and no additional actions exist; `_dismissable` is ignored (`183–190`).  
-      Fix: add action buttons/additional actions if dismissal from the banner is intended, or remove the branch.
+- [x] **Remove dead notification-dismiss branch or implement actions** — Implemented a native **Dismiss** action on every dismissable phone notification banner. The action button uses the private `_showsButtons` flag so banners remain auto-dismissing instead of switching to persistent alert mode, and clicking it cancels the corresponding notification on the phone.
 
 ## Low / Cleanup
 
