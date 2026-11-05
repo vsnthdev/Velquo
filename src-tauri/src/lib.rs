@@ -5,7 +5,7 @@ pub mod macos_notify;
 
 use crate::kdeconnect::daemon::{DeviceView, HostInfo, KdeConnectDaemon, TransferItem};
 use crate::kdeconnect::packet::NetworkPacket;
-use crate::kdeconnect::sftp::SftpBrowseResponse;
+use crate::kdeconnect::sftp::{sftp_window_label, SftpBrowseResponse};
 use crate::logger::AppLogger;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -636,11 +636,14 @@ async fn open_file_browser_window(
     device_name: String,
     app: AppHandle,
 ) -> Result<(), String> {
-    let sanitized_id: String = device_id
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
-        .collect();
-    let label = format!("sftp-{}", sanitized_id);
+    let Some(daemon) = app.try_state::<Arc<KdeConnectDaemon>>() else {
+        return Err("KDE Connect daemon is not available".to_string());
+    };
+    if !daemon.is_device_paired(&device_id) {
+        return Err("Device is not paired".to_string());
+    }
+
+    let label = sftp_window_label(&device_id);
 
     #[cfg(target_os = "macos")]
     {

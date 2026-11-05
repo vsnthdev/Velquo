@@ -42,7 +42,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       `daemon.rs:2868–2881` clears `paused_sources` and disowns without resuming.  
       Fix: resume the drained sources, or explicitly leave them owned and inform the user.
 
-- [ ] **Tear down SFTP and file browser on unpair**  
+- [x] **Tear down SFTP and file browser on unpair** — Implemented a shared `sftp_window_label` helper and `teardown_sftp`, which clears the cached session and closes the `sftp-*` window from both unpair paths. `open_file_browser_window` now refuses unpaired devices, and the existing pairing guards in `sftp_browse/download/delete` remain in place.
       `unpair_or_reject` (`daemon.rs:4398–4433`) and the `pair:false` branch (`2440–2460`) do not call `sftp_manager.clear_device`; `sftp-*` windows stay open.  
       `sftp_browse/download/delete` (`lib.rs:411–481`, `daemon.rs:5121–5168`) do not check pair state.  
       Fix: clear the SFTP manager, close the matching window, and enforce pairing in SFTP commands.

@@ -98,6 +98,7 @@ impl KdeConnectDaemon {
             entry.album_art_cache.clear();
             entry.album_art_in_flight.clear();
             drop(devices);
+            self.teardown_sftp(device_id);
             self.trusted_devices.lock().unwrap().remove(device_id);
             self.save_trusted_devices();
         }
@@ -231,6 +232,7 @@ impl KdeConnectDaemon {
                 devices.remove(device_id);
             }
         }
+        self.teardown_sftp(device_id);
         self.trusted_devices.lock().unwrap().remove(device_id);
         self.save_trusted_devices();
         self.notify_ui();

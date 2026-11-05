@@ -81,6 +81,16 @@ struct ActiveSftpConnection {
     sftp: Arc<SftpSession>,
 }
 
+/// Stable Tauri window label for a device's file-browser window. Keep this in one place so
+/// window creation and teardown always agree on the label.
+pub fn sftp_window_label(device_id: &str) -> String {
+    let sanitized_id: String = device_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    format!("sftp-{}", sanitized_id)
+}
+
 #[derive(Default)]
 pub struct SftpManager {
     active: Mutex<HashMap<String, ActiveSftpConnection>>,
@@ -917,4 +927,18 @@ async fn delete_sftp_directory_recursive(sftp: &Arc<SftpSession>, root_dir: &str
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sftp_window_label;
+
+    #[test]
+    fn sftp_window_label_sanitizes_device_id() {
+        assert_eq!(
+            sftp_window_label("4c7a9956e49a4930"),
+            "sftp-4c7a9956e49a4930"
+        );
+        assert_eq!(sftp_window_label("a/b c_d-e"), "sftp-abc_d-e");
+    }
 }

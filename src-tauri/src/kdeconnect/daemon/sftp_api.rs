@@ -4,6 +4,7 @@ use crate::kdeconnect::sftp::*;
 use anyhow::{anyhow, Result};
 use std::path::Path;
 use std::sync::Arc;
+use tauri::Manager;
 
 #[derive(Debug, PartialEq, Eq)]
 enum SshHostKeyCheck {
@@ -60,6 +61,27 @@ impl KdeConnectDaemon {
                 }
             }
         })
+    }
+
+    /// Drops any cached SFTP session and closes the device's file-browser window.
+    /// Call this when a device is unpaired or rejects the pairing.
+    pub fn teardown_sftp(&self, device_id: &str) {
+        self.sftp_manager.clear_device(device_id);
+
+        let app = self.app_handle.lock().ok().and_then(|guard| guard.clone());
+        let Some(app) = app else {
+            return;
+        };
+
+        let label = sftp_window_label(device_id);
+        let Some(window) = app.get_webview_window(&label) else {
+            return;
+        };
+
+        match window.close() {
+            Ok(()) => log::info!("[sftp-window] Closed file browser window '{}'", label),
+            Err(e) => log::warn!("[sftp-window] Failed to close '{}': {}", label, e),
+        }
     }
 
     pub async fn sftp_browse(
