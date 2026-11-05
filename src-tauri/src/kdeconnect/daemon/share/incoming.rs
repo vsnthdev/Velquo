@@ -45,13 +45,11 @@ impl KdeConnectDaemon {
             let dest_path = self.unique_download_path(device_id, &clean_name);
 
             log::info!(
-                "[share-in] Starting file download '{}' ({} bytes) from '{}' at {}:{} -> {:?}",
-                clean_name,
+                "[share-in] Starting file download ({} bytes) from '{}' at {}:{}",
                 total_bytes,
                 device_name,
                 peer_ip,
-                port,
-                dest_path
+                port
             );
 
             self.upsert_transfer(TransferItem {
@@ -88,11 +86,7 @@ impl KdeConnectDaemon {
                     .await
                 {
                     Ok(saved) => {
-                        log::info!(
-                            "[share-in] Completed file download '{}' -> {:?}",
-                            clean_name,
-                            saved
-                        );
+                        log::info!("[share-in] Completed file download from '{}'", dev_name);
                         daemon.finish_transfer(
                             &transfer_id,
                             "Completed",
@@ -102,7 +96,7 @@ impl KdeConnectDaemon {
                     }
                     Err(e) => {
                         let _ = tokio::fs::remove_file(&dest_path).await;
-                        log::error!("[share-in] File download '{}' failed: {:?}", clean_name, e);
+                        log::error!("[share-in] File download failed: {:?}", e);
                         daemon.finish_transfer(&transfer_id, "Failed", None, Some(e.to_string()));
                     }
                 }
@@ -116,10 +110,9 @@ impl KdeConnectDaemon {
             let save_path = self.unique_download_path(device_id, &filename);
             let _ = fs::write(&save_path, text.as_bytes());
             log::info!(
-                "[share-in] Received shared text from '{}' ({} chars), saved to {:?}",
+                "[share-in] Received shared text from '{}' ({} chars)",
                 device_name,
-                text.len(),
-                save_path
+                text.len()
             );
 
             // Check if the last non-empty line is a valid http/https URL (matches kdeconnect-kde SharePlugin::receivePacket)
@@ -153,9 +146,9 @@ impl KdeConnectDaemon {
         if let Some(url) = packet.get_str("url") {
             let trimmed_url = url.trim();
             log::info!(
-                "[share-in] Received shared URL from '{}': {}",
+                "[share-in] Received shared URL from '{}' ({} chars)",
                 device_name,
-                trimmed_url
+                trimmed_url.len()
             );
 
             let is_safe_scheme = trimmed_url.starts_with("http://")
@@ -166,25 +159,15 @@ impl KdeConnectDaemon {
             if is_safe_scheme {
                 match open::that(trimmed_url) {
                     Ok(()) => {
-                        log::info!(
-                            "[share-in] Auto-opened shared URL in default browser: {}",
-                            trimmed_url
-                        );
+                        log::info!("[share-in] Auto-opened shared URL in default browser");
                     }
                     Err(e) => {
-                        log::warn!(
-                            "[share-in] Failed to auto-open shared URL '{}': {}",
-                            trimmed_url,
-                            e
-                        );
+                        log::warn!("[share-in] Failed to auto-open shared URL: {}", e);
                         open_err = Some(format!("Failed to auto-open: {}", e));
                     }
                 }
             } else {
-                log::warn!(
-                    "[share-in] Blocked auto-opening URL with non-http(s)/mailto scheme: {}",
-                    trimmed_url
-                );
+                log::warn!("[share-in] Blocked auto-opening URL with unsupported scheme");
             }
 
             self.upsert_transfer(TransferItem {

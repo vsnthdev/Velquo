@@ -27,8 +27,8 @@ impl KdeConnectDaemon {
 
         let Some(art_bytes) = maybe_bytes else {
             log::debug!(
-                "[mpris-host] No cached Mac album art found for '{}' requested by '{}'",
-                album_art_url,
+                "[mpris-host] No cached Mac album art found ({} chars) requested by '{}'",
+                album_art_url.len(),
                 device_name
             );
             return;

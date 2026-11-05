@@ -144,9 +144,8 @@ impl SftpManager {
 
         let Some(port) = packet.get_i64("port").and_then(|p| u16::try_from(p).ok()) else {
             log::warn!(
-                "[sftp] Ignoring SFTP packet without valid port from '{}': {:?}",
-                device_name,
-                packet.body
+                "[sftp] Ignoring SFTP packet without valid port from '{}'",
+                device_name
             );
             return;
         };
@@ -241,13 +240,13 @@ impl SftpManager {
         };
 
         log::info!(
-            "[sftp] Received SFTP server info from '{}' ({}): {}:{} user='{}' roots={:?}",
+            "[sftp] Received SFTP server info from '{}' ({}): {}:{} user_present={} roots={}",
             device_name,
             device_id,
             info.ip,
             info.port,
-            info.user,
-            info.roots
+            !info.user.trim().is_empty(),
+            info.roots.len()
         );
 
         let waiters = self

@@ -187,12 +187,11 @@ pub(super) fn handle_player_metadata_update(
             }
         } else {
             log::info!(
-                "[mpris] Player update on '{}' ({}): '{}' by '{}' (isPlaying={}, hasArt={})",
+                "[mpris] Player update on '{}' ({}): isPlaying={}, hasTitle={}, hasArt={}",
                 device_name,
                 player,
-                title,
-                artist,
                 is_playing,
+                !title.is_empty(),
                 album_art_data.is_some()
             );
             entry.mpris_players.insert(
@@ -221,10 +220,10 @@ pub(super) fn handle_player_metadata_update(
 
     if let Some((req_player, req_url)) = art_to_request {
         log::info!(
-            "[mpris] Requesting album art from '{}' for player '{}': {}",
+            "[mpris] Requesting album art from '{}' for player '{}' ({} chars)",
             device_name,
             req_player,
-            req_url
+            req_url.len()
         );
         let _ = daemon.send_packet_to_device(
             device_id,

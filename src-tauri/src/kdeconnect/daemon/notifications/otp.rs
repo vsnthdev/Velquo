@@ -127,8 +127,8 @@ pub(super) fn maybe_auto_copy_otp(
     }
 
     log::info!(
-        "[otp] Extracted OTP code '{}' from '{}' notification on '{}' (silent={}, age_ms={}), auto-copying to Mac clipboard",
-        code,
+        "[otp] Extracted {}-digit OTP from '{}' notification on '{}' (silent={}, age_ms={}), auto-copying to Mac clipboard",
+        code.len(),
         app_name,
         device_name,
         is_silent,

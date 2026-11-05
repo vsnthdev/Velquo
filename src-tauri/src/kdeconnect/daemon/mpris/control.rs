@@ -168,12 +168,10 @@ pub(crate) fn spawn_media_broadcaster(daemon: Arc<KdeConnectDaemon>) {
 
             if let Some(snap) = snap_opt {
                 log::info!(
-                    "[mpris-host] Broadcasting Mac Control Center Now Playing to paired devices: player='{}' title='{}' artist='{}' isPlaying={} art='{}'",
+                    "[mpris-host] Broadcasting Mac Control Center Now Playing to paired devices: player='{}' isPlaying={} hasArt={}",
                     snap.player,
-                    snap.title,
-                    snap.artist,
                     snap.is_playing,
-                    snap.album_art_url
+                    !snap.album_art_url.is_empty()
                 );
                 let pkt = snap.to_mpris_packet(true, true);
                 for id in &online_paired_ids {

@@ -100,10 +100,10 @@ impl KdeConnectDaemon {
         if packet.body.contains_key("playerList") {
             let players = packet.get_string_list("playerList");
             log::info!(
-                "[mpris] Device '{}' ({}) playerList: {:?}",
+                "[mpris] Device '{}' ({}) playerList: {} entries",
                 device_name,
                 device_id,
-                players
+                players.len()
             );
 
             let newly_added_players: Vec<String> = {

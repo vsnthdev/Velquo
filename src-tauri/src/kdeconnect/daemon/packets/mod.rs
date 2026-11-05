@@ -39,6 +39,9 @@ impl KdeConnectDaemon {
         if packet.packet_type != PACKET_TYPE_MOUSEPAD_REQUEST
             && packet.packet_type != PACKET_TYPE_PRESENTER
         {
+            // Debug builds keep the full packet body for local development.
+            // Release builds deliberately exclude it from the binary and logs.
+            #[cfg(debug_assertions)]
             log::info!(
                 "[packet-in] From '{}' ({}): type='{}' body={} payloadSize={:?} transferInfo={:?}",
                 device_name,
@@ -48,6 +51,16 @@ impl KdeConnectDaemon {
                 packet.payload_size,
                 packet.payload_transfer_info
             );
+
+            #[cfg(not(debug_assertions))]
+            log::info!(
+                "[packet-in] From '{}' ({}): type='{}' payloadSize={:?} payloadPort={:?}",
+                device_name,
+                device_id,
+                packet.packet_type,
+                packet.payload_size,
+                packet.payload_port()
+            );
         }
 
         match packet.packet_type.as_str() {
@@ -56,7 +69,11 @@ impl KdeConnectDaemon {
             }
             PACKET_TYPE_PING => {
                 let msg = packet.get_str("message").unwrap_or("Ping!");
-                log::info!("[ping] Received Ping from '{}': \"{}\"", device_name, msg);
+                log::info!(
+                    "[ping] Received Ping from '{}' ({} chars)",
+                    device_name,
+                    msg.len()
+                );
                 Self::show_macos_notification(device_name, msg, Some(device_id), None, false);
             }
             PACKET_TYPE_BATTERY_REQUEST => {
@@ -245,9 +262,10 @@ impl KdeConnectDaemon {
             }
             PACKET_TYPE_SHARE_REQUEST_UPDATE => {
                 log::info!(
-                    "[share-in] Share update packet from '{}': {:?}",
+                    "[share-in] Share update packet from '{}': files={:?} bytes={:?}",
                     device_name,
-                    packet.body
+                    packet.get_i64("numberOfFiles"),
+                    packet.get_i64("totalPayloadSize")
                 );
             }
             PACKET_TYPE_SFTP => {

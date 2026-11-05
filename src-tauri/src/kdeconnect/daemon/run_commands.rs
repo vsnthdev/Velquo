@@ -54,11 +54,10 @@ impl KdeConnectDaemon {
                 is_online_and_paired =
                     entry.view.reachable && entry.view.pair_state == PairState::Paired;
                 log::info!(
-                    "[runcommand] Added command '{}' ('{}') for '{}' ({})",
-                    clean_name,
-                    clean_cmd,
+                    "[runcommand] Added command for '{}' ({}); total={}",
                     entry.view.device_name,
-                    device_id
+                    device_id,
+                    entry.view.run_commands.len()
                 );
             }
         }
@@ -183,9 +182,8 @@ impl KdeConnectDaemon {
         };
 
         log::info!(
-            "[runcommand] Executing command '{}' (`{}`) triggered by '{}'",
-            cmd_item.name,
-            cmd_item.command,
+            "[runcommand] Executing command key='{}' triggered by '{}'",
+            key,
             device_name
         );
 

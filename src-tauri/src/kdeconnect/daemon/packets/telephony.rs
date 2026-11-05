@@ -21,18 +21,16 @@ impl KdeConnectDaemon {
             return;
         };
         let is_cancel = packet.get_bool("isCancel").unwrap_or(false);
-        let contact = packet
-            .get_str("contactName")
-            .or_else(|| packet.get_str("phoneNumber"))
-            .unwrap_or("Unknown caller");
+        let has_contact =
+            packet.get_str("contactName").is_some() || packet.get_str("phoneNumber").is_some();
 
         log::info!(
-            "[telephony] Device '{}' ({}) telephony event='{}' isCancel={} caller='{}'",
+            "[telephony] Device '{}' ({}) telephony event='{}' isCancel={} has_contact={}",
             device_name,
             device_id,
             event,
             is_cancel,
-            contact
+            has_contact
         );
 
         match event {

@@ -23,9 +23,9 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       `network/udp.rs` now admits discovery work before spawning; `last_discovery_attempt_ms` is pruned on every admission and inbound dedup check.
       Fix: prune the attempt map, rate-limit globally, and cap concurrent outbound connection tasks.
 
-- [ ] **Redact sensitive packet data from logs**  
-      `handle_incoming_packet` logs full `packet.body` (`daemon.rs:2004–2016`): SFTP password/user, clipboard content, notification title/text, telephony names/numbers, shared text/URLs/filenames.  
-      OTP codes are logged at `daemon.rs:3392–3394`.  
+- [x] **Redact sensitive packet data from logs** — Release builds now log only packet type/IDs, sizes, ports, and boolean/count metadata; debug builds retain the full packet body for development. Sensitive targeted logs (OTP, telephony, SFTP, share, MPRIS, run commands) are redacted, and the log rotates at 5 MiB with one backup.
+      Generic packet logging now uses `#[cfg(debug_assertions)]`; release builds exclude body serialization entirely.
+      OTP codes, contact names, URLs, filenames, SFTP credentials, and media metadata are no longer written to release logs.
       Fix: log packet type/ID only and explicitly redact sensitive fields. Add log rotation for `~/Library/Logs/Velquo/app.log` (`logger.rs:15–25`).
 
 - [ ] **Pin SFTP SSH host key**  

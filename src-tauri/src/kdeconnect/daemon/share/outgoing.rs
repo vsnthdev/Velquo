@@ -37,10 +37,10 @@ impl KdeConnectDaemon {
         self.send_packet_to_device(device_id, &pkt)?;
 
         log::info!(
-            "[share-out] Shared URL '{}' to '{}' ({})",
-            trimmed,
+            "[share-out] Shared URL to '{}' ({}) ({} chars)",
             device_name,
-            device_id
+            device_id,
+            trimmed.len()
         );
 
         let transfer_id = Uuid::new_v4().to_string();
@@ -198,10 +198,9 @@ impl KdeConnectDaemon {
                 );
 
                 log::info!(
-                    "[share-out] Sending file {}/{}: '{}' ({} bytes) on port {} to '{}'",
+                    "[share-out] Sending file {}/{} ({} bytes) on port {} to '{}'",
                     idx + 1,
                     number_of_files,
-                    fname,
                     file_size,
                     payload_port,
                     dev_name
@@ -209,8 +208,9 @@ impl KdeConnectDaemon {
 
                 if let Err(e) = daemon.send_packet_to_device(&dev_id, &share_packet) {
                     log::error!(
-                        "[share-out] Failed to send share header for '{}' to '{}': {:?}",
-                        fname,
+                        "[share-out] Failed to send share header {}/{} to '{}': {:?}",
+                        idx + 1,
+                        number_of_files,
                         dev_name,
                         e
                     );
@@ -224,10 +224,9 @@ impl KdeConnectDaemon {
                 {
                     Ok(()) => {
                         log::info!(
-                            "[share-out] Successfully uploaded {}/{} '{}' ({} bytes) to '{}'",
+                            "[share-out] Successfully uploaded {}/{} ({} bytes) to '{}'",
                             idx + 1,
                             number_of_files,
-                            fname,
                             file_size,
                             dev_name
                         );
@@ -240,8 +239,9 @@ impl KdeConnectDaemon {
                     }
                     Err(e) => {
                         log::error!(
-                            "[share-out] Upload of '{}' to '{}' failed: {:?}",
-                            fname,
+                            "[share-out] Upload {}/{} to '{}' failed: {:?}",
+                            idx + 1,
+                            number_of_files,
                             dev_name,
                             e
                         );
