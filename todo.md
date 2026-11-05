@@ -57,9 +57,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 
 - [x] **Fix updater resource leaks** — `check_for_update` now returns metadata without registering an updater resource in the main webview. `get_pending_update` is the only path that registers a handle, and `UpdateWindow` closes duplicate, superseded, replaced, skipped, closed, and post-install handles with `update.close()`. In-flight loads are sequence-guarded so stale responses release their own handles.
 
-- [ ] **Show update-check failures as errors, not “up to date”**  
-      `UpdateWindow.tsx:57–70` catches errors and sets `update = null`; render treats null as latest version (`239–263`).  
-      Fix: add `loadError` state and an error/retry UI.
+- [x] **Show update-check failures as errors, not “up to date”** — Added a dedicated `loadError` state. Failed checks now show a “Could not check for updates” screen with the error and a retry button, while a successful check with no update still shows “You have the latest version.”
 
 - [ ] **Add `NSAppleEventsUsageDescription`**  
       `Info.plist:4–24` lacks it, but `macos_media.rs` runs `osascript` for Spotify/Music/System Events (`918`, `1066`, `1326`, `1351`, `1370`, `1461`, `1498`, `1649`).  

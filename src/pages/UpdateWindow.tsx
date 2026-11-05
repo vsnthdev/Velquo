@@ -16,11 +16,22 @@ import {
     SparkleIcon,
     CheckCircleIcon,
     CircleNotchIcon,
-    CloudArrowDownIcon,
+    WarningCircleIcon,
     ArrowClockwiseIcon,
+    CloudArrowDownIcon,
 } from "@phosphor-icons/react";
 
 type UpdateStep = "prompt" | "downloading" | "ready" | "error";
+
+function formatUpdateCheckError(err: unknown): string {
+    if (typeof err == "string" && err.trim()) {
+        return err.trim();
+    }
+    if (err instanceof Error && err.message.trim()) {
+        return err.message.trim();
+    }
+    return "The update service could not be reached. Check your connection and try again.";
+}
 
 interface UpdateMetadataDto {
     body?: string;
@@ -38,6 +49,7 @@ export function UpdateWindow() {
     const [step, setStep] = useState<UpdateStep>("prompt");
     const [progressPct, setProgressPct] = useState<number>(0);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [releaseNotes, setReleaseNotes] = useState<string | null>(null);
     const [isFetchingNotes, setIsFetchingNotes] = useState<boolean>(false);
 
@@ -71,6 +83,7 @@ export function UpdateWindow() {
     const loadPendingUpdate = useCallback(async () => {
         const seq = ++loadSeqRef.current;
         setIsLoadingUpdate(true);
+        setLoadError(null);
         try {
             const metadata = await invoke<UpdateMetadataDto | null>(
                 "get_pending_update",
@@ -92,6 +105,7 @@ export function UpdateWindow() {
 
             if (!metadata) {
                 await releaseCurrentUpdate();
+                setLoadError(null);
                 setUpdate(null);
                 return;
             }
@@ -108,12 +122,14 @@ export function UpdateWindow() {
             }
 
             await releaseCurrentUpdate();
+            setLoadError(null);
             updateRef.current = next;
             setUpdate(next);
         } catch (err) {
             console.error("Failed to load pending update:", err);
             if (seq == loadSeqRef.current) {
                 await releaseCurrentUpdate();
+                setLoadError(formatUpdateCheckError(err));
                 setUpdate(null);
             }
         } finally {
@@ -301,6 +317,36 @@ export function UpdateWindow() {
                         <span className="text-[13px] font-medium">
                             Checking for updates...
                         </span>
+                    </div>
+                ) : loadError ? (
+                    <div className="flex flex-1 flex-col items-center justify-center gap-2.5 text-center">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-red-500/12 text-red-600 dark:bg-red-500/15 dark:text-red-300">
+                            <WarningCircleIcon size={24} weight="duotone" />
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">
+                                Could not check for updates
+                            </span>
+                            <span className="max-w-xs text-[12.5px] leading-relaxed break-words text-zinc-500 dark:text-zinc-400">
+                                {loadError}
+                            </span>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => void loadPendingUpdate()}
+                                className="cursor-pointer rounded-xl bg-blue-600 px-4 py-1.5 text-[12.5px] font-medium text-white transition-colors hover:bg-blue-500"
+                            >
+                                Try again
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleCloseWindow()}
+                                className="cursor-pointer rounded-xl border border-black/12 bg-black/[0.03] px-4 py-1.5 text-[12.5px] font-medium text-zinc-700 transition-colors hover:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.04] dark:text-zinc-200 dark:hover:bg-white/[0.08]"
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
                 ) : !update ? (
                     <div className="flex flex-1 flex-col items-center justify-center gap-2.5 text-center">
