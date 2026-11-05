@@ -383,6 +383,8 @@ export function DeviceControlView({
         if (!bar) return;
 
         const rect = bar.getBoundingClientRect();
+        if (rect.width <= 0) return;
+
         const ratio = Math.min(
             1,
             Math.max(0, (e.clientX - rect.left) / rect.width),
