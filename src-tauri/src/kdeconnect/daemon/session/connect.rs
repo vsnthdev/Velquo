@@ -1,4 +1,5 @@
 use crate::kdeconnect::cert::*;
+use crate::kdeconnect::daemon::core::DISCOVERY_ATTEMPT_TTL_MS;
 use crate::kdeconnect::daemon::*;
 use crate::kdeconnect::packet::*;
 use anyhow::{anyhow, Context, Result};
@@ -151,14 +152,15 @@ impl KdeConnectDaemon {
         let now_ms = current_millis();
         {
             let mut attempts = self.last_discovery_attempt_ms.lock().unwrap();
+            attempts.retain(|_, last| now_ms.saturating_sub(*last) <= DISCOVERY_ATTEMPT_TTL_MS);
             let key = format!("inbound:{}", peer_device_id);
             if let Some(last) = attempts.get(&key) {
-                if now_ms - *last < 800 {
+                if now_ms.saturating_sub(*last) < 800 {
                     log::debug!(
                         "[tcp-in] Dropping duplicate burst inbound TCP connection from {} (deviceId={}, {}ms since previous)",
                         peer_addr,
                         peer_device_id,
-                        now_ms - *last
+                        now_ms.saturating_sub(*last)
                     );
                     return Ok(());
                 }

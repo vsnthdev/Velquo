@@ -9,9 +9,49 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 use tokio::net::UdpSocket;
+use tokio::sync::Semaphore;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
+
+pub(crate) const DISCOVERY_BUCKET_CAPACITY: f64 = 8.0;
+pub(crate) const DISCOVERY_BUCKET_REFILL_PER_SEC: f64 = 2.0;
+pub(crate) const MAX_CONCURRENT_DISCOVERY_CONNECTIONS: usize = 8;
+pub(crate) const DISCOVERY_ATTEMPT_RETRY_MS: i64 = 1_500;
+pub(crate) const DISCOVERY_ATTEMPT_TTL_MS: i64 = 60_000;
+
+#[derive(Debug)]
+pub(crate) struct DiscoveryRateLimiter {
+    tokens: f64,
+    last_refill: Instant,
+}
+
+impl DiscoveryRateLimiter {
+    pub(crate) fn new() -> Self {
+        Self {
+            tokens: DISCOVERY_BUCKET_CAPACITY,
+            last_refill: Instant::now(),
+        }
+    }
+
+    pub(crate) fn try_consume(&mut self) -> bool {
+        let now = Instant::now();
+        let elapsed = now
+            .saturating_duration_since(self.last_refill)
+            .as_secs_f64();
+        self.tokens = (self.tokens + elapsed * DISCOVERY_BUCKET_REFILL_PER_SEC)
+            .min(DISCOVERY_BUCKET_CAPACITY);
+        self.last_refill = now;
+
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+}
 
 pub struct KdeConnectDaemon {
     pub host: HostIdentity,
@@ -25,6 +65,8 @@ pub struct KdeConnectDaemon {
     pub trusted_devices: Mutex<HashMap<String, TrustedDeviceRecord>>,
     pub transfers: Mutex<Vec<TransferItem>>,
     pub last_discovery_attempt_ms: Mutex<HashMap<String, i64>>,
+    pub(crate) discovery_rate_limiter: Mutex<DiscoveryRateLimiter>,
+    pub discovery_connection_semaphore: Arc<Semaphore>,
     pub udp_socket: Mutex<Option<Arc<UdpSocket>>>,
     pub app_handle: Mutex<Option<AppHandle>>,
     pub call_media_state: Mutex<CallMediaState>,
@@ -117,6 +159,10 @@ impl KdeConnectDaemon {
             trusted_devices: Mutex::new(trusted_map),
             transfers: Mutex::new(Vec::new()),
             last_discovery_attempt_ms: Mutex::new(HashMap::new()),
+            discovery_rate_limiter: Mutex::new(DiscoveryRateLimiter::new()),
+            discovery_connection_semaphore: Arc::new(Semaphore::new(
+                MAX_CONCURRENT_DISCOVERY_CONNECTIONS,
+            )),
             udp_socket: Mutex::new(None),
             app_handle: Mutex::new(None),
             call_media_state: Mutex::new(CallMediaState::default()),
@@ -171,5 +217,19 @@ impl KdeConnectDaemon {
                 let _ = app.emit("velquo://state-updated", ());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discovery_bucket_allows_startup_burst_then_blocks() {
+        let mut limiter = DiscoveryRateLimiter::new();
+        for _ in 0..DISCOVERY_BUCKET_CAPACITY as usize {
+            assert!(limiter.try_consume());
+        }
+        assert!(!limiter.try_consume());
     }
 }

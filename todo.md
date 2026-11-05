@@ -19,8 +19,8 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       Unbounded `read_line` in `session/connect.rs` and `session/link_loop.rs`.
       Fix: cap TCP packet lines at 1.5 MiB and reject oversized packets before allocation.
 
-- [ ] **Cap discovery/connection flood handling**  
-      `handle_udp_datagram` spawns a task per datagram (`daemon.rs:1277–1282`); `last_discovery_attempt_ms` is never pruned (`1323–1338`).  
+- [x] **Cap discovery/connection flood handling** — Implemented a token bucket (burst 8, refill 2/sec), a maximum of 8 concurrent outbound connection attempts, and 60-second pruning of the per-device attempt map.
+      `network/udp.rs` now admits discovery work before spawning; `last_discovery_attempt_ms` is pruned on every admission and inbound dedup check.
       Fix: prune the attempt map, rate-limit globally, and cap concurrent outbound connection tasks.
 
 - [ ] **Redact sensitive packet data from logs**  

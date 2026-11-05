@@ -1,3 +1,6 @@
+use crate::kdeconnect::daemon::core::{
+    DISCOVERY_ATTEMPT_RETRY_MS, DISCOVERY_ATTEMPT_TTL_MS, MAX_CONCURRENT_DISCOVERY_CONNECTIONS,
+};
 use crate::kdeconnect::daemon::*;
 use crate::kdeconnect::packet::{current_millis, current_secs};
 use crate::kdeconnect::packet::{NetworkPacket, PACKET_TYPE_IDENTITY, PROTOCOL_VERSION};
@@ -7,6 +10,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpStream, UdpSocket};
+use tokio::sync::OwnedSemaphorePermit;
 
 pub(super) fn bind_udp_discovery_socket() -> Result<UdpSocket> {
     let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
@@ -176,21 +180,113 @@ impl KdeConnectDaemon {
             protocol_version
         );
 
-        let daemon = Arc::clone(self);
-        tokio::spawn(async move {
-            daemon
-                .on_device_discovered(ip, tcp_port, device_id, protocol_version, Some(packet))
-                .await;
-        });
+        self.spawn_discovery_attempt(ip, tcp_port, device_id, protocol_version, Some(packet));
     }
 
-    pub async fn on_device_discovered(
+    fn is_already_connected(&self, device_id: &str, ip: IpAddr) -> bool {
+        let mut devices = self.devices.lock().unwrap();
+        if let Some(entry) = devices.get_mut(device_id) {
+            if entry.view.reachable
+                && entry.sender.is_some()
+                && entry.view.address == ip.to_string()
+            {
+                entry.view.last_seen_secs = current_secs();
+                log::debug!(
+                    "[discovery] Device '{}' ({}) is already connected and online at {}, skipping redundant outbound connection",
+                    entry.view.device_name,
+                    device_id,
+                    ip
+                );
+                return true;
+            }
+        }
+        false
+    }
+
+    pub(super) fn spawn_discovery_attempt(
         self: &Arc<Self>,
         ip: IpAddr,
         tcp_port: u16,
         device_id: String,
         protocol_version: i32,
         udp_packet: Option<NetworkPacket>,
+    ) {
+        if self.is_already_connected(&device_id, ip) {
+            return;
+        }
+
+        let Ok(permit) = self
+            .discovery_connection_semaphore
+            .clone()
+            .try_acquire_owned()
+        else {
+            log::debug!(
+                "[discovery] Dropping discovery attempt for {}: {} concurrent connection attempts already active",
+                device_id,
+                MAX_CONCURRENT_DISCOVERY_CONNECTIONS
+            );
+            return;
+        };
+
+        if !self.try_admit_discovery(&device_id) {
+            drop(permit);
+            return;
+        }
+
+        let daemon = Arc::clone(self);
+        tauri::async_runtime::spawn(async move {
+            daemon
+                .on_device_discovered(
+                    ip,
+                    tcp_port,
+                    device_id,
+                    protocol_version,
+                    udp_packet,
+                    permit,
+                )
+                .await;
+        });
+    }
+
+    fn try_admit_discovery(&self, device_id: &str) -> bool {
+        let now = current_millis();
+        let mut attempts = self.last_discovery_attempt_ms.lock().unwrap();
+
+        // Only recent attempts matter for the 1.5s per-device throttle. Keeping
+        // the map bounded prevents random device IDs from growing it forever.
+        attempts.retain(|_, last| now.saturating_sub(*last) <= DISCOVERY_ATTEMPT_TTL_MS);
+
+        if let Some(last) = attempts.get(device_id) {
+            if now.saturating_sub(*last) < DISCOVERY_ATTEMPT_RETRY_MS {
+                log::debug!(
+                    "[discovery] Skipping duplicate discovery of {} ({}ms since last attempt)",
+                    device_id,
+                    now.saturating_sub(*last)
+                );
+                return false;
+            }
+        }
+
+        if !self.discovery_rate_limiter.lock().unwrap().try_consume() {
+            log::debug!(
+                "[discovery] Global discovery rate limit reached; dropping attempt for {}",
+                device_id
+            );
+            return false;
+        }
+
+        attempts.insert(device_id.to_string(), now);
+        true
+    }
+
+    pub(super) async fn on_device_discovered(
+        self: &Arc<Self>,
+        ip: IpAddr,
+        tcp_port: u16,
+        device_id: String,
+        protocol_version: i32,
+        udp_packet: Option<NetworkPacket>,
+        permit: OwnedSemaphorePermit,
     ) {
         if !(MIN_TCP_PORT..=MAX_TCP_PORT).contains(&tcp_port) {
             log::warn!(
@@ -201,42 +297,8 @@ impl KdeConnectDaemon {
             return;
         }
 
-        // Check if this device already has an active, healthy TLS connection at this IP
-        // (Matches Soduto's ConnectionProviderDelegate.isNewConnectionNeeded)
-        {
-            let mut devices = self.devices.lock().unwrap();
-            if let Some(entry) = devices.get_mut(&device_id) {
-                if entry.view.reachable
-                    && entry.sender.is_some()
-                    && entry.view.address == ip.to_string()
-                {
-                    entry.view.last_seen_secs = current_secs();
-                    log::debug!(
-                        "[discovery] Device '{}' ({}) is already connected and online at {}, skipping redundant outbound connection",
-                        entry.view.device_name,
-                        device_id,
-                        ip
-                    );
-                    return;
-                }
-            }
-        }
-
-        // Rate-limit connection attempts to same device within 1500ms
-        let now = current_millis();
-        {
-            let mut attempts = self.last_discovery_attempt_ms.lock().unwrap();
-            if let Some(last) = attempts.get(&device_id) {
-                if now - *last < 1500 {
-                    log::debug!(
-                        "[discovery] Skipping duplicate discovery of {} ({}ms since last attempt)",
-                        device_id,
-                        now - *last
-                    );
-                    return;
-                }
-            }
-            attempts.insert(device_id.clone(), now);
+        if self.is_already_connected(&device_id, ip) {
+            return;
         }
 
         let target_addr = SocketAddr::new(ip, tcp_port);
@@ -247,7 +309,11 @@ impl KdeConnectDaemon {
             protocol_version
         );
 
-        match tokio::time::timeout(Duration::from_secs(5), TcpStream::connect(target_addr)).await {
+        let connect_result =
+            tokio::time::timeout(Duration::from_secs(5), TcpStream::connect(target_addr)).await;
+        drop(permit);
+
+        match connect_result {
             Ok(Ok(tcp_stream)) => {
                 if let Err(e) = self
                     .handle_outbound_tcp(

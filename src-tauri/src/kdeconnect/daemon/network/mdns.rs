@@ -97,18 +97,13 @@ impl KdeConnectDaemon {
                                     port,
                                     proto
                                 );
-                                let d = Arc::clone(&self);
-                                let id_clone = txt_id.clone();
-                                tauri::async_runtime::spawn(async move {
-                                    d.on_device_discovered(
-                                        IpAddr::V4(ip_val),
-                                        port,
-                                        id_clone,
-                                        proto,
-                                        None,
-                                    )
-                                    .await;
-                                });
+                                self.spawn_discovery_attempt(
+                                    IpAddr::V4(ip_val),
+                                    port,
+                                    txt_id.clone(),
+                                    proto,
+                                    None,
+                                );
                             }
                         }
                         ServiceEvent::ServiceRemoved(_ty, fullname) => {
