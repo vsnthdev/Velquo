@@ -75,9 +75,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 
 - [x] **Fix update error label** — The Settings “Check for updates” control now shows “Check failed” with red error styling when a check fails, and its tooltip makes the retry action explicit. A successful check with no update still shows “Up to date”.
 
-- [ ] **Handle text-share write failures**  
-      `daemon.rs:4529` ignores `fs::write` errors, then records `Completed` with a path at lines 4545–4560.  
-      Fix: return/record `Failed` on write error; don’t set `saved_path`.
+- [x] **Handle text-share write failures** — Text shares no longer write `.txt` files. A single safe URL is opened immediately; any other text is copied to the clipboard with a macOS banner, and clipboard/open failures are recorded as `Failed` with no `saved_path`. Regular file shares still save to the configured folder.
 
 - [ ] **Surface failed transfers in the UI**  
       `DeviceControlView.tsx:802–817` filters only `InProgress` and `Completed`; `Failed` transfers disappear immediately. Dropped-file errors only go to `console.error` (`App.tsx:348–355`).  

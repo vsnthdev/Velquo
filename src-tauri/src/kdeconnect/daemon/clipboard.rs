@@ -1,19 +1,18 @@
 use crate::kdeconnect::clipboard::*;
 use crate::kdeconnect::daemon::*;
 use crate::kdeconnect::packet::*;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::sync::Arc;
 use std::time::Duration;
 
 impl KdeConnectDaemon {
     pub fn copy_text_to_clipboard(self: &Arc<Self>, text: &str) -> Result<()> {
-        let new_count = write_macos_clipboard_text(text);
+        let new_count = write_macos_clipboard_text(text)
+            .ok_or_else(|| anyhow!("Failed to write text to the macOS clipboard"))?;
         let mut state = self.clipboard_state.lock().unwrap();
         state.last_content = text.to_string();
         state.last_timestamp_ms = current_millis();
-        if let Some(cnt) = new_count {
-            state.last_change_count = cnt;
-        }
+        state.last_change_count = new_count;
         Ok(())
     }
 

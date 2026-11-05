@@ -2,7 +2,6 @@ use crate::kdeconnect::daemon::*;
 use crate::kdeconnect::packet::*;
 use anyhow::{anyhow, Context, Result};
 use rustls::pki_types::ServerName;
-use std::fs;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -106,16 +105,20 @@ impl KdeConnectDaemon {
 
         // Case 2: Shared Text
         if let Some(text) = packet.get_str("text") {
-            let filename = format!("shared-text-{}.txt", current_millis());
-            let save_path = self.unique_download_path(device_id, &filename);
-            let _ = fs::write(&save_path, text.as_bytes());
             log::info!(
                 "[share-in] Received shared text from '{}' ({} chars)",
                 device_name,
                 text.len()
             );
 
-            // Check if the last non-empty line is a valid http/https URL (matches kdeconnect-kde SharePlugin::receivePacket)
+            if text.trim().is_empty() {
+                return;
+            }
+
+            // Text shares are clipboard/open intents, not file downloads. Regular file
+            // shares still use Case 1 above and keep the configured save folder.
+
+            let filename = format!("Text: {}", text.chars().take(36).collect::<String>());
             let extracted_url = text
                 .lines()
                 .map(|l| l.trim())
@@ -123,22 +126,133 @@ impl KdeConnectDaemon {
                 .filter(|cand| cand.starts_with("http://") || cand.starts_with("https://"))
                 .map(|s| s.to_string());
 
-            self.upsert_transfer(TransferItem {
-                id: Uuid::new_v4().to_string(),
-                device_id: device_id.to_string(),
-                device_name: device_name.to_string(),
-                direction: "Incoming".to_string(),
-                kind: "Text".to_string(),
-                filename: format!("Text: {}", text.chars().take(36).collect::<String>()),
-                total_bytes: text.len() as u64,
-                transferred_bytes: text.len() as u64,
-                status: "Completed".to_string(),
-                saved_path: Some(save_path.to_string_lossy().to_string()),
-                text_content: Some(text.to_string()),
-                url_content: extracted_url,
-                error: None,
-                timestamp_ms: current_millis(),
-            });
+            // A text share that is exactly one safe URL is an explicit "open this"
+            // intent from the paired device. Anything else is clipboard content.
+            if let Some(url) = single_safe_share_url(text) {
+                log::info!(
+                    "[share-in] Opening single shared URL from '{}' ({} chars)",
+                    device_name,
+                    url.len()
+                );
+
+                match open::that(url) {
+                    Ok(()) => {
+                        log::info!("[share-in] Auto-opened shared URL in default browser");
+                        self.upsert_transfer(share_text_transfer(
+                            device_id,
+                            device_name,
+                            "Url",
+                            url.to_string(),
+                            text,
+                            Some(url),
+                            "Completed",
+                            None,
+                        ));
+                    }
+                    Err(e) => {
+                        log::warn!("[share-in] Failed to auto-open shared URL: {}", e);
+
+                        // Never lose the link: fall back to copying it.
+                        match self.copy_text_to_clipboard(text) {
+                            Ok(()) => {
+                                Self::show_macos_notification(
+                                    "Could not open shared link",
+                                    "The link was copied to your clipboard instead.",
+                                    Some(device_id),
+                                    None,
+                                    false,
+                                );
+                                self.upsert_transfer(share_text_transfer(
+                                    device_id,
+                                    device_name,
+                                    "Url",
+                                    url.to_string(),
+                                    text,
+                                    Some(url),
+                                    "Failed",
+                                    Some(format!(
+                                        "Failed to open link: {}; copied to clipboard",
+                                        e
+                                    )),
+                                ));
+                            }
+                            Err(copy_err) => {
+                                Self::show_macos_notification(
+                                    "Could not open or copy shared link",
+                                    &format!("From {}: {}", device_name, copy_err),
+                                    Some(device_id),
+                                    None,
+                                    false,
+                                );
+                                self.upsert_transfer(share_text_transfer(
+                                    device_id,
+                                    device_name,
+                                    "Url",
+                                    url.to_string(),
+                                    text,
+                                    Some(url),
+                                    "Failed",
+                                    Some(format!(
+                                        "Failed to open link: {}; failed to copy: {}",
+                                        e, copy_err
+                                    )),
+                                ));
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
+            match self.copy_text_to_clipboard(text) {
+                Ok(()) => {
+                    log::info!(
+                        "[share-in] Copied shared text from '{}' to clipboard",
+                        device_name
+                    );
+                    Self::show_macos_notification(
+                        "Shared text copied to clipboard",
+                        &format!("From {}", device_name),
+                        Some(device_id),
+                        None,
+                        false,
+                    );
+                    self.upsert_transfer(share_text_transfer(
+                        device_id,
+                        device_name,
+                        "Text",
+                        filename,
+                        text,
+                        extracted_url.as_deref(),
+                        "Completed",
+                        None,
+                    ));
+                }
+                Err(e) => {
+                    log::error!(
+                        "[share-in] Failed to copy shared text from '{}' to clipboard: {}",
+                        device_name,
+                        e
+                    );
+                    Self::show_macos_notification(
+                        "Could not copy shared text",
+                        &format!("From {}: {}", device_name, e),
+                        Some(device_id),
+                        None,
+                        false,
+                    );
+                    self.upsert_transfer(share_text_transfer(
+                        device_id,
+                        device_name,
+                        "Text",
+                        filename,
+                        text,
+                        extracted_url.as_deref(),
+                        "Failed",
+                        Some(e.to_string()),
+                    ));
+                }
+            }
             return;
         }
 
@@ -278,5 +392,87 @@ impl KdeConnectDaemon {
         file.flush().await?;
         self.update_transfer_progress(transfer_id, received);
         Ok(dest_path.to_path_buf())
+    }
+}
+
+fn share_text_transfer(
+    device_id: &str,
+    device_name: &str,
+    kind: &str,
+    filename: String,
+    text: &str,
+    url_content: Option<&str>,
+    status: &str,
+    error: Option<String>,
+) -> TransferItem {
+    let size = text.len() as u64;
+    TransferItem {
+        id: Uuid::new_v4().to_string(),
+        device_id: device_id.to_string(),
+        device_name: device_name.to_string(),
+        direction: "Incoming".to_string(),
+        kind: kind.to_string(),
+        filename,
+        total_bytes: size,
+        transferred_bytes: size,
+        status: status.to_string(),
+        saved_path: None,
+        text_content: Some(text.to_string()),
+        url_content: url_content.map(str::to_string),
+        error,
+        timestamp_ms: current_millis(),
+    }
+}
+
+/// Returns the URL only when the entire shared text is one safe URL token.
+fn single_safe_share_url(text: &str) -> Option<&str> {
+    let url = text.trim();
+    if url.is_empty() || url.split_whitespace().count() != 1 {
+        return None;
+    }
+
+    let lower = url.to_ascii_lowercase();
+    let rest = lower
+        .strip_prefix("https://")
+        .or_else(|| lower.strip_prefix("http://"))
+        .or_else(|| lower.strip_prefix("mailto:"))?;
+
+    if rest.is_empty() {
+        None
+    } else {
+        Some(url)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::single_safe_share_url;
+
+    #[test]
+    fn accepts_a_single_safe_url() {
+        assert_eq!(
+            single_safe_share_url(" https://example.com/a?b=1 "),
+            Some("https://example.com/a?b=1")
+        );
+        assert_eq!(
+            single_safe_share_url("HTTP://example.com"),
+            Some("HTTP://example.com")
+        );
+        assert_eq!(
+            single_safe_share_url("mailto:a@example.com"),
+            Some("mailto:a@example.com")
+        );
+    }
+
+    #[test]
+    fn rejects_urls_embedded_in_text() {
+        assert_eq!(single_safe_share_url("Open https://example.com"), None);
+        assert_eq!(
+            single_safe_share_url("https://a.example\nhttps://b.example"),
+            None
+        );
+        assert_eq!(single_safe_share_url("https://"), None);
+        assert_eq!(single_safe_share_url("ftp://example.com"), None);
+        assert_eq!(single_safe_share_url(""), None);
     }
 }
