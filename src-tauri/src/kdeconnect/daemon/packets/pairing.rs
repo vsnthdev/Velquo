@@ -13,6 +13,11 @@ impl KdeConnectDaemon {
     ) {
         let wants_pair = packet.get_bool("pair").unwrap_or(false);
         let timestamp = packet.get_i64("timestamp").unwrap_or_else(current_secs);
+        let existing_ssh_host_key = self.trusted_devices.lock().ok().and_then(|trusted| {
+            trusted
+                .get(device_id)
+                .and_then(|record| record.ssh_host_key_fingerprint.clone())
+        });
 
         let mut devices = self.devices.lock().unwrap();
         let Some(entry) = devices.get_mut(device_id) else {
@@ -43,6 +48,7 @@ impl KdeConnectDaemon {
                         pause_media_on_calls: entry.view.pause_media_on_calls,
                         save_location: Some(entry.view.save_location.clone()),
                         run_commands: entry.view.run_commands.clone(),
+                        ssh_host_key_fingerprint: existing_ssh_host_key.clone(),
                     };
                     drop(devices);
                     self.trusted_devices
@@ -126,6 +132,11 @@ impl KdeConnectDaemon {
     pub fn accept_pairing(&self, device_id: &str) -> Result<()> {
         let pkt = NetworkPacket::pair_accept();
         self.send_packet_to_device(device_id, &pkt)?;
+        let existing_ssh_host_key = self.trusted_devices.lock().ok().and_then(|trusted| {
+            trusted
+                .get(device_id)
+                .and_then(|record| record.ssh_host_key_fingerprint.clone())
+        });
 
         let mut trusted_record = None;
         if let Ok(mut devices) = self.devices.lock() {
@@ -146,6 +157,7 @@ impl KdeConnectDaemon {
                         pause_media_on_calls: entry.view.pause_media_on_calls,
                         save_location: Some(entry.view.save_location.clone()),
                         run_commands: entry.view.run_commands.clone(),
+                        ssh_host_key_fingerprint: existing_ssh_host_key.clone(),
                     });
                 }
                 log::info!(

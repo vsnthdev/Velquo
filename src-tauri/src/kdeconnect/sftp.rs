@@ -55,17 +55,23 @@ pub enum SftpHandshakeOutcome {
     Unconfigured(String),
 }
 
-struct SshClientHandler;
+pub type SshHostKeyVerifier = Arc<dyn Fn(&str) -> bool + Send + Sync>;
+
+struct SshClientHandler {
+    verify_host_key: SshHostKeyVerifier,
+}
 
 impl client::Handler for SshClientHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::ssh_key::PublicKey,
+        server_public_key: &russh::keys::ssh_key::PublicKey,
     ) -> std::result::Result<bool, Self::Error> {
-        // Matches kdeconnect-kde `StrictHostKeyChecking=no` over local LAN after TLS pairing
-        Ok(true)
+        use russh::keys::ssh_key::HashAlg;
+
+        let fingerprint = server_public_key.fingerprint(HashAlg::Sha256).to_string();
+        Ok((self.verify_host_key)(&fingerprint))
     }
 }
 
@@ -275,6 +281,7 @@ impl SftpManager {
         &self,
         device_id: &str,
         config_dir: &Path,
+        verify_host_key: &SshHostKeyVerifier,
         force_reconnect: bool,
         send_start_browsing: F,
     ) -> Result<Result<(SftpServerInfo, Arc<SftpSession>), String>>
@@ -308,7 +315,8 @@ impl SftpManager {
         match outcome {
             SftpHandshakeOutcome::Unconfigured(msg) => Ok(Err(msg)),
             SftpHandshakeOutcome::Ready(info) => {
-                let (ssh_handle, sftp) = connect_ssh_sftp(&info, config_dir).await?;
+                let (ssh_handle, sftp) =
+                    connect_ssh_sftp(&info, config_dir, Arc::clone(verify_host_key)).await?;
                 let sftp_arc = Arc::new(sftp);
                 let handle_arc = Arc::new(ssh_handle);
                 {
@@ -332,6 +340,7 @@ impl SftpManager {
         device_id: &str,
         requested_path: Option<String>,
         config_dir: &Path,
+        verify_host_key: SshHostKeyVerifier,
         send_start_browsing: F,
     ) -> Result<SftpBrowseResponse>
     where
@@ -340,7 +349,13 @@ impl SftpManager {
         for attempt in 0..2 {
             let force_reconnect = attempt > 0;
             let session_res = self
-                .ensure_connected(device_id, config_dir, force_reconnect, &send_start_browsing)
+                .ensure_connected(
+                    device_id,
+                    config_dir,
+                    &verify_host_key,
+                    force_reconnect,
+                    &send_start_browsing,
+                )
                 .await?;
 
             let (mut info, sftp) = match session_res {
@@ -445,6 +460,7 @@ impl SftpManager {
         remote_path: &str,
         dest_path: &Path,
         config_dir: &Path,
+        verify_host_key: SshHostKeyVerifier,
         send_start_browsing: F,
     ) -> Result<PathBuf>
     where
@@ -453,7 +469,13 @@ impl SftpManager {
         for attempt in 0..2 {
             let force_reconnect = attempt > 0;
             let session_res = self
-                .ensure_connected(device_id, config_dir, force_reconnect, &send_start_browsing)
+                .ensure_connected(
+                    device_id,
+                    config_dir,
+                    &verify_host_key,
+                    force_reconnect,
+                    &send_start_browsing,
+                )
                 .await?;
 
             let (_, sftp) = match session_res {
@@ -489,6 +511,7 @@ impl SftpManager {
         remote_path: &str,
         is_dir: bool,
         config_dir: &Path,
+        verify_host_key: SshHostKeyVerifier,
         send_start_browsing: F,
     ) -> Result<()>
     where
@@ -502,7 +525,13 @@ impl SftpManager {
         for attempt in 0..2 {
             let force_reconnect = attempt > 0;
             let session_res = self
-                .ensure_connected(device_id, config_dir, force_reconnect, &send_start_browsing)
+                .ensure_connected(
+                    device_id,
+                    config_dir,
+                    &verify_host_key,
+                    force_reconnect,
+                    &send_start_browsing,
+                )
                 .await?;
 
             let (info, sftp) = match session_res {
@@ -548,6 +577,7 @@ impl SftpManager {
 async fn connect_ssh_sftp(
     info: &SftpServerInfo,
     config_dir: &Path,
+    verify_host_key: SshHostKeyVerifier,
 ) -> Result<(Handle<SshClientHandler>, SftpSession)> {
     use russh::keys::ssh_key::{Algorithm, EcdsaCurve, HashAlg};
 
@@ -561,9 +591,6 @@ async fn connect_ssh_sftp(
             kex::DH_GEX_SHA256,
             kex::DH_G16_SHA512,
             kex::DH_G14_SHA256,
-            kex::DH_G14_SHA1,
-            kex::DH_GEX_SHA1,
-            kex::DH_G1_SHA1,
             kex::EXTENSION_SUPPORT_AS_CLIENT,
         ]),
         key: Cow::Borrowed(&[
@@ -583,7 +610,6 @@ async fn connect_ssh_sftp(
             Algorithm::Rsa {
                 hash: Some(HashAlg::Sha256),
             },
-            Algorithm::Rsa { hash: None },
         ]),
         cipher: Cow::Borrowed(&[
             cipher::CHACHA20_POLY1305,
@@ -597,8 +623,6 @@ async fn connect_ssh_sftp(
             mac::HMAC_SHA256_ETM,
             mac::HMAC_SHA512,
             mac::HMAC_SHA256,
-            mac::HMAC_SHA1_ETM,
-            mac::HMAC_SHA1,
         ]),
         compression: Cow::Borrowed(&[compression::NONE]),
     };
@@ -611,14 +635,18 @@ async fn connect_ssh_sftp(
         keepalive_interval: Some(Duration::from_secs(25)),
         ..Config::default()
     };
-    if let Ok(gex) = GexParams::new(1024, 2048, 8192) {
+    if let Ok(gex) = GexParams::new(2048, 3072, 8192) {
         ssh_config.gex = gex;
     }
 
     let addr = SocketAddr::new(info.ip, info.port);
     let mut handle = tokio::time::timeout(
         Duration::from_secs(10),
-        client::connect(Arc::new(ssh_config), addr, SshClientHandler),
+        client::connect(
+            Arc::new(ssh_config),
+            addr,
+            SshClientHandler { verify_host_key },
+        ),
     )
     .await
     .context("Timed out connecting to phone SFTP port")?

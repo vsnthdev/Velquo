@@ -28,8 +28,8 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       OTP codes, contact names, URLs, filenames, SFTP credentials, and media metadata are no longer written to release logs.
       Fix: log packet type/ID only and explicitly redact sensitive fields. Add log rotation for `~/Library/Logs/Velquo/app.log` (`logger.rs:15–25`).
 
-- [ ] **Pin SFTP SSH host key**  
-      `sftp.rs:63–69` accepts any SSH host key; SFTP is a separate connection from the pinned TLS link.  
+- [x] **Pin SFTP SSH host key** — Implemented TOFU pinning: the first verified connection stores the `SHA256:` fingerprint in `trusted_devices.json`, later connections require an exact match, and mismatches abort before authentication.
+      Removed SHA-1 key exchange, MAC, and RSA-signature fallbacks; raised DH-GEX minimum to 2048 bits.
       Fix: pin the phone’s SSH host key or implement TOFU with a visible fingerprint. Remove weak `DH_G1_SHA1` / `HMAC_SHA1` fallbacks if compatible (`sftp.rs:555–604`).
 
 ## High — Logic & State

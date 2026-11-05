@@ -161,6 +161,9 @@ pub struct TrustedDeviceRecord {
     pub save_location: Option<String>,
     #[serde(default)]
     pub run_commands: Vec<RunCommandItem>,
+    /// Pinned SSH host-key fingerprint for this device's SFTP server.
+    #[serde(default)]
+    pub ssh_host_key_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
