@@ -495,6 +495,19 @@ fn restart_app(app: AppHandle) {
 #[derive(Default)]
 struct PendingUpdateState(std::sync::Mutex<Option<tauri_plugin_updater::Update>>);
 
+/// Metadata-only update check result. This deliberately has no `rid`: checking for an
+/// update from the long-lived main webview must not allocate an updater resource there.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateCheckDto {
+    current_version: String,
+    version: String,
+    date: Option<String>,
+    body: Option<String>,
+    raw_json: serde_json::Value,
+}
+
+/// Update metadata plus the per-webview resource handle used by the updater window.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateMetadataDto {
@@ -506,31 +519,40 @@ struct UpdateMetadataDto {
     raw_json: serde_json::Value,
 }
 
-fn register_update_in_webview(
-    webview: &tauri::Webview,
-    update: tauri_plugin_updater::Update,
-) -> UpdateMetadataDto {
+fn update_check_dto(update: &tauri_plugin_updater::Update) -> UpdateCheckDto {
     let date = update
         .raw_json
         .get("pub_date")
         .and_then(|v| v.as_str())
         .map(ToOwned::to_owned);
-    UpdateMetadataDto {
+    UpdateCheckDto {
         current_version: update.current_version.clone(),
         version: update.version.clone(),
         date,
         body: update.body.clone(),
         raw_json: update.raw_json.clone(),
+    }
+}
+
+fn register_update_in_webview(
+    webview: &tauri::Webview,
+    update: tauri_plugin_updater::Update,
+) -> UpdateMetadataDto {
+    let metadata = update_check_dto(&update);
+    UpdateMetadataDto {
+        current_version: metadata.current_version,
+        version: metadata.version,
+        date: metadata.date,
+        body: metadata.body,
+        raw_json: metadata.raw_json,
         rid: webview.resources_table().add(update),
     }
 }
 
-#[tauri::command]
-async fn check_for_update(
-    webview: tauri::Webview,
+async fn fetch_update(
+    webview: &tauri::Webview,
     timeout: Option<u64>,
-    pending_state: State<'_, PendingUpdateState>,
-) -> Result<Option<UpdateMetadataDto>, String> {
+) -> Result<Option<tauri_plugin_updater::Update>, String> {
     use tauri_plugin_updater::UpdaterExt;
 
     let mut builder = webview
@@ -542,13 +564,22 @@ async fn check_for_update(
     }
 
     let updater = builder.build().map_err(|e| e.to_string())?;
-    let update = updater.check().await.map_err(|e| e.to_string())?;
+    updater.check().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn check_for_update(
+    webview: tauri::Webview,
+    timeout: Option<u64>,
+    pending_state: State<'_, PendingUpdateState>,
+) -> Result<Option<UpdateCheckDto>, String> {
+    let update = fetch_update(&webview, timeout).await?;
 
     if let Some(update) = update {
         if let Ok(mut guard) = pending_state.0.lock() {
             *guard = Some(update.clone());
         }
-        Ok(Some(register_update_in_webview(&webview, update)))
+        Ok(Some(update_check_dto(&update)))
     } else {
         if let Ok(mut guard) = pending_state.0.lock() {
             *guard = None;
@@ -563,10 +594,22 @@ async fn get_pending_update(
     pending_state: State<'_, PendingUpdateState>,
 ) -> Result<Option<UpdateMetadataDto>, String> {
     let cached = pending_state.0.lock().ok().and_then(|g| g.clone());
-    if let Some(update) = cached {
-        return Ok(Some(register_update_in_webview(&webview, update)));
-    }
-    check_for_update(webview, Some(20000), pending_state).await
+    let update = match cached {
+        Some(update) => Some(update),
+        None => {
+            let update = fetch_update(&webview, Some(20000)).await?;
+            if let Some(ref update) = update {
+                if let Ok(mut guard) = pending_state.0.lock() {
+                    *guard = Some(update.clone());
+                }
+            } else if let Ok(mut guard) = pending_state.0.lock() {
+                *guard = None;
+            }
+            update
+        }
+    };
+
+    Ok(update.map(|update| register_update_in_webview(&webview, update)))
 }
 
 #[tauri::command]

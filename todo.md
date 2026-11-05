@@ -55,9 +55,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 
 - [x] **Fix SFTP “unconfigured” response delivery** — `clear_device_and_take_waiters` now removes and returns pending handshake waiters before clearing the cached session, so the `errorMessage` path can deliver `SftpHandshakeOutcome::Unconfigured` and the dedicated UI appears. Added a regression test for waiter delivery.
 
-- [ ] **Fix updater resource leaks**  
-      `check_for_update` registers an `Update` on every call (`lib.rs:509–526`, `545–557`); `runUpdateCheck` discards `rid` (`App.tsx:59–79`); `get_pending_update` registers another on every call (`lib.rs:560–570`); `UpdateWindow` replaces updates without `close()` (`UpdateWindow.tsx:57–70`, `145–149`, `183–193`).  
-      Fix: stop registering in the main webview; call `update.close()` before replacing/skip/close, or add a release command.
+- [x] **Fix updater resource leaks** — `check_for_update` now returns metadata without registering an updater resource in the main webview. `get_pending_update` is the only path that registers a handle, and `UpdateWindow` closes duplicate, superseded, replaced, skipped, closed, and post-install handles with `update.close()`. In-flight loads are sequence-guarded so stale responses release their own handles.
 
 - [ ] **Show update-check failures as errors, not “up to date”**  
       `UpdateWindow.tsx:57–70` catches errors and sets `update = null`; render treats null as latest version (`239–263`).  

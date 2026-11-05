@@ -62,11 +62,6 @@ export default function App() {
         ): Promise<"update-found" | "up-to-date" | "error"> => {
             try {
                 const metadata = await invoke<{
-                    body?: string;
-                    currentVersion: string;
-                    date?: string;
-                    rawJson: Record<string, unknown>;
-                    rid: number;
                     version: string;
                 } | null>("check_for_update", { timeout: 20000 });
                 if (!metadata) {

@@ -54,20 +54,74 @@ export function UpdateWindow() {
         stepRef.current = step;
     }, [step]);
 
+    const updateRef = useRef<Update | null>(null);
+    const loadSeqRef = useRef(0);
+
+    const releaseCurrentUpdate = useCallback(async () => {
+        const current = updateRef.current;
+        updateRef.current = null;
+        if (!current) return;
+        try {
+            await current.close();
+        } catch {
+            // The updater window may already be tearing down.
+        }
+    }, []);
+
     const loadPendingUpdate = useCallback(async () => {
+        const seq = ++loadSeqRef.current;
         setIsLoadingUpdate(true);
         try {
             const metadata = await invoke<UpdateMetadataDto | null>(
                 "get_pending_update",
             );
-            setUpdate(metadata ? new Update(metadata) : null);
+
+            // A newer load superseded this one, or an install started while this
+            // request was in flight. Release the resource handle this request
+            // registered so it cannot leak or replace the active download.
+            if (seq != loadSeqRef.current || stepRef.current == "downloading") {
+                if (metadata) {
+                    try {
+                        await new Update(metadata).close();
+                    } catch {
+                        // Resource may already have been released.
+                    }
+                }
+                return;
+            }
+
+            if (!metadata) {
+                await releaseCurrentUpdate();
+                setUpdate(null);
+                return;
+            }
+
+            const next = new Update(metadata);
+            if (updateRef.current && updateRef.current.version == next.version) {
+                // The same update is already loaded; drop this duplicate handle.
+                try {
+                    await next.close();
+                } catch {
+                    // Resource may already have been released.
+                }
+                return;
+            }
+
+            await releaseCurrentUpdate();
+            updateRef.current = next;
+            setUpdate(next);
         } catch (err) {
             console.error("Failed to load pending update:", err);
-            setUpdate(null);
+            if (seq == loadSeqRef.current) {
+                await releaseCurrentUpdate();
+                setUpdate(null);
+            }
         } finally {
-            setIsLoadingUpdate(false);
+            if (seq == loadSeqRef.current) {
+                setIsLoadingUpdate(false);
+            }
         }
-    }, []);
+    }, [releaseCurrentUpdate]);
 
     useEffect(() => {
         loadPendingUpdate();
@@ -80,6 +134,14 @@ export function UpdateWindow() {
             unlistenPromise.then((fn) => fn());
         };
     }, [loadPendingUpdate]);
+
+    useEffect(() => {
+        return () => {
+            // Invalidate any in-flight load and release the active update handle.
+            loadSeqRef.current += 1;
+            void releaseCurrentUpdate();
+        };
+    }, [releaseCurrentUpdate]);
 
     const targetVersion = update?.version ?? "";
 
@@ -133,8 +195,9 @@ export function UpdateWindow() {
             .catch(() => {});
     };
 
-    const handleCloseWindow = () => {
+    const handleCloseWindow = async () => {
         if (step == "downloading") return;
+        await releaseCurrentUpdate();
         invoke("close_updater_window").catch(() => {
             getCurrentWindow()
                 .close()
@@ -142,10 +205,10 @@ export function UpdateWindow() {
         });
     };
 
-    const handleSkipVersion = () => {
+    const handleSkipVersion = async () => {
         if (!update || step == "downloading") return;
         localStorage.setItem("velquo.skippedUpdateVersion", update.version);
-        handleCloseWindow();
+        await handleCloseWindow();
     };
 
     const handleUpdateNow = async () => {
@@ -179,6 +242,9 @@ export function UpdateWindow() {
             });
 
             setProgressPct(100);
+            // The update has been installed; its resource handle is no longer needed.
+            // The restart command does not depend on it.
+            await releaseCurrentUpdate();
             setStep("ready");
         } catch (err) {
             console.error("Failed to download and install update:", err);
@@ -255,7 +321,7 @@ export function UpdateWindow() {
                         </div>
                         <button
                             type="button"
-                            onClick={handleCloseWindow}
+                            onClick={() => void handleCloseWindow()}
                             className="mt-1.5 cursor-pointer rounded-xl border border-black/12 bg-black/[0.03] px-5 py-1.5 text-[12.5px] font-medium text-zinc-700 transition-colors hover:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.04] dark:text-zinc-200 dark:hover:bg-white/[0.08]"
                         >
                             Close
@@ -332,7 +398,7 @@ export function UpdateWindow() {
                                             type="button"
                                             whileHover={{ scale: 1.015 }}
                                             whileTap={{ scale: 0.985 }}
-                                            onClick={handleSkipVersion}
+                                            onClick={() => void handleSkipVersion()}
                                             className="flex flex-1 cursor-pointer items-center justify-center rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2 text-[12.5px] font-medium text-zinc-700 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-white/[0.06]"
                                         >
                                             Skip this version
