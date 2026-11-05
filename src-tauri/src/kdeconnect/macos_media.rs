@@ -58,29 +58,13 @@ const MAX_CALL_PAUSE_RESUME_DURATION: Duration = Duration::from_secs(60 * 60);
 const PAUSE_SETTLE_GRACE_DURATION: Duration = Duration::from_millis(1200);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum PausedMediaTarget {
-    ControlCenter {
-        app_name: String,
-        bundle_id: String,
-        title: String,
-        artist: String,
-        observed_paused: bool,
-        paused_at: Instant,
-    },
-    AppPlayer {
-        app_name: String,
-        title: String,
-        artist: String,
-        paused_at: Instant,
-    },
-}
-
-impl PausedMediaTarget {
-    fn paused_at(&self) -> Instant {
-        match self {
-            Self::ControlCenter { paused_at, .. } | Self::AppPlayer { paused_at, .. } => *paused_at,
-        }
-    }
+struct PausedMediaTarget {
+    app_name: String,
+    bundle_id: String,
+    title: String,
+    artist: String,
+    observed_paused: bool,
+    paused_at: Instant,
 }
 
 pub fn mac_media_notify() -> Arc<Notify> {
@@ -130,91 +114,52 @@ fn on_control_center_state_emitted(cc_opt: Option<&ControlCenterNowPlaying>) {
         return;
     }
 
-    guard.retain_mut(|target| match target {
-        PausedMediaTarget::ControlCenter {
-            app_name,
-            bundle_id,
-            title,
-            artist,
-            observed_paused,
-            paused_at,
-        } => {
-            let Some(cc) = cc_opt else {
-                log::info!(
-                    "[pause-music] Disowning call-paused media '{}' ('{}'): Now Playing session ended",
-                    app_name,
-                    title
-                );
-                return false;
-            };
+    guard.retain_mut(|target| {
+        let Some(cc) = cc_opt else {
+            log::info!(
+                "[pause-music] Disowning call-paused media '{}' ('{}'): Now Playing session ended",
+                target.app_name,
+                target.title
+            );
+            return false;
+        };
 
-            let within_settle_grace = paused_at.elapsed() < PAUSE_SETTLE_GRACE_DURATION;
+        let within_settle_grace = target.paused_at.elapsed() < PAUSE_SETTLE_GRACE_DURATION;
 
-            if cc.bundle_id != *bundle_id || cc.app_name != *app_name {
-                log::info!(
-                    "[pause-music] Disowning call-paused media '{}' ('{}'): active player changed externally to '{}' ('{}')",
-                    app_name,
-                    title,
-                    cc.app_name,
-                    cc.title
-                );
-                return false;
-            }
-
-            if (cc.title != *title || cc.artist != *artist) && !within_settle_grace {
-                log::info!(
-                    "[pause-music] Disowning call-paused media '{}' ('{}'): track changed externally to '{}'",
-                    app_name,
-                    title,
-                    cc.title
-                );
-                return false;
-            }
-
-            if !cc.is_playing {
-                *observed_paused = true;
-                *title = cc.title.clone();
-                *artist = cc.artist.clone();
-                true
-            } else if !within_settle_grace {
-                log::info!(
-                    "[pause-music] Disowning call-paused media '{}' ('{}'): playback was resumed externally",
-                    app_name,
-                    title
-                );
-                false
-            } else {
-                true
-            }
+        if cc.bundle_id != target.bundle_id || cc.app_name != target.app_name {
+            log::info!(
+                "[pause-music] Disowning call-paused media '{}' ('{}'): active player changed externally to '{}' ('{}')",
+                target.app_name,
+                target.title,
+                cc.app_name,
+                cc.title
+            );
+            return false;
         }
-        PausedMediaTarget::AppPlayer {
-            app_name,
-            title,
-            artist,
-            paused_at,
-        } => {
-            let within_settle_grace = paused_at.elapsed() < PAUSE_SETTLE_GRACE_DURATION;
-            if let Some(cc) = cc_opt {
-                if cc.app_name == *app_name {
-                    if (cc.title != *title || cc.artist != *artist) && !within_settle_grace {
-                        log::info!(
-                            "[pause-music] Disowning call-paused app '{}' ('{}'): track changed externally to '{}'",
-                            app_name,
-                            title,
-                            cc.title
-                        );
-                        return false;
-                    }
-                    if cc.is_playing && !within_settle_grace {
-                        log::info!(
-                            "[pause-music] Disowning call-paused app '{}' ('{}'): playback was resumed externally",
-                            app_name,
-                            title
-                        );
-                        return false;
-                    }
-                }
-            }
+
+        if (cc.title != target.title || cc.artist != target.artist) && !within_settle_grace {
+            log::info!(
+                "[pause-music] Disowning call-paused media '{}' ('{}'): track changed externally to '{}'",
+                target.app_name,
+                target.title,
+                cc.title
+            );
+            return false;
+        }
+
+        if !cc.is_playing {
+            target.observed_paused = true;
+            target.title = cc.title.clone();
+            target.artist = cc.artist.clone();
+            true
+        } else if !within_settle_grace {
+            log::info!(
+                "[pause-music] Disowning call-paused media '{}' ('{}'): playback was resumed externally",
+                target.app_name,
+                target.title
+            );
+            false
+        } else {
             true
         }
     });
@@ -876,64 +821,38 @@ pub fn query_mac_player_status(requested_player: &str) -> Option<MacPlayerSnapsh
 /// Automatically pauses any currently playing Mac media when a phone call starts (`ringing` or `talking`),
 /// returning the list of player source names that were actively playing and paused by Velquo.
 pub fn pause_mac_media_for_call() -> Vec<String> {
-    let mut paused_sources = Vec::new();
-
     refresh_control_center_now_playing();
 
-    if let Some(cc) = query_control_center_now_playing(false) {
-        if cc.is_playing {
-            log::info!(
-                "[pause-music] Pausing Mac Control Center player '{}' ('{}') during phone call",
-                cc.app_name,
-                cc.title
-            );
-            if let Ok(mut guard) = call_paused_media_store().lock() {
-                *guard = vec![PausedMediaTarget::ControlCenter {
-                    app_name: cc.app_name.clone(),
-                    bundle_id: cc.bundle_id.clone(),
-                    title: cc.title.clone(),
-                    artist: cc.artist.clone(),
-                    observed_paused: false,
-                    paused_at: Instant::now(),
-                }];
-            }
-            if send_control_center_mr_command(Some(MR_CMD_PAUSE), None) {
-                paused_sources.push(DEFAULT_MAC_PLAYER.to_string());
-                return paused_sources;
-            } else {
-                disown_call_paused_media("failed to send MR_CMD_PAUSE");
-            }
-        }
+    let Some(cc) = query_control_center_now_playing(false) else {
+        return Vec::new();
+    };
+    if !cc.is_playing {
+        return Vec::new();
     }
 
-    let mut paused_targets = Vec::new();
-    for app in [PLAYER_SPOTIFY, PLAYER_APPLE_MUSIC] {
-        if let Some(snap) = query_app_player(app, app) {
-            if snap.is_playing {
-                log::info!(
-                    "[pause-music] Pausing Mac '{}' ('{}') playback during phone call",
-                    app,
-                    snap.title
-                );
-                let script = format!(r#"tell application "{}" to pause"#, app);
-                if run_osascript(&script).is_some() {
-                    paused_targets.push(PausedMediaTarget::AppPlayer {
-                        app_name: app.to_string(),
-                        title: snap.title,
-                        artist: snap.artist,
-                        paused_at: Instant::now(),
-                    });
-                    paused_sources.push(app.to_string());
-                }
-            }
-        }
-    }
+    log::info!(
+        "[pause-music] Pausing Mac Control Center player '{}' ('{}') during phone call",
+        cc.app_name,
+        cc.title
+    );
 
     if let Ok(mut guard) = call_paused_media_store().lock() {
-        *guard = paused_targets;
+        *guard = vec![PausedMediaTarget {
+            app_name: cc.app_name.clone(),
+            bundle_id: cc.bundle_id.clone(),
+            title: cc.title.clone(),
+            artist: cc.artist.clone(),
+            observed_paused: false,
+            paused_at: Instant::now(),
+        }];
     }
 
-    paused_sources
+    if send_control_center_mr_command(Some(MR_CMD_PAUSE), None) {
+        vec![DEFAULT_MAC_PLAYER.to_string()]
+    } else {
+        disown_call_paused_media("failed to send MR_CMD_PAUSE");
+        Vec::new()
+    }
 }
 
 /// Resumes only the Mac media sources that were automatically paused by `pause_mac_media_for_call`
@@ -964,109 +883,55 @@ pub fn resume_mac_media_after_call(paused_sources: &[String]) {
     }
 
     for target in targets {
-        if target.paused_at().elapsed() > MAX_CALL_PAUSE_RESUME_DURATION {
+        if target.paused_at.elapsed() > MAX_CALL_PAUSE_RESUME_DURATION {
             log::info!(
                 "[pause-music] Skipping auto-resume: media was paused for {:?} (> 1 hour)",
-                target.paused_at().elapsed()
+                target.paused_at.elapsed()
             );
             continue;
         }
 
-        match target {
-            PausedMediaTarget::ControlCenter {
-                app_name,
-                bundle_id,
-                title,
-                artist,
-                ..
-            } => {
-                if !paused_sources.iter().any(|s| s == DEFAULT_MAC_PLAYER) {
-                    continue;
-                }
-
-                let Some(cc) = query_control_center_now_playing(false) else {
-                    log::info!(
-                        "[pause-music] Skipping auto-resume for '{}': Control Center session no longer active",
-                        app_name
-                    );
-                    continue;
-                };
-
-                if cc.is_playing {
-                    log::info!(
-                        "[pause-music] Skipping auto-resume for '{}': already playing",
-                        app_name
-                    );
-                    continue;
-                }
-
-                if cc.bundle_id != bundle_id
-                    || cc.app_name != app_name
-                    || cc.title != title
-                    || cc.artist != artist
-                {
-                    log::info!(
-                        "[pause-music] Skipping auto-resume for '{}' ('{}'): current Control Center media is '{}' ('{}')",
-                        app_name,
-                        title,
-                        cc.app_name,
-                        cc.title
-                    );
-                    continue;
-                }
-
-                log::info!(
-                    "[pause-music] Resuming Mac Control Center player '{}' ('{}') after phone call ended",
-                    app_name,
-                    title
-                );
-                let _ = send_control_center_mr_command(Some(MR_CMD_PLAY), None);
-            }
-            PausedMediaTarget::AppPlayer {
-                app_name,
-                title,
-                artist,
-                ..
-            } => {
-                if !paused_sources.iter().any(|s| s == &app_name) {
-                    continue;
-                }
-
-                let Some(snap) = query_app_player(&app_name, &app_name) else {
-                    log::info!(
-                        "[pause-music] Skipping auto-resume for '{}': app player no longer active",
-                        app_name
-                    );
-                    continue;
-                };
-
-                if snap.is_playing {
-                    log::info!(
-                        "[pause-music] Skipping auto-resume for '{}': already playing",
-                        app_name
-                    );
-                    continue;
-                }
-
-                if snap.title != title || snap.artist != artist {
-                    log::info!(
-                        "[pause-music] Skipping auto-resume for '{}' ('{}'): track changed externally to '{}'",
-                        app_name,
-                        title,
-                        snap.title
-                    );
-                    continue;
-                }
-
-                log::info!(
-                    "[pause-music] Resuming Mac '{}' ('{}') playback after phone call ended",
-                    app_name,
-                    title
-                );
-                let script = format!(r#"tell application "{}" to play"#, app_name);
-                let _ = run_osascript(&script);
-            }
+        if !paused_sources.iter().any(|s| s == DEFAULT_MAC_PLAYER) {
+            continue;
         }
+
+        let Some(cc) = query_control_center_now_playing(false) else {
+            log::info!(
+                "[pause-music] Skipping auto-resume for '{}': Control Center session no longer active",
+                target.app_name
+            );
+            continue;
+        };
+
+        if cc.is_playing {
+            log::info!(
+                "[pause-music] Skipping auto-resume for '{}': already playing",
+                target.app_name
+            );
+            continue;
+        }
+
+        if cc.bundle_id != target.bundle_id
+            || cc.app_name != target.app_name
+            || cc.title != target.title
+            || cc.artist != target.artist
+        {
+            log::info!(
+                "[pause-music] Skipping auto-resume for '{}' ('{}'): current Control Center media is '{}' ('{}')",
+                target.app_name,
+                target.title,
+                cc.app_name,
+                cc.title
+            );
+            continue;
+        }
+
+        log::info!(
+            "[pause-music] Resuming Mac Control Center player '{}' ('{}') after phone call ended",
+            target.app_name,
+            target.title
+        );
+        let _ = send_control_center_mr_command(Some(MR_CMD_PLAY), None);
     }
 }
 
@@ -1215,84 +1080,6 @@ pub fn handle_incoming_mpris_request(packet: &NetworkPacket) -> Vec<NetworkPacke
     }
 
     responses
-}
-
-fn query_app_player(app_name: &str, reported_player_name: &str) -> Option<MacPlayerSnapshot> {
-    let is_spotify = app_name == PLAYER_SPOTIFY;
-    let duration_expr = if is_spotify {
-        "set trackLenMs to (duration of current track) as integer"
-    } else {
-        "set trackLenMs to ((duration of current track) * 1000) as integer"
-    };
-
-    let script = format!(
-        r#"
-tell application "System Events"
-    if not (exists (processes where name is "{app}")) then
-        return ""
-    end if
-end tell
-tell application "{app}"
-    try
-        set pState to (player state as string)
-        set isPlayingVal to "false"
-        if pState is "playing" then
-            set isPlayingVal to "true"
-        end if
-        set volVal to (sound volume as integer)
-        if pState is "stopped" then
-            return isPlayingVal & "\t" & volVal & "\t0\t0\t\t\t"
-        end if
-        set tTitle to (name of current track as string)
-        set tArtist to (artist of current track as string)
-        set tAlbum to (album of current track as string)
-        set posMs to ((player position) * 1000) as integer
-        {duration_expr}
-        return isPlayingVal & "\t" & volVal & "\t" & posMs & "\t" & trackLenMs & "\t" & tTitle & "\t" & tArtist & "\t" & tAlbum
-    on error
-        return ""
-    end try
-end tell
-"#,
-        app = app_name,
-        duration_expr = duration_expr
-    );
-
-    let out = run_osascript(&script)?;
-    if out.is_empty() {
-        return None;
-    }
-
-    let parts: Vec<&str> = out.splitn(7, '\t').collect();
-    if parts.len() < 7 {
-        return None;
-    }
-
-    let is_playing = parts[0].trim() == "true";
-    let volume = parts[1].trim().parse::<i32>().unwrap_or(50).clamp(0, 100);
-    let position_ms = parts[2].trim().parse::<i64>().unwrap_or(0).max(0);
-    let length_ms = parts[3].trim().parse::<i64>().unwrap_or(0).max(0);
-    let title = parts[4].trim().to_string();
-    let artist = parts[5].trim().to_string();
-    let album = parts[6].trim().to_string();
-
-    Some(MacPlayerSnapshot {
-        player: reported_player_name.to_string(),
-        app_name: app_name.to_string(),
-        title: title.clone(),
-        artist,
-        album,
-        album_art_url: String::new(),
-        is_playing,
-        position_ms,
-        length_ms,
-        volume,
-        can_play: true,
-        can_pause: true,
-        can_go_next: true,
-        can_go_previous: true,
-        can_seek: length_ms > 0 && !title.is_empty(),
-    })
 }
 
 fn execute_mac_player_action(player: &str, action: &str) {

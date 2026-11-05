@@ -112,9 +112,11 @@ impl KdeConnectDaemon {
     pub(super) fn schedule_call_media_resume(self: &Arc<Self>, snapshot_seq: u64) {
         let daemon = Arc::clone(self);
         tokio::spawn(async move {
-            // Brief 450ms debounce so a `ringing (isCancel=true)` -> `talking` transition
-            // when answering a call does not momentarily unpause media.
-            tokio::time::sleep(Duration::from_millis(450)).await;
+            // Wait 1 second before resuming so any in-flight MediaRemote pause has time to
+            // complete. This covers calls rejected immediately, where the cancel event can
+            // arrive while the pause command is still being processed, and also prevents a
+            // momentary unpause during a `ringing (isCancel=true)` -> `talking` transition.
+            tokio::time::sleep(Duration::from_millis(1000)).await;
             let (sources_to_resume, elapsed) = {
                 let mut state = daemon.call_media_state.lock().unwrap();
                 if !state.active_events.is_empty() || state.seq != snapshot_seq {

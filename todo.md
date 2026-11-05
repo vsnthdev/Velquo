@@ -34,11 +34,11 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 
 ## High — Logic & State
 
-- [ ] **Fix call-media pause/resume race**  
+- [x] **Fix call-media pause/resume race** — Removed the Spotify/Music AppleScript fallback so call pause/resume only uses the MediaRemote/Control Center path. The post-call resume delay is now 1 second, giving an in-flight MediaRemote pause time to finish before resume runs.
       Pause task is async (`daemon.rs:2274–2292`); if the call is canceled first, resume drains empty `paused_sources` (`2309–2311`, `2337–2350`), then the pause task inserts sources (`2281–2289`) and media stays paused.  
-      Fix: capture `seq` when spawning the pause; only commit paused sources if `seq` is unchanged and `active_events` is non-empty; otherwise resume them immediately.
+      Fix: keep the pause/resume path on MediaRemote only and delay the resume check to 1 second, so a rejected call cannot resume before the pause has committed.
 
-- [ ] **Resume media when disabling “Pause media on calls”**  
+- [x] ~~**Resume media when disabling “Pause media on calls”**~~ — **Cancelled**: intentional behavior. Disabling the toggle means the user no longer wants Velquo to control playback, so previously paused media is not auto-resumed.
       `daemon.rs:2868–2881` clears `paused_sources` and disowns without resuming.  
       Fix: resume the drained sources, or explicitly leave them owned and inform the user.
 
@@ -134,7 +134,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 
 - [ ] Reproduce unpaired-peer issue on a real LAN: connect with a self-signed client cert, send `share.request`, `ping`, and `mpris.request`; confirm they are rejected after the fix.
 - [ ] Reproduce file/art MITM and unpaired payload injection; verify pinned-cert rejection.
-- [ ] Test call ringing → immediate cancel while pause is slow; verify media resumes.
+- [ ] Test call ringing → immediate cancel; verify media resumes after the 1-second resume delay.
 - [ ] Test unpair while file browser is open; verify window closes and SFTP is inaccessible.
 - [ ] Test macOS notification click/highlight/dismiss with an ID containing `org.kde.kdeconnect_tp::`.
 - [ ] Test SFTP “not configured” path; verify the dedicated UI appears.
