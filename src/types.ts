@@ -78,7 +78,6 @@ export interface DeviceView {
     cellularNetworkType: string | null;
     cellularSignalStrength: number | null;
     simSignals: SimSignalInfo[];
-    storageFreeGb: number | null;
     nowPlaying: NowPlayingInfo | null;
     syncClipboard: boolean;
     allowPresenter: boolean;

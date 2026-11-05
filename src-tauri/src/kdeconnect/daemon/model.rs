@@ -105,7 +105,6 @@ pub struct DeviceView {
     pub cellular_network_type: Option<String>,
     pub cellular_signal_strength: Option<i32>,
     pub sim_signals: Vec<SimSignalInfo>,
-    pub storage_free_gb: Option<f64>,
     pub now_playing: Option<NowPlayingInfo>,
     pub sync_clipboard: bool,
     pub allow_presenter: bool,

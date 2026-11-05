@@ -94,7 +94,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 - [x] Remove unused helpers — Removed `is_macos_audio_output_running`, the unused `share_text` / `share_request_update` constructors, `has_online_paired_device` / `broadcast_to_paired_devices`, and `velquo_mr_get` / `velquo_mr_control`.
 - [x] Remove or handle advertised-but-unhandled `PACKET_TYPE_MOUSEPAD_ECHO` — Removed the unused echo constant and stopped advertising it in both capability lists. Velquo never requests mousepad acknowledgements, so no compliant peer should send it.
 - [x] Remove unread fields — Removed `CachedAlbumArt.itunes_checked` and `PausedMediaTarget.observed_paused`.
-- [ ] Populate or remove `DeviceView.storage_free_gb`, currently always `None` (`daemon.rs:145`, `335`, `1803`).
+- [x] Populate or remove `DeviceView.storage_free_gb` — Removed the always-`None` field from the Rust device model, initialization/reconnect logic, and the TypeScript device type.
 - [x] ~~**Set a real CSP** instead of `"csp": null` (`tauri.conf.json:34–36`), allowing Tauri, Google Fonts, iTunes, and GitHub as needed.~~ — **Cancelled**
 - [ ] **Remove the fragile AppKit ivar mirror** in `mark_menu_icons_as_template` (`lib.rs:824–882`) or add version/layout guards; it is undefined behavior if AppKit changes.
 - [x] **Replace deprecated `NSUserNotification`** — Migrated to `UserNotifications`: authorization request, category-based Dismiss action, banner/sound/list foreground presentation, click and dismiss routing, identifier-based removal, and active-device suppression when the matching device control page is focused. Removed the deprecated API, private `_showsButtons`, and the old alert-style Info.plist key.

@@ -122,7 +122,6 @@ impl KdeConnectDaemon {
                         cellular_network_type: None,
                         cellular_signal_strength: None,
                         sim_signals: Vec::new(),
-                        storage_free_gb: None,
                         now_playing: None,
                         sync_clipboard: rec.sync_clipboard,
                         allow_presenter: rec.allow_presenter,
