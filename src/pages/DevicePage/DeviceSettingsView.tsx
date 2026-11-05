@@ -28,7 +28,8 @@ interface DeviceSettingsViewProps {
     onAddRunCommand: (name: string, command: string) => Promise<void>;
     onRemoveRunCommand: (key: string) => Promise<void>;
     rightPaneContainer: HTMLElement | null;
-    openAddCommandSignal: number;
+    openAddCommandSignal: number | null;
+    onConsumeAddCommandSignal: () => void;
     onUnpair: () => void;
 }
 
@@ -59,6 +60,7 @@ export function DeviceSettingsView({
     onToggleSyncClipboard,
     onToggleNotifications,
     onChangeFileSaveLocation,
+    onConsumeAddCommandSignal,
     onTogglePauseMediaOnCalls,
 }: DeviceSettingsViewProps) {
     const [isCommandsModalOpen, setIsCommandsModalOpen] =
@@ -69,12 +71,13 @@ export function DeviceSettingsView({
     const [formError, setFormError] = useState<boolean>(false);
 
     useEffect(() => {
-        if (openAddCommandSignal > 0) {
-            setFormError(false);
-            setModalView("add");
-            setIsCommandsModalOpen(true);
-        }
-    }, [openAddCommandSignal]);
+        if (openAddCommandSignal == null) return;
+
+        setFormError(false);
+        setModalView("add");
+        setIsCommandsModalOpen(true);
+        onConsumeAddCommandSignal();
+    }, [openAddCommandSignal, onConsumeAddCommandSignal]);
 
     const handleChooseSaveLocation = async () => {
         const selected = await open({

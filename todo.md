@@ -69,9 +69,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       `add_device_run_command` / `remove_device_run_command` can write an empty `updated_list` to the trusted record if no device entry exists or the lock fails (`daemon.rs:2618–2642`, `2652–2676`).  
       Fix: only update `rec.run_commands` after successfully mutating a `DeviceEntry`.
 
-- [ ] **Make the add-command modal one-shot**  
-      `openAddCommandSignal` is never reset (`App.tsx:41`, `183–190`); `DeviceSettingsView.tsx:71–77` reopens the modal on every mount.  
-      Fix: reset the signal after consuming it, or use a one-shot token.
+- [x] **Make the add-command modal one-shot** — The signal is now nullable and consumed by `DeviceSettingsView` immediately after it opens the modal. Remounting the settings view no longer reopens the add-command modal; only a new `velquo://open-runcommand-setup` event can trigger it again.
 
 - [x] **Fix update error label** — The Settings “Check for updates” control now shows “Check failed” with red error styling when a check fails, and its tooltip makes the retry action explicit. A successful check with no update still shows “Up to date”.
 

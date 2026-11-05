@@ -33,7 +33,8 @@ interface DevicePageProps {
     onAddRunCommand: (name: string, command: string) => Promise<void>;
     onRemoveRunCommand: (key: string) => Promise<void>;
     rightPaneContainer: HTMLElement | null;
-    openAddCommandSignal: number;
+    openAddCommandSignal: number | null;
+    onConsumeAddCommandSignal: () => void;
     highlightedNotification: {
         deviceId: string;
         notificationId: string;
@@ -70,6 +71,7 @@ export function DevicePage({
     onToggleNotifications,
     highlightedNotification,
     onChangeFileSaveLocation,
+    onConsumeAddCommandSignal,
     onTogglePauseMediaOnCalls,
 }: DevicePageProps) {
     const isSettingsOpen = subview == "settings";
@@ -188,6 +190,7 @@ export function DevicePage({
                         onRemoveRunCommand={onRemoveRunCommand}
                         rightPaneContainer={rightPaneContainer}
                         openAddCommandSignal={openAddCommandSignal}
+                        onConsumeAddCommandSignal={onConsumeAddCommandSignal}
                         onUnpair={onUnpair}
                     />
                 ) : (

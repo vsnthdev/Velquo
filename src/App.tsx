@@ -43,7 +43,9 @@ export default function App() {
     const [ignoreWhatsappConversations, setIgnoreWhatsappConversations] =
         useState<boolean>(true);
     const [rightPaneEl, setRightPaneEl] = useState<HTMLDivElement | null>(null);
-    const [openAddCommandSignal, setOpenAddCommandSignal] = useState<number>(0);
+    const [openAddCommandSignal, setOpenAddCommandSignal] = useState<
+        number | null
+    >(null);
     const [scrollToAboutSignal, setScrollToAboutSignal] = useState<number>(0);
     const [highlightedNotification, setHighlightedNotification] = useState<{
         deviceId: string;
@@ -187,7 +189,7 @@ export default function App() {
                 subview: "settings",
                 deviceId: event.payload.deviceId,
             });
-            setOpenAddCommandSignal((prev) => prev + 1);
+            setOpenAddCommandSignal((prev) => (prev ?? 0) + 1);
         }).then((fn) => {
             if (disposed) {
                 fn();
@@ -494,6 +496,10 @@ export default function App() {
         }
     };
 
+    const consumeAddCommandSignal = useCallback(() => {
+        setOpenAddCommandSignal(null);
+    }, []);
+
     return (
         <div className="relative flex h-screen w-screen select-none overflow-hidden bg-transparent text-zinc-900 dark:text-zinc-100">
             {/* Top window drag region aligned with macOS traffic lights */}
@@ -665,6 +671,7 @@ export default function App() {
                                 }}
                                 rightPaneContainer={rightPaneEl}
                                 openAddCommandSignal={openAddCommandSignal}
+                                onConsumeAddCommandSignal={consumeAddCommandSignal}
                                 highlightedNotification={
                                     highlightedNotification?.deviceId == selectedDevice.deviceId
                                         ? highlightedNotification
