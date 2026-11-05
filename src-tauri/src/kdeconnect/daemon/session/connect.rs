@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
 impl KdeConnectDaemon {
@@ -68,9 +68,15 @@ impl KdeConnectDaemon {
         let mut first_line = String::new();
 
         let final_identity = if protocol_version >= 8 {
+            let mut scratch = Vec::new();
             let n = tokio::time::timeout(
                 Duration::from_secs(3),
-                buf_reader.read_line(&mut first_line),
+                super::line::read_line_limited(
+                    &mut buf_reader,
+                    &mut scratch,
+                    &mut first_line,
+                    MAX_PACKET_LINE_BYTES,
+                ),
             )
             .await
             .context("Timed out waiting for peer encrypted identity packet (v8)")??;
@@ -106,10 +112,19 @@ impl KdeConnectDaemon {
         let raw_fd = tcp_stream.as_raw_fd();
         let mut plain_reader = BufReader::new(tcp_stream);
         let mut line = String::new();
+        let mut scratch = Vec::new();
 
-        let n = tokio::time::timeout(Duration::from_secs(3), plain_reader.read_line(&mut line))
-            .await
-            .context("Timed out waiting for plaintext connection packet on inbound TCP")??;
+        let n = tokio::time::timeout(
+            Duration::from_secs(3),
+            super::line::read_line_limited(
+                &mut plain_reader,
+                &mut scratch,
+                &mut line,
+                MAX_PACKET_LINE_BYTES,
+            ),
+        )
+        .await
+        .context("Timed out waiting for plaintext connection packet on inbound TCP")??;
         if n == 0 {
             return Err(anyhow!(
                 "Inbound TCP closed before sending connection packet"
@@ -197,10 +212,18 @@ impl KdeConnectDaemon {
 
             let mut buf_reader = BufReader::new(tls_stream);
             let mut sec_line = String::new();
-            let n =
-                tokio::time::timeout(Duration::from_secs(3), buf_reader.read_line(&mut sec_line))
-                    .await
-                    .context("Timed out waiting for peer encrypted v8 identity on inbound TCP")??;
+            let mut scratch = Vec::new();
+            let n = tokio::time::timeout(
+                Duration::from_secs(3),
+                super::line::read_line_limited(
+                    &mut buf_reader,
+                    &mut scratch,
+                    &mut sec_line,
+                    MAX_PACKET_LINE_BYTES,
+                ),
+            )
+            .await
+            .context("Timed out waiting for peer encrypted v8 identity on inbound TCP")??;
             if n == 0 {
                 return Err(anyhow!(
                     "Peer closed inbound TLS stream before sending encrypted identity"

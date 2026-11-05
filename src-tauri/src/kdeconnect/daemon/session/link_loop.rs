@@ -7,7 +7,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, BufReader};
+use tokio::io::{AsyncRead, AsyncWrite, BufReader};
 use tokio::sync::{mpsc, oneshot};
 
 pub(super) async fn run_link_loop<S>(
@@ -29,6 +29,7 @@ where
     let (read_half, mut write_half) = tokio::io::split(buf_reader);
     let mut line_reader = BufReader::new(read_half);
     let mut line = String::new();
+    let mut read_scratch = Vec::new();
     let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(2));
     heartbeat_interval.tick().await; // consume initial immediate tick
     let mut unacked_since: Option<Instant> = None;
@@ -103,7 +104,12 @@ where
                     None => break,
                 }
             }
-            read_res = line_reader.read_line(&mut line) => {
+            read_res = super::line::read_line_limited(
+                &mut line_reader,
+                &mut read_scratch,
+                &mut line,
+                MAX_PACKET_LINE_BYTES,
+            ) => {
                 match read_res {
                     Ok(0) => {
                         log::info!("[device] Device '{}' ({}) closed the TLS connection", device_name, device_id);

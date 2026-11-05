@@ -15,10 +15,9 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       Incoming payload clients accept any server cert: `daemon.rs:4641–4647`, `4358–4364`; verifier at `tls.rs:39–52`.  
       Fix: after every payload handshake, compare `peer_certificates()` against `DeviceEntry.peer_cert_der`; bind outgoing listeners to the peer IP instead of `Ipv4Addr::UNSPECIFIED`.
 
-- [ ] **Enforce packet/transfer size limits**  
-      Unbounded `read_line` at `daemon.rs:1447`, `1486`, `1576`, `1920`.  
-      Unbounded incoming file download at `daemon.rs:4663–4680`.  
-      Fix: cap TCP packet lines (e.g. 256 KiB–1 MiB), reject oversized packets, and cap share payload sizes.
+- [x] **Enforce packet line size limits** — Implemented a 1.5 MiB limit for all control-packet reads, with oversized lines rejected before allocation.
+      Unbounded `read_line` in `session/connect.rs` and `session/link_loop.rs`.
+      Fix: cap TCP packet lines at 1.5 MiB and reject oversized packets before allocation.
 
 - [ ] **Cap discovery/connection flood handling**  
       `handle_udp_datagram` spawns a task per datagram (`daemon.rs:1277–1282`); `last_discovery_attempt_ms` is never pruned (`1323–1338`).  

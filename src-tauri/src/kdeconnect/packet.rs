@@ -6,6 +6,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const PROTOCOL_VERSION: i32 = 8;
 
+/// Maximum size of one newline-delimited KDE Connect control packet (1.5 MiB).
+pub const MAX_PACKET_LINE_BYTES: usize = 1_572_864;
+
 pub const PACKET_TYPE_IDENTITY: &str = "kdeconnect.identity";
 pub const PACKET_TYPE_PAIR: &str = "kdeconnect.pair";
 pub const PACKET_TYPE_PING: &str = "kdeconnect.ping";
