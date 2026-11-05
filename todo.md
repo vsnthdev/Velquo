@@ -87,9 +87,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 
 - [x] ~~**Fix remote-input dialog controlled state**~~ — **Cancelled**: omitting `onOpenChange` is intentional. The dialog must capture Escape and outside interactions for the Android device, and only the explicit X button should close it. The observed auto-dismiss is a separate issue caused by `open` depending on `device.reachable`, which closes the dialog when the device briefly disconnects.
 
-- [ ] **Remove or wire up the dead in-device pairing banner**  
-      `App.tsx:273`, `278–283` only select paired devices, so the banner in `DeviceControlView.tsx:458–540` is unreachable.  
-      Fix: either include reachable unpaired devices in selection or remove the banner.
+- [x] **Remove or wire up the dead in-device pairing banner** — Removed the unreachable pairing banner from the device control page. Unpaired devices remain handled exclusively by the Pair Device page; all other screens continue to operate on paired devices only.
 
 - [x] **Remove dead notification-dismiss branch or implement actions** — Implemented a native **Dismiss** action on every dismissable phone notification banner. The action button uses the private `_showsButtons` flag so banners remain auto-dismissing instead of switching to persistent alert mode, and clicking it cancels the corresponding notification on the phone.
 
