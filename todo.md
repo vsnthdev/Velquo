@@ -81,9 +81,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
       `DeviceControlView.tsx:802–817` filters only `InProgress` and `Completed`; `Failed` transfers disappear immediately. Dropped-file errors only go to `console.error` (`App.tsx:348–355`).  
       Fix: render failed items with their `error` text and optionally a retry action.
 
-- [ ] **Fix album-art request retry blocking**  
-      `album_art_in_flight` is inserted before requesting (`daemon.rs:4231–4240`) and only removed on payload success/failure (`4086`, `4113`). A missing response blocks retries forever.  
-      Fix: timestamp entries and expire them, or remove on send failure and next metadata update.
+- [x] **Fix album-art request retry blocking** — `album_art_in_flight` now stores the request time, expires after 5 seconds, and is cleared immediately if sending the request fails. Expired entries are pruned on metadata updates so stale URLs cannot block retries or grow the map. Added expiry tests.
 
 - [ ] **Abort release when fresh updater signature is missing**  
       `update-version.ts:123–137` falls back to the previous `latest.json` signature while publishing a new archive, causing update verification failure.  

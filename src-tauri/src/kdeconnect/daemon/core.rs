@@ -4,7 +4,7 @@ use crate::kdeconnect::clipboard::get_macos_pasteboard_change_count;
 use crate::kdeconnect::sftp::SftpManager;
 use crate::kdeconnect::tls::{build_tls_acceptor, build_tls_connector};
 use anyhow::Result;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -141,7 +141,7 @@ impl KdeConnectDaemon {
                     mpris_player_order: Vec::new(),
                     active_mpris_player: None,
                     album_art_cache: HashMap::new(),
-                    album_art_in_flight: HashSet::new(),
+                    album_art_in_flight: HashMap::new(),
                     paired: Arc::new(AtomicBool::new(true)),
                 },
             );

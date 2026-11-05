@@ -1,6 +1,16 @@
 use crate::kdeconnect::daemon::*;
 use crate::kdeconnect::packet::*;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// If the phone silently drops an album-art request, allow a fresh retry after this long.
+const ALBUM_ART_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn is_album_art_request_fresh(requested_at: Option<&Instant>, now: Instant) -> bool {
+    requested_at.is_some_and(|requested_at| {
+        now.saturating_duration_since(*requested_at) < ALBUM_ART_REQUEST_TIMEOUT
+    })
+}
 
 impl KdeConnectDaemon {
     pub(super) fn recompute_active_mpris(entry: &mut DeviceEntry) {
@@ -139,10 +149,20 @@ pub(super) fn handle_player_metadata_update(
             if let Some(cached) = entry.album_art_cache.get(url) {
                 Some(cached.clone())
             } else {
-                if !entry.album_art_in_flight.contains(url) {
-                    entry.album_art_in_flight.insert(url.clone());
+                let now = Instant::now();
+                let request_is_fresh =
+                    is_album_art_request_fresh(entry.album_art_in_flight.get(url), now);
+
+                if !request_is_fresh {
+                    entry.album_art_in_flight.insert(url.clone(), now);
                     art_to_request = Some((player.to_string(), url.clone()));
                 }
+
+                // Drop expired requests so the map cannot grow across tracks.
+                entry
+                    .album_art_in_flight
+                    .retain(|_, requested_at| is_album_art_request_fresh(Some(requested_at), now));
+
                 previous_album_art_data
             }
         } else {
@@ -230,10 +250,48 @@ pub(super) fn handle_player_metadata_update(
             req_player,
             req_url.len()
         );
-        let _ = daemon.send_packet_to_device(
+        if let Err(e) = daemon.send_packet_to_device(
             device_id,
             &NetworkPacket::mpris_request_album_art(&req_player, &req_url),
-        );
+        ) {
+            log::warn!(
+                "[mpris] Failed to request album art for player '{}' from '{}': {}",
+                req_player,
+                device_name,
+                e
+            );
+            // Do not leave the URL marked as in-flight: the next metadata update should
+            // be able to retry immediately.
+            if let Ok(mut devices) = daemon.devices.lock() {
+                if let Some(entry) = devices.get_mut(device_id) {
+                    entry.album_art_in_flight.remove(&req_url);
+                }
+            }
+        }
     }
     daemon.notify_ui();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_album_art_request_fresh, ALBUM_ART_REQUEST_TIMEOUT};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn album_art_request_is_fresh_within_timeout() {
+        let now = Instant::now();
+        assert!(is_album_art_request_fresh(Some(&now), now));
+    }
+
+    #[test]
+    fn album_art_request_expires_after_timeout() {
+        let now = Instant::now();
+        let expired = now - ALBUM_ART_REQUEST_TIMEOUT - Duration::from_millis(1);
+        assert!(!is_album_art_request_fresh(Some(&expired), now));
+    }
+
+    #[test]
+    fn missing_album_art_request_is_not_fresh() {
+        assert!(!is_album_art_request_fresh(None, Instant::now()));
+    }
 }

@@ -228,7 +228,8 @@ pub struct DeviceEntry {
     pub mpris_player_order: Vec<String>,
     pub active_mpris_player: Option<String>,
     pub album_art_cache: HashMap<String, String>,
-    pub album_art_in_flight: HashSet<String>,
+    /// Album-art URLs currently being fetched, with the time the request was sent.
+    pub album_art_in_flight: HashMap<String, Instant>,
     /// Lock-free copy of `view.pair_state == PairState::Paired` for the hot packet path.
     pub paired: Arc<AtomicBool>,
 }

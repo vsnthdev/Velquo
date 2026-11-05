@@ -2,7 +2,7 @@ use crate::kdeconnect::cert::*;
 use crate::kdeconnect::daemon::*;
 use crate::kdeconnect::packet::*;
 use anyhow::{anyhow, Result};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::os::fd::RawFd;
 use std::sync::atomic::AtomicBool;
@@ -234,7 +234,7 @@ impl KdeConnectDaemon {
                     mpris_player_order: prev_mpris_order,
                     active_mpris_player: prev_active_mpris,
                     album_art_cache: prev_art_cache,
-                    album_art_in_flight: HashSet::new(),
+                    album_art_in_flight: HashMap::new(),
                     paired: Arc::clone(&paired_flag),
                 },
             );
