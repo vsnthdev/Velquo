@@ -46,21 +46,38 @@ impl KdeConnectDaemon {
         };
 
         let mut is_online_and_paired = false;
-        let mut updated_list = Vec::new();
-        if let Ok(mut devices) = self.devices.lock() {
-            if let Some(entry) = devices.get_mut(device_id) {
-                entry.view.run_commands.push(item);
-                updated_list = entry.view.run_commands.clone();
-                is_online_and_paired =
-                    entry.view.reachable && entry.view.pair_state == PairState::Paired;
-                log::info!(
-                    "[runcommand] Added command for '{}' ({}); total={}",
-                    entry.view.device_name,
-                    device_id,
-                    entry.view.run_commands.len()
+        let mut updated_list = None;
+        match self.devices.lock() {
+            Ok(mut devices) => {
+                if let Some(entry) = devices.get_mut(device_id) {
+                    entry.view.run_commands.push(item);
+                    is_online_and_paired =
+                        entry.view.reachable && entry.view.pair_state == PairState::Paired;
+                    log::info!(
+                        "[runcommand] Added command for '{}' ({}); total={}",
+                        entry.view.device_name,
+                        device_id,
+                        entry.view.run_commands.len()
+                    );
+                    updated_list = Some(entry.view.run_commands.clone());
+                } else {
+                    log::warn!(
+                        "[runcommand] Device '{}' is not present; command was not added",
+                        device_id
+                    );
+                }
+            }
+            Err(_) => {
+                log::warn!(
+                    "[runcommand] Failed to lock devices while adding command for '{}'",
+                    device_id
                 );
             }
         }
+
+        let Some(updated_list) = updated_list else {
+            return Ok(());
+        };
 
         {
             let mut trusted = self.trusted_devices.lock().unwrap();
@@ -80,21 +97,40 @@ impl KdeConnectDaemon {
 
     pub fn remove_device_run_command(&self, device_id: &str, key: &str) -> Result<()> {
         let mut is_online_and_paired = false;
-        let mut updated_list = Vec::new();
-        if let Ok(mut devices) = self.devices.lock() {
-            if let Some(entry) = devices.get_mut(device_id) {
-                entry.view.run_commands.retain(|c| c.key != key);
-                updated_list = entry.view.run_commands.clone();
-                is_online_and_paired =
-                    entry.view.reachable && entry.view.pair_state == PairState::Paired;
-                log::info!(
-                    "[runcommand] Removed command key='{}' for '{}' ({})",
+        let mut updated_list = None;
+        match self.devices.lock() {
+            Ok(mut devices) => {
+                if let Some(entry) = devices.get_mut(device_id) {
+                    entry.view.run_commands.retain(|c| c.key != key);
+                    is_online_and_paired =
+                        entry.view.reachable && entry.view.pair_state == PairState::Paired;
+                    log::info!(
+                        "[runcommand] Removed command key='{}' for '{}' ({})",
+                        key,
+                        entry.view.device_name,
+                        device_id
+                    );
+                    updated_list = Some(entry.view.run_commands.clone());
+                } else {
+                    log::warn!(
+                        "[runcommand] Device '{}' is not present; command '{}' was not removed",
+                        device_id,
+                        key
+                    );
+                }
+            }
+            Err(_) => {
+                log::warn!(
+                    "[runcommand] Failed to lock devices while removing command '{}' for '{}'",
                     key,
-                    entry.view.device_name,
                     device_id
                 );
             }
         }
+
+        let Some(updated_list) = updated_list else {
+            return Ok(());
+        };
 
         {
             let mut trusted = self.trusted_devices.lock().unwrap();

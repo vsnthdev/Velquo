@@ -65,9 +65,7 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 
 ## Medium
 
-- [ ] **Prevent run-command data loss**  
-      `add_device_run_command` / `remove_device_run_command` can write an empty `updated_list` to the trusted record if no device entry exists or the lock fails (`daemon.rs:2618–2642`, `2652–2676`).  
-      Fix: only update `rec.run_commands` after successfully mutating a `DeviceEntry`.
+- [x] **Prevent run-command data loss** — Both add and remove now only persist to the trusted record after successfully mutating a live `DeviceEntry`. Missing entries or failed device locks return without overwriting the saved command list and log a warning.
 
 - [x] **Make the add-command modal one-shot** — The signal is now nullable and consumed by `DeviceSettingsView` immediately after it opens the modal. Remounting the settings view no longer reopens the add-command modal; only a new `velquo://open-runcommand-setup` event can trigger it again.
 
