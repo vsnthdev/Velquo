@@ -23,8 +23,9 @@ pub const PACKET_TYPE_CLIPBOARD: &str = "kdeconnect.clipboard";
 pub const PACKET_TYPE_CLIPBOARD_CONNECT: &str = "kdeconnect.clipboard.connect";
 pub const PACKET_TYPE_PRESENTER: &str = "kdeconnect.presenter";
 pub const PACKET_TYPE_MOUSEPAD_REQUEST: &str = "kdeconnect.mousepad.request";
-pub const PACKET_TYPE_MOUSEPAD_ECHO: &str = "kdeconnect.mousepad.echo";
 pub const PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE: &str = "kdeconnect.mousepad.keyboardstate";
+// `kdeconnect.mousepad.echo` is only an acknowledgement for `mousepad.request`.
+// Velquo never requests acknowledgements, so it is intentionally not advertised.
 pub const PACKET_TYPE_FINDMYPHONE_REQUEST: &str = "kdeconnect.findmyphone.request";
 pub const PACKET_TYPE_NOTIFICATION: &str = "kdeconnect.notification";
 pub const PACKET_TYPE_NOTIFICATION_REQUEST: &str = "kdeconnect.notification.request";
@@ -86,7 +87,6 @@ pub fn supported_incoming_capabilities() -> Vec<String> {
         PACKET_TYPE_CLIPBOARD_CONNECT.to_string(),
         PACKET_TYPE_PRESENTER.to_string(),
         PACKET_TYPE_MOUSEPAD_REQUEST.to_string(),
-        PACKET_TYPE_MOUSEPAD_ECHO.to_string(),
         PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE.to_string(),
         PACKET_TYPE_FINDMYPHONE_REQUEST.to_string(),
         PACKET_TYPE_NOTIFICATION.to_string(),
@@ -109,7 +109,6 @@ pub fn supported_outgoing_capabilities() -> Vec<String> {
         PACKET_TYPE_CLIPBOARD.to_string(),
         PACKET_TYPE_CLIPBOARD_CONNECT.to_string(),
         PACKET_TYPE_MOUSEPAD_REQUEST.to_string(),
-        PACKET_TYPE_MOUSEPAD_ECHO.to_string(),
         PACKET_TYPE_MOUSEPAD_KEYBOARDSTATE.to_string(),
         PACKET_TYPE_FINDMYPHONE_REQUEST.to_string(),
         PACKET_TYPE_NOTIFICATION_REQUEST.to_string(),

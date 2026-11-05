@@ -92,10 +92,10 @@ Static checks pass (`cargo check`, `bun check`, ESLint); items below are runtime
 - [ ] URL-encode `device_id` in the file-browser query (`lib.rs:663`).
 - [ ] Reject/ignore IPv6 in `probe_device_ip` or use a matching socket (`daemon.rs:1195–1209`).
 - [x] Remove unused helpers — Removed `is_macos_audio_output_running`, the unused `share_text` / `share_request_update` constructors, `has_online_paired_device` / `broadcast_to_paired_devices`, and `velquo_mr_get` / `velquo_mr_control`.
-- [ ] Remove or handle advertised-but-unhandled `PACKET_TYPE_MOUSEPAD_ECHO` (`packet.rs:23`, `86`).
+- [x] Remove or handle advertised-but-unhandled `PACKET_TYPE_MOUSEPAD_ECHO` — Removed the unused echo constant and stopped advertising it in both capability lists. Velquo never requests mousepad acknowledgements, so no compliant peer should send it.
 - [x] Remove unread fields — Removed `CachedAlbumArt.itunes_checked` and `PausedMediaTarget.observed_paused`.
 - [ ] Populate or remove `DeviceView.storage_free_gb`, currently always `None` (`daemon.rs:145`, `335`, `1803`).
-- [ ] **Set a real CSP** instead of `"csp": null` (`tauri.conf.json:34–36`), allowing Tauri, Google Fonts, iTunes, and GitHub as needed.
+- [x] ~~**Set a real CSP** instead of `"csp": null` (`tauri.conf.json:34–36`), allowing Tauri, Google Fonts, iTunes, and GitHub as needed.~~ — **Cancelled**
 - [ ] **Remove the fragile AppKit ivar mirror** in `mark_menu_icons_as_template` (`lib.rs:824–882`) or add version/layout guards; it is undefined behavior if AppKit changes.
 - [ ] **Replace deprecated `NSUserNotification`** (`macos_notify.rs:1–12`, `183–261`) with `UserNotifications` when feasible.
 - [x] Retry media bridge startup if dylib setup fails — The bridge supervisor now retries dylib preparation every 10 seconds in the background instead of exiting. Thread-spawn failures reset `MR_STREAM_STARTED` so a future startup attempt can run.
