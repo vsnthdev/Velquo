@@ -30,7 +30,9 @@
         "ignoreWhatsapp": "Ignore WhatsApp conversations",
         "about": "About",
         "tagline": "KDE Connect, reborn natively for Apple Silicon Macs.",
-        "version": "Version {{version}}"
+        "version": "Version {{version}}",
+        "managedByHomebrew": "Managed by Homebrew",
+        "homebrewUpdateAvailable": "Velquo v{{version}} is available"
     },
     "device": {
         "settings": "Device Settings",
@@ -161,7 +163,8 @@
         "downloading": "Downloading & installing...",
         "restart": "Restart",
         "installFailed": "Failed to download and install the update.",
-        "serviceUnreachable": "The update service could not be reached. Check your connection and try again."
+        "serviceUnreachable": "The update service could not be reached. Check your connection and try again.",
+        "readyToInstallHomebrew": "Installed via Homebrew (current: <mono>v{{version}}</mono>)"
     },
     "native": {
         "tray": {
@@ -184,5 +187,12 @@
         "notification": {
             "dismiss": "Dismiss"
         }
+    },
+    "homebrew": {
+        "body": "Velquo was installed by Homebrew so run the below command to get the latest version.",
+        "commandLabel": "Homebrew upgrade command",
+        "copyCommandTitle": "Copy Homebrew upgrade command",
+        "copy": "Copy",
+        "copied": "Copied"
     }
 }

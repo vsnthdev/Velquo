@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import { useTranslation } from "react-i18next";
 import { formatLastSeen } from "../../utils/format";
 import { motion, AnimatePresence } from "motion/react";
 import { DeviceControlView } from "./DeviceControlView";
@@ -74,6 +75,7 @@ export function DevicePage({
     onConsumeAddCommandSignal,
     onTogglePauseMediaOnCalls,
 }: DevicePageProps) {
+    const { t } = useTranslation();
     const isSettingsOpen = subview == "settings";
 
     return (
@@ -130,7 +132,11 @@ export function DevicePage({
                             ? "border-white/25 bg-white/10 text-white backdrop-blur-md hover:bg-white/20"
                             : "border-black/10 bg-black/[0.02] text-zinc-600 hover:bg-black/[0.05] dark:border-white/10 dark:bg-white/[0.02] dark:text-zinc-300 dark:hover:bg-white/[0.06]"
                     }`}
-                    title={isSettingsOpen ? "Back to Device" : "Device Settings"}
+                    title={
+                        isSettingsOpen
+                            ? t("device.backToDevice")
+                            : t("device.settings")
+                    }
                 >
                     <AnimatePresence mode="wait" initial={false}>
                         {isSettingsOpen ? (

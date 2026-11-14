@@ -1,5 +1,6 @@
 import { motion } from "motion/react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import { useRef, useState, useEffect } from "react";
 import { CopyIcon, CheckIcon } from "@phosphor-icons/react";
 
@@ -14,6 +15,7 @@ export function HomebrewUpgradeBox({
     title,
     className = "",
 }: HomebrewUpgradeBoxProps) {
+    const { t } = useTranslation();
     const [copied, setCopied] = useState<boolean>(false);
     const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -57,15 +59,14 @@ export function HomebrewUpgradeBox({
                 </p>
             )}
             <p className="text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">
-                Velquo was installed by Homebrew so run the below command to get the
-                latest version.
+                {t("homebrew.body")}
             </p>
             <div className="flex items-center gap-2">
                 <input
                     type="text"
                     readOnly
                     value={HOMEBREW_UPGRADE_COMMAND}
-                    aria-label="Homebrew upgrade command"
+                    aria-label={t("homebrew.commandLabel")}
                     onClick={(e) => e.currentTarget.select()}
                     onFocus={(e) => e.currentTarget.select()}
                     className="min-w-0 flex-1 rounded-lg border border-black/12 bg-white/85 px-2.5 py-1.5 font-mono text-sm text-zinc-900 select-text focus:border-blue-500/50 focus:outline-none dark:border-white/12 dark:bg-zinc-950/60 dark:text-zinc-100"
@@ -75,7 +76,7 @@ export function HomebrewUpgradeBox({
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.97 }}
                     onClick={() => void handleCopy()}
-                    title="Copy Homebrew upgrade command"
+                    title={t("homebrew.copyCommandTitle")}
                     className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors ${
                         copied
                             ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
@@ -85,12 +86,12 @@ export function HomebrewUpgradeBox({
                     {copied ? (
                         <>
                             <CheckIcon size={13} weight="bold" />
-                            <span>Copied</span>
+                            <span>{t("homebrew.copied")}</span>
                         </>
                     ) : (
                         <>
                             <CopyIcon size={13} weight="regular" />
-                            <span>Copy</span>
+                            <span>{t("homebrew.copy")}</span>
                         </>
                     )}
                 </motion.button>

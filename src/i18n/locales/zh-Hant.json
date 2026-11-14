@@ -30,7 +30,9 @@
         "ignoreWhatsapp": "忽略 WhatsApp 對話",
         "about": "關於",
         "tagline": "KDE Connect，為 Apple Silicon Mac 原生重生。",
-        "version": "版本 {{version}}"
+        "version": "版本 {{version}}",
+        "managedByHomebrew": "由 Homebrew 管理",
+        "homebrewUpdateAvailable": "Velquo v{{version}} 可更新"
     },
     "device": {
         "settings": "裝置設定",
@@ -159,7 +161,8 @@
         "downloading": "正在下載並安裝…",
         "restart": "重新啟動",
         "installFailed": "下載或安裝更新失敗。",
-        "serviceUnreachable": "無法連線到更新服務，請檢查網路後再試一次。"
+        "serviceUnreachable": "無法連線到更新服務，請檢查網路後再試一次。",
+        "readyToInstallHomebrew": "透過 Homebrew 安裝（目前版本：<mono>v{{version}}</mono>）"
     },
     "native": {
         "tray": {
@@ -182,5 +185,12 @@
         "notification": {
             "dismiss": "忽略"
         }
+    },
+    "homebrew": {
+        "body": "Velquo 是透過 Homebrew 安裝的，請執行下面的指令取得最新版本。",
+        "commandLabel": "Homebrew 升級指令",
+        "copyCommandTitle": "複製 Homebrew 升級指令",
+        "copy": "複製",
+        "copied": "已複製"
     }
 }
