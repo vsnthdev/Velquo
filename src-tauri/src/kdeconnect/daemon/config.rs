@@ -98,6 +98,32 @@ impl KdeConnectDaemon {
             .unwrap_or(true)
     }
 
+    /// The raw preference: `system` or a concrete locale tag.
+    pub fn language_preference(&self) -> String {
+        self.app_settings
+            .lock()
+            .map(|settings| settings.language.clone())
+            .unwrap_or_else(|_| default_language())
+    }
+
+    /// The concrete locale the current preference resolves to.
+    pub fn resolved_locale(&self) -> crate::i18n::Locale {
+        crate::i18n::resolve(&self.language_preference())
+    }
+
+    /// Persists a normalized language preference. Native surfaces are rebuilt by
+    /// the caller, which owns the `AppHandle`.
+    pub fn set_language(&self, preference: &str) -> Result<()> {
+        let normalized = crate::i18n::normalize_preference(preference)
+            .ok_or_else(|| anyhow::anyhow!("Unsupported language preference: {preference}"))?;
+        {
+            let mut settings = self.app_settings.lock().unwrap();
+            settings.language = normalized;
+        }
+        self.save_app_settings();
+        Ok(())
+    }
+
     pub fn set_ignore_whatsapp_conversations(&self, enabled: bool) -> Result<()> {
         {
             let mut settings = self.app_settings.lock().unwrap();

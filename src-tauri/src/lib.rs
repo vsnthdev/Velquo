@@ -1,3 +1,4 @@
+pub mod i18n;
 pub mod kdeconnect;
 pub mod logger;
 #[cfg(target_os = "macos")]
@@ -356,6 +357,86 @@ fn set_ignore_whatsapp_conversations(
         .map_err(|e| e.to_string())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LanguageStateDto {
+    /// `system` or a concrete locale tag.
+    preference: String,
+    /// The concrete locale `preference` currently resolves to.
+    locale: String,
+}
+
+#[tauri::command]
+fn get_language(daemon: State<'_, Arc<KdeConnectDaemon>>) -> LanguageStateDto {
+    LanguageStateDto {
+        preference: daemon.language_preference(),
+        locale: daemon.resolved_locale().tag().to_string(),
+    }
+}
+
+#[tauri::command]
+fn set_language(
+    preference: String,
+    app: AppHandle,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
+) -> Result<LanguageStateDto, String> {
+    daemon
+        .set_language(&preference)
+        .map_err(|e| e.to_string())?;
+
+    let locale = daemon.resolved_locale();
+    log::info!(
+        "[ui] Language preference set to '{}' (resolved: {})",
+        preference,
+        locale.tag()
+    );
+    i18n::set_current(locale);
+    apply_language_to_native_surfaces(&app);
+
+    let _ = app.emit("velquo://language-changed", locale.tag());
+    Ok(LanguageStateDto {
+        preference: daemon.language_preference(),
+        locale: locale.tag().to_string(),
+    })
+}
+
+/// Rebuilds every Rust-owned surface after a language change. Each step is
+/// best-effort: a failure here must not leave the setting unsaved or the UI in a
+/// broken state.
+fn apply_language_to_native_surfaces(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        match build_macos_app_menu(app) {
+            Ok(menu) => {
+                if let Err(error) = app.set_menu(menu) {
+                    log::warn!("[i18n] Failed to rebuild the app menu: {}", error);
+                }
+            }
+            Err(error) => log::warn!("[i18n] Failed to build the app menu: {}", error),
+        }
+        macos_notify::refresh_notification_action_titles(app);
+    }
+
+    if let Some(daemon) = app.try_state::<Arc<KdeConnectDaemon>>() {
+        let trusted_devices = daemon.get_trusted_devices_menu_list();
+        refresh_tray_menu(app, trusted_devices.clone());
+
+        for (device_id, device_name, _) in trusted_devices {
+            let label = sftp_window_label(&device_id);
+            if let Some(window) = app.get_webview_window(&label) {
+                let _ = window.set_title(&i18n::tr_current_with(
+                    "native.windowTitle.files",
+                    &[("device", &device_name)],
+                ));
+            }
+        }
+    }
+
+    if let Some(window) = app.get_webview_window("updater") {
+        let _ = window.set_title(&i18n::tr_current("native.windowTitle.updater"));
+    }
+}
+
 #[tauri::command]
 fn add_device_run_command(
     device_id: String,
@@ -644,7 +725,7 @@ async fn open_updater_window(app: AppHandle) -> Result<(), String> {
 
     let url = "index.html?window=updater";
     let builder = tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::App(url.into()))
-        .title("Velquo — Software Update")
+        .title(i18n::tr_current("native.windowTitle.updater"))
         .inner_size(440.0, 320.0)
         .resizable(false)
         .maximizable(false)
@@ -723,7 +804,10 @@ async fn open_file_browser_window(
     );
     let builder =
         tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(url.into()))
-            .title(format!("{} — Files", device_name))
+            .title(i18n::tr_current_with(
+                "native.windowTitle.files",
+                &[("device", &device_name)],
+            ))
             .inner_size(620.0, 500.0)
             .min_inner_size(460.0, 340.0)
             .resizable(true)
@@ -1001,7 +1085,7 @@ pub fn build_tray_menu(
     let open_item = IconMenuItem::with_id(
         app,
         "open_window",
-        "Open window",
+        i18n::tr_current("native.tray.openWindow"),
         true,
         open_icon,
         None::<&str>,
@@ -1036,7 +1120,7 @@ pub fn build_tray_menu(
     let pair_item = IconMenuItem::with_id(
         app,
         "pair_new_device",
-        "Pair new device",
+        i18n::tr_current("native.tray.pairNewDevice"),
         true,
         add_icon,
         None::<&str>,
@@ -1068,14 +1152,20 @@ fn build_macos_app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         "Velquo",
         true,
         &[
-            &MenuItem::with_id(app, "app_about", "About Velquo", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                "app_about",
+                i18n::tr_current("native.menu.about"),
+                true,
+                None::<&str>,
+            )?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::hide(app, None)?,
             &PredefinedMenuItem::hide_others(app, None)?,
             &MenuItem::with_id(
                 app,
                 "app_check_updates",
-                "Check for updates",
+                i18n::tr_current("native.menu.checkForUpdates"),
                 true,
                 None::<&str>,
             )?,
@@ -1086,14 +1176,14 @@ fn build_macos_app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
     let file_submenu = Submenu::with_items(
         app,
-        "File",
+        i18n::tr_current("native.menu.file"),
         true,
         &[&PredefinedMenuItem::close_window(app, None)?],
     )?;
 
     let edit_submenu = Submenu::with_items(
         app,
-        "Edit",
+        i18n::tr_current("native.menu.edit"),
         true,
         &[
             &PredefinedMenuItem::undo(app, None)?,
@@ -1108,7 +1198,7 @@ fn build_macos_app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
     let view_submenu = Submenu::with_items(
         app,
-        "View",
+        i18n::tr_current("native.menu.view"),
         true,
         &[&PredefinedMenuItem::fullscreen(app, None)?],
     )?;
@@ -1116,7 +1206,7 @@ fn build_macos_app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let window_submenu = Submenu::with_id_and_items(
         app,
         WINDOW_SUBMENU_ID,
-        "Window",
+        i18n::tr_current("native.menu.window"),
         true,
         &[
             &PredefinedMenuItem::minimize(app, None)?,
@@ -1126,7 +1216,13 @@ fn build_macos_app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         ],
     )?;
 
-    let help_submenu = Submenu::with_id_and_items(app, HELP_SUBMENU_ID, "Help", true, &[])?;
+    let help_submenu = Submenu::with_id_and_items(
+        app,
+        HELP_SUBMENU_ID,
+        i18n::tr_current("native.menu.help"),
+        true,
+        &[],
+    )?;
 
     Menu::with_items(
         app,
@@ -1160,6 +1256,15 @@ pub fn run() {
 
     let daemon = KdeConnectDaemon::new(config_dir, downloads_dir, log_file_path)
         .expect("Failed to initialize KdeConnectDaemon");
+
+    // Native surfaces are built before the webview exists, so the active locale
+    // has to be resolved here, not in the frontend.
+    i18n::set_current(daemon.resolved_locale());
+    log::info!(
+        "[i18n] Language preference '{}' resolved to {}",
+        daemon.language_preference(),
+        i18n::current().tag()
+    );
 
     let daemon_for_setup = Arc::clone(&daemon);
 
@@ -1226,6 +1331,8 @@ pub fn run() {
             set_active_notification_device,
             copy_text_to_clipboard,
             set_ignore_whatsapp_conversations,
+            get_language,
+            set_language,
             add_device_run_command,
             remove_device_run_command,
             send_remote_key,
