@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import * as Dialog from "@radix-ui/react-dialog";
 import { open } from "@tauri-apps/plugin-dialog";
 import * as Popover from "@radix-ui/react-popover";
@@ -93,6 +94,7 @@ export function DeviceControlView({
     rightPaneContainer,
     highlightedNotification,
 }: DeviceControlViewProps) {
+    const { t } = useTranslation();
     const [displaySecs, setDisplaySecs] = useState<number>(0);
     const [isShareLinkOpen, setIsShareLinkOpen] = useState<boolean>(false);
     const [shareLinkInput, setShareLinkInput] = useState<string>("");
@@ -329,7 +331,9 @@ export function DeviceControlView({
         const selected = await open({
             multiple: true,
             directory: false,
-            title: `Send file(s) to ${device.deviceName}`,
+            title: t("quickActions.sendFilesTitle", {
+                device: device.deviceName,
+            }),
         });
         if (selected) {
             const paths = Array.isArray(selected) ? selected : [selected];
@@ -617,7 +621,7 @@ export function DeviceControlView({
                                                 <span className="mt-0.5 truncate text-[12.5px] text-zinc-600 dark:text-zinc-400">
                                                     {[device.nowPlaying.artist, device.nowPlaying.album]
                                                         .filter(Boolean)
-                                                        .join(" — ") || "Playing on device"}
+                                                        .join(" — ") || t("media.playingOnDevice")}
                                                 </span>
                                             </motion.div>
                                         </AnimatePresence>
@@ -633,7 +637,7 @@ export function DeviceControlView({
                                         disabled={!device.nowPlaying.canGoPrevious}
                                         onClick={() => handleMediaAction("Previous")}
                                         className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-zinc-700 transition-colors hover:bg-black/[0.08] hover:text-zinc-950 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/[0.10] dark:hover:text-white"
-                                        title="Previous Track"
+                                        title={t("media.previousTrack")}
                                     >
                                         <SkipBackIcon size={16} weight="fill" />
                                     </motion.button>
@@ -644,7 +648,11 @@ export function DeviceControlView({
                                         whileTap={{ scale: 0.92 }}
                                         onClick={() => handleMediaAction("PlayPause")}
                                         className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-                                        title={device.nowPlaying.isPlaying ? "Pause" : "Play"}
+                                        title={
+                                            device.nowPlaying.isPlaying
+                                                ? t("media.pause")
+                                                : t("media.play")
+                                        }
                                     >
                                         {device.nowPlaying.isPlaying ? (
                                             <PauseIcon size={16} weight="fill" />
@@ -660,7 +668,7 @@ export function DeviceControlView({
                                         disabled={!device.nowPlaying.canGoNext}
                                         onClick={() => handleMediaAction("Next")}
                                         className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-zinc-700 transition-colors hover:bg-black/[0.08] hover:text-zinc-950 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/[0.10] dark:hover:text-white"
-                                        title="Next Track"
+                                        title={t("media.nextTrack")}
                                     >
                                         <SkipForwardIcon size={16} weight="fill" />
                                     </motion.button>
@@ -742,9 +750,10 @@ export function DeviceControlView({
                                 <CheckCircleIcon size={24} weight="fill" />
                             </div>
                             <span className="text-[14px] font-semibold text-zinc-900 dark:text-zinc-100">
-                                Sending {justDroppedCount}{" "}
-                                {justDroppedCount == 1 ? "file" : "files"} to{" "}
-                                {device.deviceName}...
+                                {t("drop.sending", {
+                                    count: justDroppedCount,
+                                    device: device.deviceName,
+                                })}
                             </span>
                         </motion.div>
                     ) : (
@@ -781,11 +790,15 @@ export function DeviceControlView({
 
                             <span className="mt-3 text-[14px] font-semibold text-zinc-900 dark:text-zinc-100">
                                 {isDraggingOver
-                                    ? `Drop to send to ${device.deviceName}`
-                                    : `Drop files to send to ${device.deviceName}`}
+                                    ? t("drop.dropToSend", {
+                                        device: device.deviceName,
+                                    })
+                                    : t("drop.dropFilesToSend", {
+                                        device: device.deviceName,
+                                    })}
                             </span>
                             <span className="mt-1 text-[12.5px] text-zinc-500 dark:text-zinc-400">
-                                or click to browse from your Mac
+                                {t("drop.orClickToBrowse")}
                             </span>
                         </motion.div>
                     )}
@@ -846,10 +859,10 @@ export function DeviceControlView({
                                             <div className="flex items-center justify-between gap-2 text-[11.5px] font-medium text-zinc-600 dark:text-zinc-300">
                                                 <span className="truncate">
                                                     {isDone
-                                                        ? "Sent"
+                                                        ? t("transfer.sent")
                                                         : item.direction == "Outgoing"
-                                                            ? "Sending"
-                                                            : "Receiving"}{" "}
+                                                            ? t("transfer.sending")
+                                                            : t("transfer.receiving")}{" "}
                                                     {item.filename}
                                                 </span>
                                                 <span className="shrink-0 font-mono text-[11px] tabular-nums">
@@ -882,7 +895,7 @@ export function DeviceControlView({
                 }`}
             >
                 <span className="text-[12.5px] font-medium text-zinc-500 dark:text-zinc-400">
-                    Quick actions
+                    {t("quickActions.title")}
                 </span>
 
                 <div className="grid grid-cols-3 gap-3">
@@ -908,7 +921,7 @@ export function DeviceControlView({
                                 className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/12 bg-black/[0.02] px-4 py-2.5 text-[13.5px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.05] data-[state=open]:border-black/25 data-[state=open]:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05] dark:data-[state=open]:border-white/25 dark:data-[state=open]:bg-white/[0.07]"
                             >
                                 <LinkIcon size={16} weight="regular" />
-                                <span>Share link</span>
+                                <span>{t("quickActions.shareLink")}</span>
                             </motion.button>
                         </Popover.Trigger>
 
@@ -938,7 +951,7 @@ export function DeviceControlView({
                                             className="z-50 flex w-72 flex-col gap-2 rounded-2xl border border-black/12 bg-white/95 p-3 shadow-xl backdrop-blur-xl outline-none dark:border-white/15 dark:bg-zinc-800/95"
                                         >
                                             <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                                                Paste your link here
+                                                {t("quickActions.pasteLink")}
                                             </span>
 
                                             <div
@@ -973,7 +986,7 @@ export function DeviceControlView({
                                                     whileHover={{ scale: 1.05 }}
                                                     whileTap={{ scale: 0.94 }}
                                                     className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white shadow-xs transition-colors hover:bg-blue-500"
-                                                    title="Send link"
+                                                    title={t("quickActions.sendLink")}
                                                 >
                                                     <PaperPlaneRightIcon size={14} weight="fill" />
                                                 </motion.button>
@@ -1007,7 +1020,7 @@ export function DeviceControlView({
                         className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/12 bg-black/[0.02] px-4 py-2.5 text-[13.5px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05]"
                     >
                         <BellRingingIcon size={16} weight="regular" />
-                        <span>Ring phone</span>
+                        <span>{t("quickActions.ringPhone")}</span>
                     </motion.button>
 
                     {/* 3rd Quick Action: Remote input Radix Dialog */}
@@ -1030,7 +1043,7 @@ export function DeviceControlView({
                                 className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/12 bg-black/[0.02] px-4 py-2.5 text-[13.5px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.05] data-[state=open]:border-black/25 data-[state=open]:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05] dark:data-[state=open]:border-white/25 dark:data-[state=open]:bg-white/[0.07]"
                             >
                                 <KeyboardIcon size={16} weight="regular" />
-                                <span>Remote input</span>
+                                <span>{t("quickActions.remoteInput")}</span>
                             </motion.button>
                         </Dialog.Trigger>
 
@@ -1078,7 +1091,7 @@ export function DeviceControlView({
                                             {/* Modal Header */}
                                             <div className="flex items-center justify-between gap-3">
                                                 <Dialog.Title className="text-[15.5px] font-semibold text-zinc-900 dark:text-zinc-100">
-                                                    Remote input
+                                                    {t("quickActions.remoteInput")}
                                                 </Dialog.Title>
 
                                                 <motion.button
@@ -1088,14 +1101,16 @@ export function DeviceControlView({
                                                     whileTap={{ scale: 0.94 }}
                                                     onClick={() => setIsRemoteInputOpen(false)}
                                                     className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-black/[0.06] hover:text-zinc-700 dark:hover:bg-white/[0.08] dark:hover:text-zinc-200"
-                                                    aria-label="Close"
+                                                    aria-label={t("common.close")}
                                                 >
                                                     <XIcon size={15} weight="bold" />
                                                 </motion.button>
                                             </div>
 
                                             <Dialog.Description className="sr-only">
-                                                Capturing keyboard input for {device.deviceName}
+                                                {t("quickActions.capturingFor", {
+                                                    device: device.deviceName,
+                                                })}
                                             </Dialog.Description>
 
                                             {/* Dotted Keystroke Capture Zone matching the File Drop Zone */}
@@ -1108,11 +1123,12 @@ export function DeviceControlView({
                                                     <KeyboardIcon size={22} weight="regular" />
                                                 </div>
                                                 <p className="mt-3 text-[13.5px] font-medium text-zinc-700 dark:text-zinc-200">
-                                                    Capturing keystrokes for {device.deviceName}
+                                                    {t("quickActions.capturingKeystrokesFor", {
+                                                        device: device.deviceName,
+                                                    })}
                                                 </p>
                                                 <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                                                    Switch to KDE Connect Remote Keyboard on your phone
-                                                    and start typing
+                                                    {t("quickActions.remoteKeyboardHint")}
                                                 </p>
                                             </div>
                                         </motion.div>
@@ -1146,7 +1162,7 @@ export function DeviceControlView({
                     className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/12 bg-black/[0.02] px-4 py-2.5 text-[13.5px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05]"
                 >
                     <FolderOpenIcon size={16} weight="regular" />
-                    <span>Browse files</span>
+                    <span>{t("quickActions.browseFiles")}</span>
                 </motion.button>
             </div>
 
@@ -1158,7 +1174,7 @@ export function DeviceControlView({
                     }`}
                 >
                     <span className="text-[12.5px] font-medium text-zinc-500 dark:text-zinc-400">
-                        Notifications
+                        {t("notifications.title")}
                     </span>
 
                     {device.notifications && device.notifications.length > 0 ? (
@@ -1294,7 +1310,7 @@ export function DeviceControlView({
                                                         }}
                                                         className="mt-1 inline-flex w-fit cursor-pointer items-center gap-1 text-[11.5px] font-medium text-blue-600 underline decoration-blue-500/40 underline-offset-2 transition-colors hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
                                                     >
-                                                        <span>See how to remove this</span>
+                                                        <span>{t("notifications.removeSensitive")}</span>
                                                         <ArrowSquareOutIcon size={12} weight="regular" />
                                                     </button>
                                                 )}
@@ -1323,12 +1339,12 @@ export function DeviceControlView({
                                                                 ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                                                                 : "border-blue-500/25 bg-blue-500/10 text-blue-600 hover:bg-blue-500/18 dark:text-blue-400"
                                                         }`}
-                                                        title="Copy verification code"
+                                                        title={t("notifications.copyCode")}
                                                     >
                                                         {isCopied ? (
                                                             <>
                                                                 <CheckIcon size={12.5} weight="bold" />
-                                                                <span>Copied</span>
+                                                                <span>{t("common.copied")}</span>
                                                             </>
                                                         ) : (
                                                             <>
@@ -1353,7 +1369,7 @@ export function DeviceControlView({
                                                             }).catch(() => {})
                                                         }
                                                         className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-black/[0.06] hover:text-zinc-700 dark:hover:bg-white/[0.08] dark:hover:text-zinc-200"
-                                                        title="Dismiss notification"
+                                                        title={t("notifications.dismiss")}
                                                     >
                                                         <XIcon size={13} weight="bold" />
                                                     </motion.button>
@@ -1366,7 +1382,7 @@ export function DeviceControlView({
                         </div>
                     ) : (
                         <div className="flex items-center justify-center rounded-xl border border-black/8 bg-black/[0.015] px-4 py-4 text-[12.5px] text-zinc-400 dark:border-white/8 dark:bg-white/[0.015] dark:text-zinc-500">
-                            No active notifications on {device.deviceName}
+                            {t("notifications.empty", { device: device.deviceName })}
                         </div>
                     )}
                 </div>

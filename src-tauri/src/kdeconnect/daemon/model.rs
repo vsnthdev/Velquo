@@ -169,12 +169,22 @@ pub struct TrustedDeviceRecord {
 pub struct AppSettings {
     #[serde(default = "default_true")]
     pub ignore_whatsapp_conversations: bool,
+    /// `system` (follow the OS) or a concrete tag: `en` / `zh-Hans` / `zh-Hant`.
+    /// Owned by Rust so the native menu bar, tray menu and window titles can
+    /// read it before the webview exists.
+    #[serde(default = "default_language")]
+    pub language: String,
+}
+
+pub(crate) fn default_language() -> String {
+    "system".to_string()
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             ignore_whatsapp_conversations: true,
+            language: default_language(),
         }
     }
 }

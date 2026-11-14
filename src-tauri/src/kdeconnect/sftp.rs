@@ -227,8 +227,8 @@ impl SftpManager {
                         normalized
                             .rsplit('/')
                             .find(|seg| !seg.is_empty())
-                            .unwrap_or("Storage")
-                            .to_string()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| crate::i18n::tr_current("files.storage"))
                     });
                 roots.push(SftpRootEntry {
                     name: label,
@@ -247,7 +247,7 @@ impl SftpManager {
                 format!("/{}", single_path)
             };
             roots.push(SftpRootEntry {
-                name: "Internal storage".to_string(),
+                name: crate::i18n::tr_current("files.internalStorage"),
                 path: normalized,
             });
         }

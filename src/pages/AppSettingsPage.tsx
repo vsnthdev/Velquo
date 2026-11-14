@@ -1,10 +1,27 @@
 import pkg from "../../package.json";
 import { motion } from "motion/react";
+import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
+import * as Popover from "@radix-ui/react-popover";
 import { useRef, useState, useEffect } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { CheckIcon, GithubLogoIcon, ArrowsClockwiseIcon } from "@phosphor-icons/react";
+import {
+    CheckIcon,
+    CaretDownIcon,
+    GithubLogoIcon,
+    ArrowsClockwiseIcon,
+} from "@phosphor-icons/react";
+import {
+    LOCALE_LABELS,
+    resolveLocale,
+    SUPPORTED_LOCALES,
+    isLanguagePreference,
+    readLanguagePreference,
+    type LanguagePreference,
+    setLanguagePreference as persistLanguagePreference,
+} from "../i18n";
 
 interface AppSettingsPageProps {
     ignoreWhatsappConversations: boolean;
@@ -19,7 +36,12 @@ export function AppSettingsPage({
     ignoreWhatsappConversations,
     onToggleIgnoreWhatsappConversations,
 }: AppSettingsPageProps) {
+    const { t } = useTranslation();
     const [launchOnStartup, setLaunchOnStartup] = useState<boolean>(false);
+    const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState<boolean>(false);
+    const [languagePreference, setLanguagePreference] = useState<LanguagePreference>(
+        () => readLanguagePreference(),
+    );
     const [appVersion, setAppVersion] = useState<string>(pkg.version);
     const [checkStatus, setCheckStatus] = useState<
     "idle" | "checking" | "up-to-date" | "error"
@@ -53,6 +75,15 @@ export function AppSettingsPage({
             .catch(() => {
                 setLaunchOnStartup(false);
             });
+
+        // Rust owns the preference; adopt it if the webview cache went stale.
+        invoke<{ preference: string }>("get_language")
+            .then((state) => {
+                if (isLanguagePreference(state.preference)) {
+                    setLanguagePreference(state.preference);
+                }
+            })
+            .catch(() => {});
     }, []);
 
     const handleToggleLaunchOnStartup = async () => {
@@ -78,6 +109,18 @@ export function AppSettingsPage({
             await openUrl(repoUrl);
         } catch (err) {
             console.error("Failed to open GitHub URL:", err);
+        }
+    };
+
+    const handleSelectLanguage = async (preference: LanguagePreference) => {
+        setIsLanguageMenuOpen(false);
+        const previous = languagePreference;
+        setLanguagePreference(preference);
+        try {
+            await persistLanguagePreference(preference);
+        } catch (err) {
+            console.error("Failed to change language:", err);
+            setLanguagePreference(previous);
         }
     };
 
@@ -107,6 +150,22 @@ export function AppSettingsPage({
         }
     };
 
+    const languageOptions: { value: LanguagePreference; label: string }[] = [
+        { value: "system", label: t("settings.language.system") },
+        ...SUPPORTED_LOCALES.map((locale) => ({
+            label: LOCALE_LABELS[locale],
+            value: locale as LanguagePreference,
+        })),
+    ];
+
+    // The concrete locale the "system" preference currently resolves to, so the
+    // choice can be verified without restarting the app. This is the system
+    // resolution, not the active UI language.
+    const resolvedSystemLocale = resolveLocale("system");
+    const activeLanguageLabel =
+        languageOptions.find((option) => option.value == languagePreference)?.label ??
+        LOCALE_LABELS[resolvedSystemLocale];
+
     return (
         <motion.div
             key="app-settings-page"
@@ -118,8 +177,91 @@ export function AppSettingsPage({
         >
             {/* Settings section header */}
             <h2 className="text-[12.5px] font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-                Settings
+                {t("settings.title")}
             </h2>
+
+            {/* Language preference */}
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2 dark:border-white/12 dark:bg-white/[0.02]">
+                <span className="shrink-0 text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
+                    {t("settings.language.label")}
+                </span>
+
+                <Popover.Root open={isLanguageMenuOpen} onOpenChange={setIsLanguageMenuOpen}>
+                    <Popover.Trigger asChild>
+                        <button
+                            type="button"
+                            className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-lg border border-black/12 bg-black/[0.04] px-2.5 py-1 text-[12px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.07] data-[state=open]:border-black/25 data-[state=open]:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.09] dark:data-[state=open]:border-white/25 dark:data-[state=open]:bg-white/[0.08]"
+                        >
+                            <span className="truncate">{activeLanguageLabel}</span>
+                            <motion.span
+                                animate={{ rotate: isLanguageMenuOpen ? 180 : 0 }}
+                                transition={{ duration: 0.16 }}
+                                className="flex shrink-0 items-center"
+                            >
+                                <CaretDownIcon size={11} weight="bold" />
+                            </motion.span>
+                        </button>
+                    </Popover.Trigger>
+
+                    <Popover.Portal>
+                        <Popover.Content
+                            asChild
+                            side="bottom"
+                            align="end"
+                            sideOffset={6}
+                        >
+                            <motion.div
+                                initial={{ y: -4, opacity: 0, scale: 0.97 }}
+                                animate={{ y: 0, scale: 1, opacity: 1 }}
+                                transition={{
+                                    damping: 32,
+                                    type: "spring",
+                                    stiffness: 480,
+                                }}
+                                style={{
+                                    transformOrigin:
+                                        "var(--radix-popover-content-transform-origin)",
+                                }}
+                                className="z-50 flex min-w-44 flex-col gap-0.5 rounded-xl border border-black/12 bg-white/95 p-1 shadow-xl backdrop-blur-xl outline-none dark:border-white/15 dark:bg-zinc-800/95"
+                            >
+                                {languageOptions.map((option) => {
+                                    const isActive = languagePreference == option.value;
+                                    return (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            onClick={() => handleSelectLanguage(option.value)}
+                                            className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${
+                                                isActive
+                                                    ? "bg-black/[0.06] font-medium text-zinc-900 dark:bg-white/[0.08] dark:text-zinc-100"
+                                                    : "text-zinc-600 hover:bg-black/[0.04] dark:text-zinc-300 dark:hover:bg-white/[0.06]"
+                                            }`}
+                                        >
+                                            <span className="flex min-w-0 flex-col">
+                                                <span className="truncate">
+                                                    {option.label}
+                                                </span>
+                                                {option.value == "system" && (
+                                                    <span className="truncate text-[10.5px] text-zinc-400 dark:text-zinc-500">
+                                                        {LOCALE_LABELS[resolvedSystemLocale]}
+                                                    </span>
+                                                )}
+                                            </span>
+                                            {isActive && (
+                                                <CheckIcon
+                                                    size={12}
+                                                    weight="bold"
+                                                    className="shrink-0 text-blue-600 dark:text-blue-400"
+                                                />
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </motion.div>
+                        </Popover.Content>
+                    </Popover.Portal>
+                </Popover.Root>
+            </div>
 
             {/* Launch on startup toggle */}
             <div
@@ -127,7 +269,7 @@ export function AppSettingsPage({
                 className="mt-3 flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
             >
                 <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
-                    Launch on startup
+                    {t("settings.launchOnStartup")}
                 </span>
 
                 <button
@@ -162,7 +304,7 @@ export function AppSettingsPage({
             {/* Check for updates row */}
             <div className="mt-3 flex items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20">
                 <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
-                    Check for updates
+                    {t("settings.checkForUpdates")}
                 </span>
 
                 <motion.button
@@ -170,7 +312,7 @@ export function AppSettingsPage({
                     disabled={checkStatus == "checking"}
                     title={
                         checkStatus == "error"
-                            ? "Check failed — click to try again"
+                            ? t("settings.checkFailedHint")
                             : undefined
                     }
                     whileHover={checkStatus == "checking" ? undefined : { scale: 1.02 }}
@@ -187,7 +329,7 @@ export function AppSettingsPage({
                     {checkStatus == "up-to-date" ? (
                         <>
                             <CheckIcon size={13} weight="bold" />
-                            <span>Up to date</span>
+                            <span>{t("settings.upToDate")}</span>
                         </>
                     ) : (
                         <>
@@ -198,10 +340,10 @@ export function AppSettingsPage({
                             />
                             <span>
                                 {checkStatus == "checking"
-                                    ? "Checking..."
+                                    ? t("settings.checking")
                                     : checkStatus == "error"
-                                        ? "Check failed"
-                                        : "Check now"}
+                                        ? t("settings.checkFailed")
+                                        : t("settings.checkNow")}
                             </span>
                         </>
                     )}
@@ -214,7 +356,7 @@ export function AppSettingsPage({
                 className="mt-3 flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
             >
                 <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
-                    Ignore WhatsApp conversations
+                    {t("settings.ignoreWhatsapp")}
                 </span>
 
                 <button
@@ -248,7 +390,7 @@ export function AppSettingsPage({
 
             {/* About section header */}
             <h2 className="mt-8 text-[12.5px] font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-                About
+                {t("settings.about")}
             </h2>
 
             {/* About Card matching media/github-cover.svg */}
@@ -366,13 +508,13 @@ export function AppSettingsPage({
 
                 {/* Tagline */}
                 <p className="mt-2 text-[13.5px] font-medium text-zinc-500 dark:text-slate-400">
-                    KDE Connect, reborn natively for Apple Silicon Macs.
+                    {t("settings.tagline")}
                 </p>
 
                 {/* Version Pill + GitHub Repository Link */}
                 <div className="mt-4 flex items-center gap-2.5">
                     <span className="inline-flex items-center rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 text-[12.5px] font-medium text-zinc-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
-                        Version {appVersion}
+                        {t("settings.version", { version: appVersion })}
                     </span>
 
                     <motion.button

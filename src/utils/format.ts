@@ -1,26 +1,30 @@
+import { i18n } from "../i18n";
+
 // In-memory cache for iTunes fallback artwork lookups
 export const itunesArtCache = new Map<string, string | null>();
 
+/** Pure presentation helper, so it reads the active language directly instead of
+ * taking a `t` dependency through every call site. */
 export function formatLastSeen(
     reachable: boolean,
     lastSeenSecs: number,
 ): string {
     if (reachable) {
-        return "Connected over Wi-Fi, last seen just now";
+        return i18n.t("device.connected");
     }
     if (!lastSeenSecs) {
-        return "Offline";
+        return i18n.t("device.offline");
     }
     const diffSecs = Math.max(0, Math.floor(Date.now() / 1000) - lastSeenSecs);
     if (diffSecs < 60) {
-        return "Offline, last seen just now";
+        return i18n.t("device.offlineJustNow");
     }
     const mins = Math.floor(diffSecs / 60);
     if (mins < 60) {
-        return `Offline, last seen ${mins}m ago`;
+        return i18n.t("device.offlineMinutes", { count: mins });
     }
     const hours = Math.floor(mins / 60);
-    return `Offline, last seen ${hours}h ago`;
+    return i18n.t("device.offlineHours", { count: hours });
 }
 
 export function formatDurationMs(ms: number): string {
@@ -49,7 +53,7 @@ export function formatShortDate(epochSecs: number | null): string {
     if (Number.isNaN(date.getTime())) return "";
     const now = new Date();
     const sameYear = date.getFullYear() == now.getFullYear();
-    return date.toLocaleDateString("en-US", {
+    return date.toLocaleDateString(i18n.language, {
         month: "short",
         day: "numeric",
         ...(sameYear ? {} : { year: "numeric" }),

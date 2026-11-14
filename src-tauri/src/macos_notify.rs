@@ -221,22 +221,7 @@ pub fn init_macos_notifications(app: AppHandle, daemon: Arc<KdeConnectDaemon>) {
         let mtm = MainThreadMarker::new_unchecked();
         let center = UNUserNotificationCenter::currentNotificationCenter();
 
-        let dismiss_action = UNNotificationAction::actionWithIdentifier_title_options(
-            &NSString::from_str(DISMISS_ACTION),
-            &NSString::from_str("Dismiss"),
-            UNNotificationActionOptions::empty(),
-        );
-        let actions = NSArray::from_slice(&[&*dismiss_action]);
-        let intent_identifiers = NSArray::<NSString>::from_slice(&[]);
-        let category =
-            UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
-                &NSString::from_str(NOTIFICATION_CATEGORY),
-                &actions,
-                &intent_identifiers,
-                UNNotificationCategoryOptions::empty(),
-            );
-        let categories = NSSet::from_slice(&[&*category]);
-        center.setNotificationCategories(&categories);
+        register_notification_categories(&center);
 
         let delegate = VelquoNotificationDelegate::new(mtm);
         let proto: Retained<ProtocolObject<dyn UNUserNotificationCenterDelegate>> =
@@ -263,6 +248,39 @@ pub fn init_macos_notifications(app: AppHandle, daemon: Arc<KdeConnectDaemon>) {
             UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound,
             &authorization,
         );
+    });
+}
+
+/// Registers the notification category that carries the "Dismiss" action button.
+/// Called once at startup and again whenever the UI language changes, so the
+/// action title follows the app language rather than staying English.
+unsafe fn register_notification_categories(center: &UNUserNotificationCenter) {
+    let dismiss_action = UNNotificationAction::actionWithIdentifier_title_options(
+        &NSString::from_str(DISMISS_ACTION),
+        &NSString::from_str(&crate::i18n::tr_current("native.notification.dismiss")),
+        UNNotificationActionOptions::empty(),
+    );
+    let actions = NSArray::from_slice(&[&*dismiss_action]);
+    let intent_identifiers = NSArray::<NSString>::from_slice(&[]);
+    let category = UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+        &NSString::from_str(NOTIFICATION_CATEGORY),
+        &actions,
+        &intent_identifiers,
+        UNNotificationCategoryOptions::empty(),
+    );
+    let categories = NSSet::from_slice(&[&*category]);
+    center.setNotificationCategories(&categories);
+}
+
+/// Re-registers the notification category after a language change. macOS applies
+/// the new action titles to already-delivered notifications as well.
+pub fn refresh_notification_action_titles(app: &AppHandle) {
+    if !NOTIFICATIONS_AVAILABLE.load(Ordering::Acquire) {
+        return;
+    }
+    let _ = app.run_on_main_thread(|| unsafe {
+        let center = UNUserNotificationCenter::currentNotificationCenter();
+        register_notification_categories(&center);
     });
 }
 

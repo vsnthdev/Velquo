@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { DeviceIcon } from "./DeviceIcon";
+import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import type { ActiveView, DeviceView } from "../types";
 import { GearSixIcon, PlusCircleIcon } from "@phosphor-icons/react";
@@ -19,6 +20,7 @@ export function Sidebar({
     onSelectPairDevice,
     onSelectAppSettings,
 }: SidebarProps) {
+    const { t } = useTranslation();
     const [hoveredDeviceId, setHoveredDeviceId] = useState<string | null>(null);
     const [hoveredBottomId, setHoveredBottomId] = useState<string | null>(null);
 
@@ -28,7 +30,7 @@ export function Sidebar({
     return (
         <aside className="flex h-full w-60 shrink-0 select-none flex-col border-r border-black/10 bg-transparent px-2 pt-12 pb-4 dark:border-white/10">
             <div className="mb-2 select-none px-3.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                Devices
+                {t("sidebar.devices")}
             </div>
 
             <div
@@ -173,7 +175,7 @@ export function Sidebar({
 
                     <span className="relative z-10 flex items-center gap-2.5">
                         <GearSixIcon size={18} weight="regular" className="shrink-0" />
-                        <span className="truncate">Settings</span>
+                        <span className="truncate">{t("sidebar.settings")}</span>
                     </span>
                 </motion.button>
 
@@ -218,7 +220,7 @@ export function Sidebar({
 
                     <span className="relative z-10 flex items-center gap-2.5">
                         <PlusCircleIcon size={18} weight="regular" className="shrink-0" />
-                        <span className="truncate">Pair new device</span>
+                        <span className="truncate">{t("sidebar.pairNewDevice")}</span>
                     </span>
                 </motion.button>
             </div>

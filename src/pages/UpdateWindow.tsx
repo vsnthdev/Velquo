@@ -1,8 +1,10 @@
+import { i18n } from "../i18n";
 import pkg from "../../package.json";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { Update } from "@tauri-apps/plugin-updater";
+import { Trans, useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -23,14 +25,16 @@ import {
 
 type UpdateStep = "prompt" | "downloading" | "ready" | "error";
 
-function formatUpdateCheckError(err: unknown): string {
+/** Returns the updater's own error text when it has one, so the caller can fall
+ * back to a translated message instead of hardcoding English here. */
+function extractUpdateCheckError(err: unknown): string | null {
     if (typeof err == "string" && err.trim()) {
         return err.trim();
     }
     if (err instanceof Error && err.message.trim()) {
         return err.message.trim();
     }
-    return "The update service could not be reached. Check your connection and try again.";
+    return null;
 }
 
 interface UpdateMetadataDto {
@@ -43,6 +47,7 @@ interface UpdateMetadataDto {
 }
 
 export function UpdateWindow() {
+    const { t } = useTranslation();
     const [update, setUpdate] = useState<Update | null>(null);
     const [appVersion, setAppVersion] = useState<string>(pkg.version);
     const [isLoadingUpdate, setIsLoadingUpdate] = useState<boolean>(true);
@@ -129,7 +134,10 @@ export function UpdateWindow() {
             console.error("Failed to load pending update:", err);
             if (seq == loadSeqRef.current) {
                 await releaseCurrentUpdate();
-                setLoadError(formatUpdateCheckError(err));
+                setLoadError(
+                    extractUpdateCheckError(err) ??
+                        i18n.t("update.serviceUnreachable"),
+                );
                 setUpdate(null);
             }
         } finally {
@@ -269,7 +277,7 @@ export function UpdateWindow() {
                     ? err
                     : err instanceof Error
                         ? err.message
-                        : "Failed to download and install the update.",
+                        : t("update.installFailed"),
             );
             setStep("error");
         }
@@ -300,7 +308,7 @@ export function UpdateWindow() {
                 className="relative z-10 flex shrink-0 items-center justify-between gap-2 border-b border-black/8 bg-white/80 py-2 pr-3.5 pl-[76px] backdrop-blur-md dark:border-white/10 dark:bg-zinc-900/80"
             >
                 <span className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
-                    Software update
+                    {t("update.title")}
                 </span>
                 {update && (
                     <span className="rounded-md bg-black/[0.04] px-2 py-0.5 font-mono text-[11px] text-zinc-500 dark:bg-white/[0.06] dark:text-zinc-400">
@@ -315,7 +323,7 @@ export function UpdateWindow() {
                     <div className="flex flex-1 flex-col items-center justify-center gap-2.5 text-zinc-500 dark:text-zinc-400">
                         <CircleNotchIcon size={24} weight="bold" className="animate-spin" />
                         <span className="text-[13px] font-medium">
-                            Checking for updates...
+                            {t("update.checking")}
                         </span>
                     </div>
                 ) : loadError ? (
@@ -325,7 +333,7 @@ export function UpdateWindow() {
                         </div>
                         <div className="flex flex-col gap-0.5">
                             <span className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">
-                                Could not check for updates
+                                {t("update.checkFailed")}
                             </span>
                             <span className="max-w-xs text-[12.5px] leading-relaxed break-words text-zinc-500 dark:text-zinc-400">
                                 {loadError}
@@ -337,14 +345,14 @@ export function UpdateWindow() {
                                 onClick={() => void loadPendingUpdate()}
                                 className="cursor-pointer rounded-xl bg-blue-600 px-4 py-1.5 text-[12.5px] font-medium text-white transition-colors hover:bg-blue-500"
                             >
-                                Try again
+                                {t("update.tryAgain")}
                             </button>
                             <button
                                 type="button"
                                 onClick={() => void handleCloseWindow()}
                                 className="cursor-pointer rounded-xl border border-black/12 bg-black/[0.03] px-4 py-1.5 text-[12.5px] font-medium text-zinc-700 transition-colors hover:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.04] dark:text-zinc-200 dark:hover:bg-white/[0.08]"
                             >
-                                Close
+                                {t("common.close")}
                             </button>
                         </div>
                     </div>
@@ -355,14 +363,18 @@ export function UpdateWindow() {
                         </div>
                         <div className="flex flex-col gap-0.5">
                             <span className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">
-                                You have the latest version
+                                {t("update.latest")}
                             </span>
                             <span className="text-[12.5px] text-zinc-500 dark:text-zinc-400">
-                                Velquo{" "}
-                                <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">
-                                    v{appVersion}
-                                </span>{" "}
-                                is currently the newest version available.
+                                <Trans
+                                    i18nKey="update.latestBody"
+                                    values={{ version: appVersion }}
+                                    components={{
+                                        mono: (
+                                            <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300" />
+                                        ),
+                                    }}
+                                />
                             </span>
                         </div>
                         <button
@@ -370,7 +382,7 @@ export function UpdateWindow() {
                             onClick={() => void handleCloseWindow()}
                             className="mt-1.5 cursor-pointer rounded-xl border border-black/12 bg-black/[0.03] px-5 py-1.5 text-[12.5px] font-medium text-zinc-700 transition-colors hover:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.04] dark:text-zinc-200 dark:hover:bg-white/[0.08]"
                         >
-                            Close
+                            {t("common.close")}
                         </button>
                     </div>
                 ) : (
@@ -382,18 +394,26 @@ export function UpdateWindow() {
                             </div>
                             <div className="flex flex-col">
                                 <h1 className="text-[15px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-                                    Velquo{" "}
-                                    <span className="font-mono text-blue-600 dark:text-blue-400">
-                                        v{update.version}
-                                    </span>{" "}
-                                    is available
+                                    <Trans
+                                        i18nKey="update.availableTitle"
+                                        values={{ version: update.version }}
+                                        components={{
+                                            mono: (
+                                                <span className="font-mono text-blue-600 dark:text-blue-400" />
+                                            ),
+                                        }}
+                                    />
                                 </h1>
                                 <p className="text-[12px] text-zinc-500 dark:text-zinc-400">
-                                    Ready to install (current:{" "}
-                                    <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">
-                                        v{update.currentVersion}
-                                    </span>
-                                    )
+                                    <Trans
+                                        i18nKey="update.readyToInstall"
+                                        values={{ version: update.currentVersion }}
+                                        components={{
+                                            mono: (
+                                                <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300" />
+                                            ),
+                                        }}
+                                    />
                                 </p>
                             </div>
                         </div>
@@ -409,14 +429,14 @@ export function UpdateWindow() {
                                             className="animate-spin"
                                         />
                                         <span className="text-[12px]">
-                                            Loading release notes...
+                                            {t("update.loadingNotes")}
                                         </span>
                                     </div>
                                 ) : releaseNotes ? (
                                     releaseNotes
                                 ) : (
                                     <span className="text-zinc-400 dark:text-zinc-500">
-                                        No release notes provided for this version.
+                                        {t("update.noNotes")}
                                     </span>
                                 )}
                             </div>
@@ -447,7 +467,7 @@ export function UpdateWindow() {
                                             onClick={() => void handleSkipVersion()}
                                             className="flex flex-1 cursor-pointer items-center justify-center rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2 text-[12.5px] font-medium text-zinc-700 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-white/[0.06]"
                                         >
-                                            Skip this version
+                                            {t("update.skipVersion")}
                                         </motion.button>
 
                                         <motion.button
@@ -459,7 +479,9 @@ export function UpdateWindow() {
                                         >
                                             <CloudArrowDownIcon size={15} weight="bold" />
                                             <span>
-                                                {step == "error" ? "Retry update" : "Update now"}
+                                                {step == "error"
+                                                    ? t("update.retryUpdate")
+                                                    : t("update.updateNow")}
                                             </span>
                                         </motion.button>
                                     </motion.div>
@@ -481,7 +503,7 @@ export function UpdateWindow() {
                                             transition={{ duration: 0.2, ease: "easeOut" }}
                                         />
                                         <span className="relative z-10 flex items-center gap-2">
-                                            <span>Downloading & installing...</span>
+                                            <span>{t("update.downloading")}</span>
                                             <span className="font-mono text-[11.5px] tabular-nums">
                                                 {progressPct}%
                                             </span>
@@ -507,7 +529,7 @@ export function UpdateWindow() {
                                         className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-red-500"
                                     >
                                         <ArrowClockwiseIcon size={15} weight="bold" />
-                                        <span>Restart</span>
+                                        <span>{t("update.restart")}</span>
                                     </motion.button>
                                 )}
                             </AnimatePresence>
