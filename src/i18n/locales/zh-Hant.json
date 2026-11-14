@@ -1,0 +1,186 @@
+{
+    "common": {
+        "add": "新增",
+        "back": "返回",
+        "cancel": "取消",
+        "change": "變更",
+        "close": "關閉",
+        "copied": "已複製",
+        "refresh": "重新整理",
+        "retry": "重試"
+    },
+    "sidebar": {
+        "devices": "裝置",
+        "settings": "設定",
+        "pairNewDevice": "配對新裝置"
+    },
+    "settings": {
+        "title": "設定",
+        "language": {
+            "label": "語言",
+            "system": "跟隨系統"
+        },
+        "launchOnStartup": "開機時啟動",
+        "checkForUpdates": "檢查更新",
+        "checkNow": "立即檢查",
+        "checking": "檢查中…",
+        "upToDate": "已是最新版本",
+        "checkFailed": "檢查失敗",
+        "checkFailedHint": "檢查失敗 — 點擊重試",
+        "ignoreWhatsapp": "忽略 WhatsApp 對話",
+        "about": "關於",
+        "tagline": "KDE Connect，為 Apple Silicon Mac 原生重生。",
+        "version": "版本 {{version}}"
+    },
+    "device": {
+        "settings": "裝置設定",
+        "backToDevice": "返回裝置",
+        "connected": "已透過 Wi-Fi 連線，剛剛在線",
+        "offline": "離線",
+        "offlineJustNow": "離線，剛剛在線",
+        "offlineMinutes": "離線，{{count}} 分鐘前在線",
+        "offlineHours": "離線，{{count}} 小時前在線"
+    },
+    "pair": {
+        "availableDevices": "可用裝置",
+        "confirmOnDevice": "請在裝置上確認",
+        "incomingRequest": "收到配對請求",
+        "pair": "配對",
+        "accept": "接受",
+        "reject": "拒絕",
+        "searching": "正在你的 Wi-Fi 網路中搜尋裝置…",
+        "searchingHint": "請保持手機上的 KDE Connect 開啟，並連線到同一個 Wi-Fi 網路。",
+        "connectByIp": "透過 IP 連線",
+        "connect": "連線"
+    },
+    "media": {
+        "previousTrack": "上一首",
+        "nextTrack": "下一首",
+        "play": "播放",
+        "pause": "暫停",
+        "playingOnDevice": "正在裝置上播放"
+    },
+    "drop": {
+        "sending_other": "正在向 {{device}} 傳送 {{count}} 個檔案…",
+        "dropToSend": "放開以傳送到 {{device}}",
+        "dropFilesToSend": "拖入檔案傳送到 {{device}}",
+        "orClickToBrowse": "或點擊從 Mac 中選擇"
+    },
+    "transfer": {
+        "sent": "已傳送",
+        "sending": "傳送中",
+        "receiving": "接收中"
+    },
+    "quickActions": {
+        "title": "快速操作",
+        "shareLink": "分享連結",
+        "sendFilesTitle": "傳送檔案到 {{device}}",
+        "pasteLink": "在此貼上連結",
+        "sendLink": "傳送連結",
+        "ringPhone": "響鈴",
+        "remoteInput": "遠端輸入",
+        "browseFiles": "瀏覽檔案",
+        "capturingFor": "正在擷取 {{device}} 的鍵盤輸入",
+        "capturingKeystrokesFor": "正在擷取 {{device}} 的按鍵",
+        "remoteKeyboardHint": "在手機上切換到 KDE Connect 遠端鍵盤，然後開始輸入"
+    },
+    "notifications": {
+        "title": "通知",
+        "copyCode": "複製驗證碼",
+        "dismiss": "忽略通知",
+        "empty": "{{device}} 上沒有通知",
+        "removeSensitive": "瞭解如何解除此限制"
+    },
+    "commands": {
+        "configure": "設定指令",
+        "addCommand": "新增指令",
+        "backToList": "返回指令列表",
+        "deleteCommand": "刪除指令",
+        "empty": "尚未設定任何指令",
+        "emptyHint": "新增 shell 指令，即可從手機上的 KDE Connect 應用程式遠端觸發。",
+        "name": "指令名稱",
+        "namePlaceholder": "鎖定螢幕",
+        "shell": "Shell 指令",
+        "presets": "預設",
+        "save": "儲存指令",
+        "presetLockScreen": "鎖定螢幕",
+        "presetSleepMac": "讓 Mac 睡眠",
+        "presetMuteVolume": "靜音"
+    },
+    "deviceSettings": {
+        "fileSaveLocation": "檔案儲存位置",
+        "selectSaveLocation": "選擇檔案儲存位置",
+        "syncClipboard": "同步剪貼簿",
+        "presentationRemote": "簡報遙控",
+        "syncNotifications": "同步通知",
+        "autoCopyOtp": "自動複製驗證碼",
+        "pauseMediaOnCalls": "通話時暫停媒體",
+        "unpair": "取消配對"
+    },
+    "files": {
+        "storageLocations": "儲存位置",
+        "storage": "儲存空間",
+        "internalStorage": "內部儲存空間",
+        "fallbackDevice": "手機",
+        "deviceFiles": "{{device}} 的檔案",
+        "refreshFolder": "重新整理資料夾",
+        "connecting": "正在連線到 {{device}} 的儲存空間…",
+        "notConfigured": "未設定儲存空間存取",
+        "notConfiguredHint": "在 {{device}} 上開啟 <b>KDE Connect</b> → <b>外掛程式設定</b> → <b>檔案系統公開</b>，然後新增一個儲存位置。",
+        "loadFailed": "無法載入檔案",
+        "empty": "此資料夾是空的",
+        "deleteFailed": "刪除失敗：{{error}}",
+        "deletingFolder": "正在刪除資料夾…",
+        "deleteFolder": "刪除資料夾",
+        "downloading": "正在下載…",
+        "downloadFile": "下載檔案",
+        "savedReveal": "已儲存 — 點擊在 Finder 中顯示",
+        "deletingFile": "正在刪除檔案…",
+        "deleteFile": "刪除檔案",
+        "openEntry": "開啟 {{name}}",
+        "itemCount_other": "{{count}} 個項目",
+        "remoteSftp": "遠端 SFTP",
+        "savesTo": "儲存到 <b>{{folder}}</b>"
+    },
+    "update": {
+        "title": "軟體更新",
+        "checking": "正在檢查更新…",
+        "checkFailed": "無法檢查更新",
+        "tryAgain": "重試",
+        "latest": "已是最新版本",
+        "latestBody": "Velquo <mono>{{version}}</mono> 已是最新版本。",
+        "availableTitle": "Velquo <mono>v{{version}}</mono> 可供更新",
+        "readyToInstall": "可以安裝（目前版本：<mono>v{{version}}</mono>）",
+        "loadingNotes": "正在載入版本資訊…",
+        "noNotes": "此版本未提供版本資訊。",
+        "skipVersion": "略過此版本",
+        "retryUpdate": "重試更新",
+        "updateNow": "立即更新",
+        "downloading": "正在下載並安裝…",
+        "restart": "重新啟動",
+        "installFailed": "下載或安裝更新失敗。",
+        "serviceUnreachable": "無法連線到更新服務，請檢查網路後再試一次。"
+    },
+    "native": {
+        "tray": {
+            "openWindow": "開啟視窗",
+            "pairNewDevice": "配對新裝置"
+        },
+        "menu": {
+            "about": "關於 Velquo",
+            "checkForUpdates": "檢查更新",
+            "file": "檔案",
+            "edit": "編輯",
+            "view": "顯示方式",
+            "window": "視窗",
+            "help": "說明"
+        },
+        "windowTitle": {
+            "updater": "Velquo — 軟體更新",
+            "files": "{{device}} — 檔案"
+        },
+        "notification": {
+            "dismiss": "忽略"
+        }
+    }
+}
