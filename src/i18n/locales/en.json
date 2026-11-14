@@ -1,0 +1,188 @@
+{
+    "common": {
+        "add": "Add",
+        "back": "Back",
+        "cancel": "Cancel",
+        "change": "Change",
+        "close": "Close",
+        "copied": "Copied",
+        "refresh": "Refresh",
+        "retry": "Retry"
+    },
+    "sidebar": {
+        "devices": "Devices",
+        "settings": "Settings",
+        "pairNewDevice": "Pair new device"
+    },
+    "settings": {
+        "title": "Settings",
+        "language": {
+            "label": "Language",
+            "system": "System"
+        },
+        "launchOnStartup": "Launch on startup",
+        "checkForUpdates": "Check for updates",
+        "checkNow": "Check now",
+        "checking": "Checking...",
+        "upToDate": "Up to date",
+        "checkFailed": "Check failed",
+        "checkFailedHint": "Check failed — click to try again",
+        "ignoreWhatsapp": "Ignore WhatsApp conversations",
+        "about": "About",
+        "tagline": "KDE Connect, reborn natively for Apple Silicon Macs.",
+        "version": "Version {{version}}"
+    },
+    "device": {
+        "settings": "Device Settings",
+        "backToDevice": "Back to Device",
+        "connected": "Connected over Wi-Fi, last seen just now",
+        "offline": "Offline",
+        "offlineJustNow": "Offline, last seen just now",
+        "offlineMinutes": "Offline, last seen {{count}}m ago",
+        "offlineHours": "Offline, last seen {{count}}h ago"
+    },
+    "pair": {
+        "availableDevices": "Available Devices",
+        "confirmOnDevice": "Confirm on device",
+        "incomingRequest": "Incoming pairing request",
+        "pair": "Pair",
+        "accept": "Accept",
+        "reject": "Reject",
+        "searching": "Searching for devices on your Wi-Fi...",
+        "searchingHint": "Keep the KDE Connect app open on your phone and connected to the same Wi-Fi network.",
+        "connectByIp": "Connect by IP",
+        "connect": "Connect"
+    },
+    "media": {
+        "previousTrack": "Previous Track",
+        "nextTrack": "Next Track",
+        "play": "Play",
+        "pause": "Pause",
+        "playingOnDevice": "Playing on device"
+    },
+    "drop": {
+        "sending_one": "Sending {{count}} file to {{device}}...",
+        "sending_other": "Sending {{count}} files to {{device}}...",
+        "dropToSend": "Drop to send to {{device}}",
+        "dropFilesToSend": "Drop files to send to {{device}}",
+        "orClickToBrowse": "or click to browse from your Mac"
+    },
+    "transfer": {
+        "sent": "Sent",
+        "sending": "Sending",
+        "receiving": "Receiving"
+    },
+    "quickActions": {
+        "title": "Quick actions",
+        "shareLink": "Share link",
+        "sendFilesTitle": "Send file(s) to {{device}}",
+        "pasteLink": "Paste your link here",
+        "sendLink": "Send link",
+        "ringPhone": "Ring phone",
+        "remoteInput": "Remote input",
+        "browseFiles": "Browse files",
+        "capturingFor": "Capturing keyboard input for {{device}}",
+        "capturingKeystrokesFor": "Capturing keystrokes for {{device}}",
+        "remoteKeyboardHint": "Switch to KDE Connect Remote Keyboard on your phone and start typing"
+    },
+    "notifications": {
+        "title": "Notifications",
+        "copyCode": "Copy verification code",
+        "dismiss": "Dismiss notification",
+        "empty": "No active notifications on {{device}}",
+        "removeSensitive": "See how to remove this"
+    },
+    "commands": {
+        "configure": "Configure commands",
+        "addCommand": "Add command",
+        "backToList": "Back to commands list",
+        "deleteCommand": "Delete command",
+        "empty": "No commands configured yet",
+        "emptyHint": "Add shell commands to trigger them remotely from the KDE Connect app on your phone.",
+        "name": "Command name",
+        "namePlaceholder": "Lock Screen",
+        "shell": "Shell command",
+        "presets": "Presets",
+        "save": "Save command",
+        "presetLockScreen": "Lock Screen",
+        "presetSleepMac": "Sleep Mac",
+        "presetMuteVolume": "Mute Volume"
+    },
+    "deviceSettings": {
+        "fileSaveLocation": "File save location",
+        "selectSaveLocation": "Select File Save Location",
+        "syncClipboard": "Sync clipboard",
+        "presentationRemote": "Presentation remote",
+        "syncNotifications": "Sync notifications",
+        "autoCopyOtp": "Auto-copy OTPs",
+        "pauseMediaOnCalls": "Pause media on calls",
+        "unpair": "Unpair"
+    },
+    "files": {
+        "storageLocations": "Storage locations",
+        "storage": "Storage",
+        "internalStorage": "Internal storage",
+        "fallbackDevice": "Phone",
+        "deviceFiles": "{{device}} files",
+        "refreshFolder": "Refresh folder",
+        "connecting": "Connecting to {{device}} storage...",
+        "notConfigured": "Storage access not configured",
+        "notConfiguredHint": "Open <b>KDE Connect</b> on {{device}} → <b>Plugin settings</b> → <b>Filesystem expose</b> and add a storage location.",
+        "loadFailed": "Couldn't load files",
+        "empty": "This folder is empty",
+        "deleteFailed": "Delete failed: {{error}}",
+        "deletingFolder": "Deleting folder...",
+        "deleteFolder": "Delete folder",
+        "downloading": "Downloading...",
+        "downloadFile": "Download file",
+        "savedReveal": "Saved — click to reveal in Finder",
+        "deletingFile": "Deleting file...",
+        "deleteFile": "Delete file",
+        "openEntry": "Open {{name}}",
+        "itemCount_one": "{{count}} item",
+        "itemCount_other": "{{count}} items",
+        "remoteSftp": "Remote SFTP",
+        "savesTo": "Saves to <b>{{folder}}</b>"
+    },
+    "update": {
+        "title": "Software update",
+        "checking": "Checking for updates...",
+        "checkFailed": "Could not check for updates",
+        "tryAgain": "Try again",
+        "latest": "You have the latest version",
+        "latestBody": "Velquo <mono>{{version}}</mono> is currently the newest version available.",
+        "availableTitle": "Velquo <mono>v{{version}}</mono> is available",
+        "readyToInstall": "Ready to install (current: <mono>v{{version}}</mono>)",
+        "loadingNotes": "Loading release notes...",
+        "noNotes": "No release notes provided for this version.",
+        "skipVersion": "Skip this version",
+        "retryUpdate": "Retry update",
+        "updateNow": "Update now",
+        "downloading": "Downloading & installing...",
+        "restart": "Restart",
+        "installFailed": "Failed to download and install the update.",
+        "serviceUnreachable": "The update service could not be reached. Check your connection and try again."
+    },
+    "native": {
+        "tray": {
+            "openWindow": "Open window",
+            "pairNewDevice": "Pair new device"
+        },
+        "menu": {
+            "about": "About Velquo",
+            "checkForUpdates": "Check for updates",
+            "file": "File",
+            "edit": "Edit",
+            "view": "View",
+            "window": "Window",
+            "help": "Help"
+        },
+        "windowTitle": {
+            "updater": "Velquo — Software Update",
+            "files": "{{device}} — Files"
+        },
+        "notification": {
+            "dismiss": "Dismiss"
+        }
+    }
+}

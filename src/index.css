@@ -1,18 +1,32 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Google Sans ships no CJK glyphs, so PingFang is listed explicitly instead
+     of relying on the implicit -apple-system fallback. */
+  --font-sans:
+    "Google Sans", "PingFang SC", "PingFang TC", "Hiragino Sans GB",
+    -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono:
     "Google Sans Code", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* Traditional Chinese should render with PingFang TC glyph variants. */
+html[lang="zh-Hant"] {
+  --font-sans:
+    "Google Sans", "PingFang TC", "PingFang SC", -apple-system,
+    BlinkMacSystemFont, sans-serif;
+}
+
+/* Wide tracking is a Latin-script device: on CJK text it just looks loose and
+   breaks the even rhythm of the characters. */
+html[lang="zh-Hans"] .tracking-wide,
+html[lang="zh-Hant"] .tracking-wide {
+  letter-spacing: normal;
+}
+
 :root {
   color-scheme: light dark;
-  font-family:
-    "Google Sans",
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
+  font-family: var(--font-sans);
 }
 
 *,
@@ -43,11 +57,7 @@ body,
   background: transparent;
   overflow: hidden;
   overscroll-behavior: none;
-  font-family:
-    "Google Sans",
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
+  font-family: var(--font-sans);
   -webkit-user-select: none;
   user-select: none;
 }
