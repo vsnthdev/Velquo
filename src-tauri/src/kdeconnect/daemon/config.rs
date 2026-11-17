@@ -5,6 +5,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 impl KdeConnectDaemon {
+    pub fn is_homebrew_install(&self) -> bool {
+        self.config_dir.join("HomebrewInstall").is_file()
+    }
+
     pub(super) fn trusted_devices_file(config_dir: &Path) -> PathBuf {
         config_dir.join("trusted_devices.json")
     }
@@ -120,5 +124,41 @@ impl KdeConnectDaemon {
 
         self.notify_ui();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("velquo-{}-{}", label, nanos));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn homebrew_install_marker_detection_follows_file_presence() {
+        let config_dir = unique_temp_dir("homebrew-marker");
+        let downloads_dir = config_dir.join("downloads");
+        let log_path = config_dir.join("app.log");
+        let daemon = KdeConnectDaemon::new(config_dir.clone(), downloads_dir, log_path).unwrap();
+
+        assert!(!daemon.is_homebrew_install());
+
+        let marker_dir_path = config_dir.join("HomebrewInstall");
+        fs::create_dir_all(&marker_dir_path).unwrap();
+        assert!(!daemon.is_homebrew_install());
+        fs::remove_dir_all(&marker_dir_path).unwrap();
+
+        fs::write(&marker_dir_path, b"").unwrap();
+        assert!(daemon.is_homebrew_install());
+
+        let _ = fs::remove_dir_all(&config_dir);
     }
 }

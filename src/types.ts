@@ -115,6 +115,7 @@ export interface HostInfo {
     downloadsDir?: string;
     logFilePath?: string;
     ignoreWhatsappConversations?: boolean;
+    installedViaHomebrew?: boolean;
 }
 
 export interface AppSnapshot {

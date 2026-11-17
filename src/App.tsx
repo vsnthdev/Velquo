@@ -47,6 +47,10 @@ export default function App() {
     const [nativeArtPending, setNativeArtPending] = useState<boolean>(false);
     const [ignoreWhatsappConversations, setIgnoreWhatsappConversations] =
         useState<boolean>(true);
+    const [installedViaHomebrew, setInstalledViaHomebrew] =
+        useState<boolean>(false);
+    const [availableUpdateVersion, setAvailableUpdateVersion] =
+        useState<string | null>(null);
     const [rightPaneEl, setRightPaneEl] = useState<HTMLDivElement | null>(null);
     const [openAddCommandSignal, setOpenAddCommandSignal] = useState<
         number | null
@@ -69,11 +73,18 @@ export default function App() {
         ): Promise<"update-found" | "up-to-date" | "error"> => {
             try {
                 const metadata = await invoke<{
+                    installedViaHomebrew?: boolean;
                     version: string;
                 } | null>("check_for_update", { timeout: 20000 });
                 if (!metadata) {
+                    setAvailableUpdateVersion(null);
                     return "up-to-date";
                 }
+
+                if (typeof metadata.installedViaHomebrew == "boolean") {
+                    setInstalledViaHomebrew(metadata.installedViaHomebrew);
+                }
+                setAvailableUpdateVersion(metadata.version);
 
                 const skippedVersion = localStorage.getItem(
                     "velquo.skippedUpdateVersion",
@@ -103,9 +114,17 @@ export default function App() {
             runUpdateCheck(false);
         }, EIGHT_HOURS_MS);
 
+        const unlistenUpdatePromise = listen<string | null>(
+            "velquo://update-checked",
+            (event) => {
+                setAvailableUpdateVersion(event.payload ?? null);
+            },
+        );
+
         return () => {
             clearTimeout(initialTimer);
             clearInterval(intervalTimer);
+            unlistenUpdatePromise.then((fn) => fn());
         };
     }, [runUpdateCheck]);
 
@@ -131,6 +150,9 @@ export default function App() {
                     setTransfers(snap.transfers || []);
                     if (typeof snap.host?.ignoreWhatsappConversations == "boolean") {
                         setIgnoreWhatsappConversations(snap.host.ignoreWhatsappConversations);
+                    }
+                    if (typeof snap.host?.installedViaHomebrew == "boolean") {
+                        setInstalledViaHomebrew(snap.host.installedViaHomebrew);
                     }
 
                     const paired = snap.devices.filter((d) => d.pairState == "Paired");
@@ -753,6 +775,8 @@ export default function App() {
                         {activeView.kind == "app-settings" && (
                             <AppSettingsPage
                                 key="app-settings"
+                                installedViaHomebrew={installedViaHomebrew}
+                                availableUpdateVersion={availableUpdateVersion}
                                 ignoreWhatsappConversations={ignoreWhatsappConversations}
                                 onToggleIgnoreWhatsappConversations={() =>
                                     invoke("set_ignore_whatsapp_conversations", {

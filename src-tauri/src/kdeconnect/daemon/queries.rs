@@ -39,6 +39,7 @@ impl KdeConnectDaemon {
             downloads_dir: self.downloads_dir.to_string_lossy().to_string(),
             log_file_path: self.log_file_path.to_string_lossy().to_string(),
             ignore_whatsapp_conversations: self.is_ignore_whatsapp_conversations_enabled(),
+            installed_via_homebrew: self.is_homebrew_install(),
         }
     }
 

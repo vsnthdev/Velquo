@@ -515,6 +515,7 @@ struct UpdateCheckDto {
     date: Option<String>,
     body: Option<String>,
     raw_json: serde_json::Value,
+    installed_via_homebrew: bool,
 }
 
 /// Update metadata plus the per-webview resource handle used by the updater window.
@@ -527,9 +528,13 @@ struct UpdateMetadataDto {
     date: Option<String>,
     body: Option<String>,
     raw_json: serde_json::Value,
+    installed_via_homebrew: bool,
 }
 
-fn update_check_dto(update: &tauri_plugin_updater::Update) -> UpdateCheckDto {
+fn update_check_dto(
+    update: &tauri_plugin_updater::Update,
+    installed_via_homebrew: bool,
+) -> UpdateCheckDto {
     let date = update
         .raw_json
         .get("pub_date")
@@ -541,22 +546,30 @@ fn update_check_dto(update: &tauri_plugin_updater::Update) -> UpdateCheckDto {
         date,
         body: update.body.clone(),
         raw_json: update.raw_json.clone(),
+        installed_via_homebrew,
     }
 }
 
 fn register_update_in_webview(
     webview: &tauri::Webview,
     update: tauri_plugin_updater::Update,
+    installed_via_homebrew: bool,
 ) -> UpdateMetadataDto {
-    let metadata = update_check_dto(&update);
+    let metadata = update_check_dto(&update, installed_via_homebrew);
     UpdateMetadataDto {
         current_version: metadata.current_version,
         version: metadata.version,
         date: metadata.date,
         body: metadata.body,
         raw_json: metadata.raw_json,
+        installed_via_homebrew: metadata.installed_via_homebrew,
         rid: webview.resources_table().add(update),
     }
+}
+
+#[tauri::command]
+fn is_homebrew_install(daemon: State<'_, Arc<KdeConnectDaemon>>) -> bool {
+    daemon.is_homebrew_install()
 }
 
 async fn fetch_update(
@@ -581,19 +594,27 @@ async fn fetch_update(
 async fn check_for_update(
     webview: tauri::Webview,
     timeout: Option<u64>,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
     pending_state: State<'_, PendingUpdateState>,
 ) -> Result<Option<UpdateCheckDto>, String> {
+    let installed_via_homebrew = daemon.is_homebrew_install();
     let update = fetch_update(&webview, timeout).await?;
 
     if let Some(update) = update {
         if let Ok(mut guard) = pending_state.0.lock() {
             *guard = Some(update.clone());
         }
-        Ok(Some(update_check_dto(&update)))
+        let _ = webview
+            .app_handle()
+            .emit("velquo://update-checked", Some(update.version.clone()));
+        Ok(Some(update_check_dto(&update, installed_via_homebrew)))
     } else {
         if let Ok(mut guard) = pending_state.0.lock() {
             *guard = None;
         }
+        let _ = webview
+            .app_handle()
+            .emit("velquo://update-checked", Option::<String>::None);
         Ok(None)
     }
 }
@@ -601,8 +622,10 @@ async fn check_for_update(
 #[tauri::command]
 async fn get_pending_update(
     webview: tauri::Webview,
+    daemon: State<'_, Arc<KdeConnectDaemon>>,
     pending_state: State<'_, PendingUpdateState>,
 ) -> Result<Option<UpdateMetadataDto>, String> {
+    let installed_via_homebrew = daemon.is_homebrew_install();
     let cached = pending_state.0.lock().ok().and_then(|g| g.clone());
     let update = match cached {
         Some(update) => Some(update),
@@ -619,7 +642,12 @@ async fn get_pending_update(
         }
     };
 
-    Ok(update.map(|update| register_update_in_webview(&webview, update)))
+    let _ = webview.app_handle().emit(
+        "velquo://update-checked",
+        update.as_ref().map(|u| u.version.clone()),
+    );
+
+    Ok(update.map(|update| register_update_in_webview(&webview, update, installed_via_homebrew)))
 }
 
 #[tauri::command]
@@ -645,7 +673,7 @@ async fn open_updater_window(app: AppHandle) -> Result<(), String> {
     let url = "index.html?window=updater";
     let builder = tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::App(url.into()))
         .title("Velquo — Software Update")
-        .inner_size(440.0, 320.0)
+        .inner_size(480.0, 380.0)
         .resizable(false)
         .maximizable(false)
         .minimizable(true)
@@ -662,7 +690,7 @@ async fn open_updater_window(app: AppHandle) -> Result<(), String> {
     let window = builder.build().map_err(|e| e.to_string())?;
     let _ = window.show();
     let _ = window.set_focus();
-    log::info!("[updater-window] Spawned non-resizable updater window (440x320)");
+    log::info!("[updater-window] Spawned non-resizable updater window (480x380)");
     Ok(())
 }
 
@@ -1235,6 +1263,7 @@ pub fn run() {
             open_file_browser_window,
             quit_app,
             restart_app,
+            is_homebrew_install,
             check_for_update,
             get_pending_update,
             open_updater_window,

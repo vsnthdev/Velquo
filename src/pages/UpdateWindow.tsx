@@ -5,6 +5,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { Update } from "@tauri-apps/plugin-updater";
 import { motion, AnimatePresence } from "motion/react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { HomebrewUpgradeBox } from "../components/HomebrewUpgradeBox";
 import {
     useRef,
     useState,
@@ -37,6 +38,7 @@ interface UpdateMetadataDto {
     body?: string;
     currentVersion: string;
     date?: string;
+    installedViaHomebrew?: boolean;
     rawJson: Record<string, unknown>;
     rid: number;
     version: string;
@@ -45,6 +47,8 @@ interface UpdateMetadataDto {
 export function UpdateWindow() {
     const [update, setUpdate] = useState<Update | null>(null);
     const [appVersion, setAppVersion] = useState<string>(pkg.version);
+    const [installedViaHomebrew, setInstalledViaHomebrew] =
+        useState<boolean>(false);
     const [isLoadingUpdate, setIsLoadingUpdate] = useState<boolean>(true);
     const [step, setStep] = useState<UpdateStep>("prompt");
     const [progressPct, setProgressPct] = useState<number>(0);
@@ -57,6 +61,12 @@ export function UpdateWindow() {
         getVersion()
             .then((v) => {
                 if (v) setAppVersion(v);
+            })
+            .catch(() => {});
+
+        invoke<boolean>("is_homebrew_install")
+            .then((isBrew) => {
+                setInstalledViaHomebrew(isBrew == true);
             })
             .catch(() => {});
     }, []);
@@ -108,6 +118,10 @@ export function UpdateWindow() {
                 setLoadError(null);
                 setUpdate(null);
                 return;
+            }
+
+            if (typeof metadata.installedViaHomebrew == "boolean") {
+                setInstalledViaHomebrew(metadata.installedViaHomebrew);
             }
 
             const next = new Update(metadata);
@@ -228,7 +242,7 @@ export function UpdateWindow() {
     };
 
     const handleUpdateNow = async () => {
-        if (!update || step == "downloading") return;
+        if (!update || step == "downloading" || installedViaHomebrew) return;
         setStep("downloading");
         setProgressPct(0);
         setErrorMessage(null);
@@ -389,7 +403,9 @@ export function UpdateWindow() {
                                     is available
                                 </h1>
                                 <p className="text-[12px] text-zinc-500 dark:text-zinc-400">
-                                    Ready to install (current:{" "}
+                                    {installedViaHomebrew
+                                        ? "Installed via Homebrew (current: "
+                                        : "Ready to install (current: "}
                                     <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">
                                         v{update.currentVersion}
                                     </span>
@@ -422,95 +438,123 @@ export function UpdateWindow() {
                             </div>
                         </div>
 
-                        {errorMessage && (
-                            <div className="mt-2.5 shrink-0 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[11.5px] text-red-600 dark:text-red-300">
-                                {errorMessage}
-                            </div>
+                        {installedViaHomebrew ? (
+                            <HomebrewUpgradeBox className="mt-3 shrink-0" />
+                        ) : (
+                            errorMessage && (
+                                <div className="mt-2.5 shrink-0 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[11.5px] text-red-600 dark:text-red-300">
+                                    {errorMessage}
+                                </div>
+                            )
                         )}
 
                         {/* Footer Actions */}
                         <div className="mt-3.5 flex shrink-0 items-center">
-                            <AnimatePresence mode="wait" initial={false}>
-                                {(step == "prompt" || step == "error") && (
-                                    <motion.div
-                                        key="prompt-buttons"
-                                        initial={{ y: 4, opacity: 0 }}
-                                        animate={{ y: 0, opacity: 1 }}
-                                        exit={{ y: -4, opacity: 0 }}
-                                        transition={{ duration: 0.16 }}
-                                        className="flex w-full items-center gap-2.5"
-                                    >
-                                        <motion.button
-                                            type="button"
-                                            whileHover={{ scale: 1.015 }}
-                                            whileTap={{ scale: 0.985 }}
-                                            onClick={() => void handleSkipVersion()}
-                                            className="flex flex-1 cursor-pointer items-center justify-center rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2 text-[12.5px] font-medium text-zinc-700 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-white/[0.06]"
-                                        >
-                                            Skip this version
-                                        </motion.button>
-
-                                        <motion.button
-                                            type="button"
-                                            whileHover={{ scale: 1.015 }}
-                                            whileTap={{ scale: 0.985 }}
-                                            onClick={handleUpdateNow}
-                                            className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-[12.5px] font-medium text-white shadow-xs transition-colors hover:bg-blue-500"
-                                        >
-                                            <CloudArrowDownIcon size={15} weight="bold" />
-                                            <span>
-                                                {step == "error" ? "Retry update" : "Update now"}
-                                            </span>
-                                        </motion.button>
-                                    </motion.div>
-                                )}
-
-                                {step == "downloading" && (
-                                    <motion.div
-                                        key="downloading-progress-button"
-                                        initial={{ opacity: 0, scale: 0.98 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ opacity: 0, scale: 0.98 }}
-                                        transition={{ duration: 0.18 }}
-                                        className="relative flex h-9 w-full items-center justify-center overflow-hidden rounded-xl border border-blue-500/30 bg-blue-500/12 text-[12.5px] font-medium text-blue-700 dark:border-blue-400/30 dark:bg-blue-500/15 dark:text-blue-200"
-                                    >
-                                        <motion.div
-                                            className="absolute inset-y-0 left-0 bg-blue-600/25 dark:bg-blue-500/35"
-                                            initial={{ width: "0%" }}
-                                            animate={{ width: `${progressPct}%` }}
-                                            transition={{ duration: 0.2, ease: "easeOut" }}
-                                        />
-                                        <span className="relative z-10 flex items-center gap-2">
-                                            <span>Downloading & installing...</span>
-                                            <span className="font-mono text-[11.5px] tabular-nums">
-                                                {progressPct}%
-                                            </span>
-                                        </span>
-                                    </motion.div>
-                                )}
-
-                                {step == "ready" && (
+                            {installedViaHomebrew ? (
+                                <div className="flex w-full items-center gap-2.5">
                                     <motion.button
-                                        key="restart-button"
                                         type="button"
-                                        initial={{ opacity: 0, scale: 0.96 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ opacity: 0, scale: 0.96 }}
-                                        whileHover={{ scale: 1.012 }}
-                                        whileTap={{ scale: 0.988 }}
-                                        transition={{
-                                            damping: 30,
-                                            type: "spring",
-                                            stiffness: 480,
-                                        }}
-                                        onClick={handleRestartApp}
-                                        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-red-500"
+                                        whileHover={{ scale: 1.015 }}
+                                        whileTap={{ scale: 0.985 }}
+                                        onClick={() => void handleSkipVersion()}
+                                        className="flex flex-1 cursor-pointer items-center justify-center rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2 text-[12.5px] font-medium text-zinc-700 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-white/[0.06]"
                                     >
-                                        <ArrowClockwiseIcon size={15} weight="bold" />
-                                        <span>Restart</span>
+                                        Skip this version
                                     </motion.button>
-                                )}
-                            </AnimatePresence>
+
+                                    <motion.button
+                                        type="button"
+                                        whileHover={{ scale: 1.015 }}
+                                        whileTap={{ scale: 0.985 }}
+                                        onClick={() => void handleCloseWindow()}
+                                        className="flex flex-1 cursor-pointer items-center justify-center rounded-xl bg-blue-600 px-3.5 py-2 text-[12.5px] font-medium text-white shadow-xs transition-colors hover:bg-blue-500"
+                                    >
+                                        Close
+                                    </motion.button>
+                                </div>
+                            ) : (
+                                <AnimatePresence mode="wait" initial={false}>
+                                    {(step == "prompt" || step == "error") && (
+                                        <motion.div
+                                            key="prompt-buttons"
+                                            initial={{ y: 4, opacity: 0 }}
+                                            animate={{ y: 0, opacity: 1 }}
+                                            exit={{ y: -4, opacity: 0 }}
+                                            transition={{ duration: 0.16 }}
+                                            className="flex w-full items-center gap-2.5"
+                                        >
+                                            <motion.button
+                                                type="button"
+                                                whileHover={{ scale: 1.015 }}
+                                                whileTap={{ scale: 0.985 }}
+                                                onClick={() => void handleSkipVersion()}
+                                                className="flex flex-1 cursor-pointer items-center justify-center rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2 text-[12.5px] font-medium text-zinc-700 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-white/[0.06]"
+                                            >
+                                                Skip this version
+                                            </motion.button>
+
+                                            <motion.button
+                                                type="button"
+                                                whileHover={{ scale: 1.015 }}
+                                                whileTap={{ scale: 0.985 }}
+                                                onClick={handleUpdateNow}
+                                                className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-[12.5px] font-medium text-white shadow-xs transition-colors hover:bg-blue-500"
+                                            >
+                                                <CloudArrowDownIcon size={15} weight="bold" />
+                                                <span>
+                                                    {step == "error" ? "Retry update" : "Update now"}
+                                                </span>
+                                            </motion.button>
+                                        </motion.div>
+                                    )}
+
+                                    {step == "downloading" && (
+                                        <motion.div
+                                            key="downloading-progress-button"
+                                            initial={{ opacity: 0, scale: 0.98 }}
+                                            animate={{ scale: 1, opacity: 1 }}
+                                            exit={{ opacity: 0, scale: 0.98 }}
+                                            transition={{ duration: 0.18 }}
+                                            className="relative flex h-9 w-full items-center justify-center overflow-hidden rounded-xl border border-blue-500/30 bg-blue-500/12 text-[12.5px] font-medium text-blue-700 dark:border-blue-400/30 dark:bg-blue-500/15 dark:text-blue-200"
+                                        >
+                                            <motion.div
+                                                className="absolute inset-y-0 left-0 bg-blue-600/25 dark:bg-blue-500/35"
+                                                initial={{ width: "0%" }}
+                                                animate={{ width: `${progressPct}%` }}
+                                                transition={{ duration: 0.2, ease: "easeOut" }}
+                                            />
+                                            <span className="relative z-10 flex items-center gap-2">
+                                                <span>Downloading & installing...</span>
+                                                <span className="font-mono text-[11.5px] tabular-nums">
+                                                    {progressPct}%
+                                                </span>
+                                            </span>
+                                        </motion.div>
+                                    )}
+
+                                    {step == "ready" && (
+                                        <motion.button
+                                            key="restart-button"
+                                            type="button"
+                                            initial={{ opacity: 0, scale: 0.96 }}
+                                            animate={{ scale: 1, opacity: 1 }}
+                                            exit={{ opacity: 0, scale: 0.96 }}
+                                            whileHover={{ scale: 1.012 }}
+                                            whileTap={{ scale: 0.988 }}
+                                            transition={{
+                                                damping: 30,
+                                                type: "spring",
+                                                stiffness: 480,
+                                            }}
+                                            onClick={handleRestartApp}
+                                            className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-red-500"
+                                        >
+                                            <ArrowClockwiseIcon size={15} weight="bold" />
+                                            <span>Restart</span>
+                                        </motion.button>
+                                    )}
+                                </AnimatePresence>
+                            )}
                         </div>
                     </>
                 )}

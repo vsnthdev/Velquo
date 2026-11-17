@@ -33,6 +33,7 @@ pub struct HostInfo {
     pub downloads_dir: String,
     pub log_file_path: String,
     pub ignore_whatsapp_conversations: bool,
+    pub installed_via_homebrew: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

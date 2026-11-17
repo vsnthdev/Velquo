@@ -3,10 +3,13 @@ import { motion } from "motion/react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useRef, useState, useEffect } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { HomebrewUpgradeBox } from "../components/HomebrewUpgradeBox";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { CheckIcon, GithubLogoIcon, ArrowsClockwiseIcon } from "@phosphor-icons/react";
 
 interface AppSettingsPageProps {
+    installedViaHomebrew: boolean;
+    availableUpdateVersion: string | null;
     ignoreWhatsappConversations: boolean;
     onToggleIgnoreWhatsappConversations: () => void;
     onCheckForUpdates: () => Promise<"update-found" | "up-to-date" | "error">;
@@ -16,6 +19,8 @@ interface AppSettingsPageProps {
 export function AppSettingsPage({
     onCheckForUpdates,
     scrollToAboutSignal,
+    installedViaHomebrew,
+    availableUpdateVersion,
     ignoreWhatsappConversations,
     onToggleIgnoreWhatsappConversations,
 }: AppSettingsPageProps) {
@@ -160,52 +165,67 @@ export function AppSettingsPage({
             </div>
 
             {/* Check for updates row */}
-            <div className="mt-3 flex items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20">
-                <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
-                    Check for updates
-                </span>
-
-                <motion.button
-                    type="button"
-                    disabled={checkStatus == "checking"}
-                    title={
-                        checkStatus == "error"
-                            ? "Check failed — click to try again"
-                            : undefined
-                    }
-                    whileHover={checkStatus == "checking" ? undefined : { scale: 1.02 }}
-                    whileTap={checkStatus == "checking" ? undefined : { scale: 0.97 }}
-                    onClick={handleManualUpdateCheck}
-                    className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1 text-[12px] font-medium transition-colors ${
-                        checkStatus == "up-to-date"
-                            ? "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
-                            : checkStatus == "error"
-                                ? "border-red-500/30 bg-red-500/12 text-red-700 dark:text-red-300"
-                                : "border-black/12 bg-black/[0.04] text-zinc-800 hover:border-black/20 hover:bg-black/[0.07] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.09]"
-                    }`}
-                >
-                    {checkStatus == "up-to-date" ? (
-                        <>
-                            <CheckIcon size={13} weight="bold" />
-                            <span>Up to date</span>
-                        </>
-                    ) : (
-                        <>
-                            <ArrowsClockwiseIcon
-                                size={13}
-                                weight="bold"
-                                className={checkStatus == "checking" ? "animate-spin" : ""}
-                            />
-                            <span>
-                                {checkStatus == "checking"
-                                    ? "Checking..."
-                                    : checkStatus == "error"
-                                        ? "Check failed"
-                                        : "Check now"}
+            <div className="mt-3 flex flex-col gap-3 rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20">
+                <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col">
+                        <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
+                            Check for updates
+                        </span>
+                        {installedViaHomebrew && (
+                            <span className="text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                                Managed by Homebrew
                             </span>
-                        </>
-                    )}
-                </motion.button>
+                        )}
+                    </div>
+
+                    <motion.button
+                        type="button"
+                        disabled={checkStatus == "checking"}
+                        title={
+                            checkStatus == "error"
+                                ? "Check failed — click to try again"
+                                : undefined
+                        }
+                        whileHover={checkStatus == "checking" ? undefined : { scale: 1.02 }}
+                        whileTap={checkStatus == "checking" ? undefined : { scale: 0.97 }}
+                        onClick={handleManualUpdateCheck}
+                        className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1 text-[12px] font-medium transition-colors ${
+                            checkStatus == "up-to-date"
+                                ? "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
+                                : checkStatus == "error"
+                                    ? "border-red-500/30 bg-red-500/12 text-red-700 dark:text-red-300"
+                                    : "border-black/12 bg-black/[0.04] text-zinc-800 hover:border-black/20 hover:bg-black/[0.07] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.09]"
+                        }`}
+                    >
+                        {checkStatus == "up-to-date" ? (
+                            <>
+                                <CheckIcon size={13} weight="bold" />
+                                <span>Up to date</span>
+                            </>
+                        ) : (
+                            <>
+                                <ArrowsClockwiseIcon
+                                    size={13}
+                                    weight="bold"
+                                    className={checkStatus == "checking" ? "animate-spin" : ""}
+                                />
+                                <span>
+                                    {checkStatus == "checking"
+                                        ? "Checking..."
+                                        : checkStatus == "error"
+                                            ? "Check failed"
+                                            : "Check now"}
+                                </span>
+                            </>
+                        )}
+                    </motion.button>
+                </div>
+
+                {installedViaHomebrew && availableUpdateVersion && (
+                    <HomebrewUpgradeBox
+                        title={`Velquo v${availableUpdateVersion} is available`}
+                    />
+                )}
             </div>
 
             {/* Ignore WhatsApp conversations toggle */}
@@ -370,10 +390,16 @@ export function AppSettingsPage({
                 </p>
 
                 {/* Version Pill + GitHub Repository Link */}
-                <div className="mt-4 flex items-center gap-2.5">
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
                     <span className="inline-flex items-center rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 text-[12.5px] font-medium text-zinc-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
                         Version {appVersion}
                     </span>
+
+                    {installedViaHomebrew && (
+                        <span className="inline-flex items-center rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[12.5px] font-medium text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-300">
+                            Homebrew
+                        </span>
+                    )}
 
                     <motion.button
                         type="button"
