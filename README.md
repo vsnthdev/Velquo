@@ -27,11 +27,15 @@ Install via [Homebrew](https://brew.sh/) with a single command:
 brew install --cask vsnthdev/tap/velquo
 ```
 
-To uninstall:
+To uninstall (keeps your paired devices and settings):
 
 ```bash
 brew uninstall --cask velquo
-# Or also remove app data, logs, caches, and preferences:
+```
+
+To completely uninstall and wipe all app data (paired devices, certs, settings, LaunchAgent, logs, caches, and preferences):
+
+```bash
 brew uninstall --cask --zap velquo
 ```
 
