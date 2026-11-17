@@ -117,12 +117,25 @@ EOF
 
 ---
 
+## Step 5: Automatic Homebrew Tap Update
+
+Once the GitHub Release is published (and `Velquo_<VERSION>_aarch64.dmg` is attached), [`.github/workflows/homebrew.yml`](../.github/workflows/homebrew.yml) runs automatically on `release: [published]`:
+
+1. Downloads `Velquo_<VERSION>_aarch64.dmg` from the release and computes its SHA-256 checksum.
+2. Updates `version` and `sha256` in `Casks/velquo.rb` inside [`vsnthdev/homebrew-tap`](https://github.com/vsnthdev/homebrew-tap) using the `HOMEBREW_TAP_TOKEN` repository secret.
+3. Commits and pushes the updated cask so `brew upgrade --cask vsnthdev/tap/velquo` picks up the new version.
+
+_(If you ever need to re-run it manually for an existing release tag, trigger **Actions → Update Homebrew Tap → Run workflow** and enter the version without the leading `v`.)_
+
+---
+
 ## Release Checklist Summary
 
-| #   | Item                                                                                                         | Path / Location                       |
-| :-- | :----------------------------------------------------------------------------------------------------------- | :------------------------------------ |
-| 1   | Bump `"version"` in `package.json`                                                                           | `package.json`                        |
-| 2   | Bump `version` in `Cargo.toml`                                                                               | `src-tauri/Cargo.toml`                |
-| 3   | Export `TAURI_SIGNING_PRIVATE_KEY` & run `bun run bundle`                                                    | `~/.tauri/velquo.key`                 |
-| 4   | Generate `latest.json` with `Velquo.app.tar.gz.sig` content                                                  | `./latest.json`                       |
-| 5   | Upload `Velquo_<VERSION>_aarch64.dmg`, `Velquo.app.tar.gz`, and `latest.json` to GitHub Release `v<VERSION>` | `github.com/vsnthdev/Velquo/releases` |
+| #    | Item                                                                                                         | Path / Location                                       |
+| :--- | :----------------------------------------------------------------------------------------------------------- | :---------------------------------------------------- |
+| 1    | Bump `"version"` in `package.json`                                                                           | `package.json`                                        |
+| 2    | Bump `version` in `Cargo.toml`                                                                               | `src-tauri/Cargo.toml`                                |
+| 3    | Export `TAURI_SIGNING_PRIVATE_KEY` & run `bun run bundle`                                                    | `~/.tauri/velquo.key`                                 |
+| 4    | Generate `latest.json` with `Velquo.app.tar.gz.sig` content                                                  | `./latest.json`                                       |
+| 5    | Upload `Velquo_<VERSION>_aarch64.dmg`, `Velquo.app.tar.gz`, and `latest.json` to GitHub Release `v<VERSION>` | `github.com/vsnthdev/Velquo/releases`                 |
+| 6    | Verify **Update Homebrew Tap** GitHub Action succeeds                                                        | `github.com/vsnthdev/Velquo/actions` (`homebrew.yml`) |

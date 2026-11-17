@@ -19,6 +19,30 @@
 
 > Tweet <a target="_blank" rel="noopener" href="https://vas.cx/twitter">@vsnthdev</a>, I would love to know your opinion & experience on this project 😍
 
+## 📦 Installation
+
+Install via [Homebrew](https://brew.sh/) with a single command:
+
+```bash
+brew install --cask vsnthdev/tap/velquo
+```
+
+To uninstall:
+
+```bash
+brew uninstall --cask velquo
+# Or also remove app data, logs, caches, and preferences:
+brew uninstall --cask --zap velquo
+```
+
+Or download the `.dmg` installer directly from [GitHub Releases](https://github.com/vsnthdev/Velquo/releases/latest).
+
+> **Note:** Velquo is currently ad-hoc signed rather than notarized with an Apple Developer ID. If macOS Gatekeeper blocks the app on first launch, run:
+>
+> ```bash
+> xattr -cr /Applications/Velquo.app
+> ```
+
 ## ✨ Features
 
 1. **File Transfer** — Drag and drop files to send to your phone, or receive files straight into your Mac's `Downloads` folder
