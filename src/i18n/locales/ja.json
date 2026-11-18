@@ -1,0 +1,196 @@
+{
+    "common": {
+        "add": "追加",
+        "back": "戻る",
+        "cancel": "キャンセル",
+        "change": "変更",
+        "close": "閉じる",
+        "copied": "コピーしました",
+        "refresh": "更新",
+        "retry": "再試行"
+    },
+    "sidebar": {
+        "devices": "デバイス",
+        "settings": "設定",
+        "pairNewDevice": "新しいデバイスをペアリング"
+    },
+    "settings": {
+        "title": "設定",
+        "language": {
+            "label": "言語",
+            "system": "システム"
+        },
+        "launchOnStartup": "起動時に自動起動",
+        "checkForUpdates": "アップデートを確認",
+        "checkNow": "今すぐ確認",
+        "checking": "確認中...",
+        "upToDate": "最新です",
+        "checkFailed": "確認に失敗しました",
+        "checkFailedHint": "確認に失敗 — クリックでもう一度試行",
+        "ignoreWhatsapp": "WhatsAppの会話を無視",
+        "about": "Velquoについて",
+        "tagline": "KDE Connect、Apple Silicon Mac向けにネイティブに再構築。",
+        "version": "バージョン {{version}}",
+        "managedByHomebrew": "Homebrewで管理されています",
+        "homebrewUpdateAvailable": "Velquo v{{version}} が利用可能です"
+    },
+    "device": {
+        "settings": "デバイス設定",
+        "backToDevice": "デバイスに戻る",
+        "connected": "Wi-Fi接続中、最後の確認はたった今",
+        "offline": "オフライン",
+        "offlineJustNow": "オフライン、最後の確認はたった今",
+        "offlineMinutes": "オフライン、最後の確認は{{count}}分前",
+        "offlineHours": "オフライン、最後の確認は{{count}}時間前"
+    },
+    "pair": {
+        "availableDevices": "利用可能なデバイス",
+        "confirmOnDevice": "デバイスで確認してください",
+        "incomingRequest": "ペアリングのリクエストが届いています",
+        "pair": "ペアリング",
+        "accept": "承認",
+        "reject": "拒否",
+        "searching": "Wi-Fi上のデバイスを検索中...",
+        "searchingHint": "スマートフォンを同じWi-Fiに接続したままKDE Connectアプリを開いておいてください。",
+        "connectByIp": "IPアドレスで接続",
+        "connect": "接続"
+    },
+    "media": {
+        "previousTrack": "前のトラック",
+        "nextTrack": "次のトラック",
+        "play": "再生",
+        "pause": "一時停止",
+        "playingOnDevice": "デバイスで再生中"
+    },
+    "drop": {
+        "sending_other": "{{device}}に{{count}}件のファイルを送信中...",
+        "dropToSend": "{{device}}に送信するにはドロップ",
+        "dropFilesToSend": "{{device}}に送信するにはファイルをドロップ",
+        "orClickToBrowse": "またはクリックしてMacから参照"
+    },
+    "transfer": {
+        "sent": "送信済み",
+        "sending": "送信中",
+        "receiving": "受信中"
+    },
+    "quickActions": {
+        "title": "クイックアクション",
+        "shareLink": "リンクを共有",
+        "sendFilesTitle": "{{device}}にファイルを送信",
+        "pasteLink": "リンクをここに貼り付け",
+        "sendLink": "リンクを送信",
+        "ringPhone": "スマートフォンを鳴らす",
+        "remoteInput": "リモート入力",
+        "browseFiles": "ファイルを参照",
+        "capturingFor": "{{device}}のキーボード入力をキャプチャ中",
+        "capturingKeystrokesFor": "{{device}}のキー入力をキャプチャ中",
+        "remoteKeyboardHint": "スマートフォンでKDE Connectリモートキーボードに切り替えて入力を開始してください"
+    },
+    "notifications": {
+        "title": "通知",
+        "copyCode": "認証コードをコピー",
+        "dismiss": "通知を閉じる",
+        "empty": "{{device}}にアクティブな通知はありません",
+        "removeSensitive": "削除方法はこちら"
+    },
+    "commands": {
+        "configure": "コマンドを設定",
+        "addCommand": "コマンドを追加",
+        "backToList": "コマンド一覧に戻る",
+        "deleteCommand": "コマンドを削除",
+        "empty": "コマンドが設定されていません",
+        "emptyHint": "KDE Connectアプリからリモートで実行できるシェルコマンドを追加してください。",
+        "name": "コマンド名",
+        "namePlaceholder": "ロック画面",
+        "shell": "シェルコマンド",
+        "presets": "プリセット",
+        "save": "コマンドを保存",
+        "presetLockScreen": "ロック画面",
+        "presetSleepMac": "Macをスリープ",
+        "presetMuteVolume": "音量をミュート"
+    },
+    "deviceSettings": {
+        "fileSaveLocation": "ファイルの保存先",
+        "selectSaveLocation": "ファイルの保存先を選択",
+        "syncClipboard": "クリップボードを同期",
+        "presentationRemote": "プレゼン用リモート",
+        "syncNotifications": "通知を同期",
+        "autoCopyOtp": "OTPを自動コピー",
+        "pauseMediaOnCalls": "通話時にメディアを一時停止",
+        "unpair": "ペアリング解除"
+    },
+    "files": {
+        "storageLocations": "ストレージの場所",
+        "storage": "ストレージ",
+        "internalStorage": "内部ストレージ",
+        "fallbackDevice": "スマートフォン",
+        "deviceFiles": "{{device}}のファイル",
+        "refreshFolder": "フォルダを更新",
+        "connecting": "{{device}}のストレージに接続中...",
+        "notConfigured": "ストレージへのアクセスが設定されていません",
+        "notConfiguredHint": "{{device}}で<b>KDE Connect</b>を開き、<b>プラグイン設定</b>→<b>ファイルシステム公開</b>でストレージの場所を追加してください。",
+        "loadFailed": "ファイルを読み込めませんでした",
+        "empty": "このフォルダは空です",
+        "deleteFailed": "削除に失敗しました: {{error}}",
+        "deletingFolder": "フォルダを削除中...",
+        "deleteFolder": "フォルダを削除",
+        "downloading": "ダウンロード中...",
+        "downloadFile": "ファイルをダウンロード",
+        "savedReveal": "保存しました — クリックでFinderに表示",
+        "deletingFile": "ファイルを削除中...",
+        "deleteFile": "ファイルを削除",
+        "openEntry": "{{name}}を開く",
+        "itemCount_other": "{{count}}件のアイテム",
+        "remoteSftp": "リモートSFTP",
+        "savesTo": "<b>{{folder}}</b>に保存"
+    },
+    "update": {
+        "title": "ソフトウェアアップデート",
+        "checking": "アップデートを確認中...",
+        "checkFailed": "アップデートを確認できませんでした",
+        "tryAgain": "もう一度試行",
+        "latest": "最新バージョンです",
+        "latestBody": "Velquo <mono>{{version}}</mono> が最新のバージョンです。",
+        "availableTitle": "Velquo <mono>v{{version}}</mono> が利用可能です",
+        "readyToInstall": "インストール準備完了 (現在: <mono>v{{version}}</mono>)",
+        "loadingNotes": "リリースノートを読み込み中...",
+        "noNotes": "このバージョンのリリースノートはありません。",
+        "skipVersion": "このバージョンをスキップ",
+        "retryUpdate": "アップデートを再試行",
+        "updateNow": "今すぐアップデート",
+        "downloading": "ダウンロード&インストール中...",
+        "restart": "再起動",
+        "installFailed": "アップデートのダウンロードとインストールに失敗しました。",
+        "serviceUnreachable": "アップデートサービスに接続できませんでした。接続を確認してもう一度お試しください。",
+        "readyToInstallHomebrew": "Homebrew経由でインストール済み (現在: <mono>v{{version}}</mono>)"
+    },
+    "native": {
+        "tray": {
+            "openWindow": "ウィンドウを開く",
+            "pairNewDevice": "新しいデバイスをペアリング"
+        },
+        "menu": {
+            "about": "Velquoについて",
+            "checkForUpdates": "アップデートを確認",
+            "file": "ファイル",
+            "edit": "編集",
+            "view": "表示",
+            "window": "ウィンドウ",
+            "help": "ヘルプ"
+        },
+        "windowTitle": {
+            "updater": "Velquo — ソフトウェアアップデート",
+            "files": "{{device}} — ファイル"
+        },
+        "notification": {
+            "dismiss": "閉じる"
+        }
+    },
+    "homebrew": {
+        "body": "VelquoはHomebrewでインストールされたため、最新バージョンを取得するには以下のコマンドを実行してください。",
+        "commandLabel": "Homebrewアップグレードコマンド",
+        "copyCommandTitle": "Homebrewアップグレードコマンドをコピー",
+        "copy": "コピー",
+        "copied": "コピー済み"
+    }
+}

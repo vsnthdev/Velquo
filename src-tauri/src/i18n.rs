@@ -14,11 +14,11 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::OnceLock;
 
-/// Locale tags use script subtags (`zh-Hans` / `zh-Hant`) rather than region
-/// subtags, matching the frontend's `Locale` type exactly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Locale {
     En,
+    Ja,
+    Ko,
     ZhHans,
     ZhHant,
 }
@@ -29,6 +29,8 @@ impl Locale {
     pub fn tag(self) -> &'static str {
         match self {
             Locale::En => "en",
+            Locale::Ja => "ja",
+            Locale::Ko => "ko",
             Locale::ZhHans => "zh-Hans",
             Locale::ZhHant => "zh-Hant",
         }
@@ -37,22 +39,27 @@ impl Locale {
     fn index(self) -> u8 {
         match self {
             Locale::En => 0,
-            Locale::ZhHans => 1,
-            Locale::ZhHant => 2,
+            Locale::Ja => 1,
+            Locale::Ko => 2,
+            Locale::ZhHans => 3,
+            Locale::ZhHant => 4,
         }
     }
 
     fn from_index(index: u8) -> Self {
         match index {
-            1 => Locale::ZhHans,
-            2 => Locale::ZhHant,
+            1 => Locale::Ja,
+            2 => Locale::Ko,
+            3 => Locale::ZhHans,
+            4 => Locale::ZhHant,
             _ => Locale::En,
         }
     }
 
     /// Maps a BCP-47 tag onto a supported locale. Mirrors `matchLocale()` in
-    /// `src/i18n/index.ts`: an explicit script subtag always wins over the
-    /// region subtag, and `zh-TW` / `zh-HK` / `zh-MO` imply Traditional.
+    /// `src/i18n/index.ts`: for Chinese an explicit script subtag always wins
+    /// over the region subtag, and `zh-TW` / `zh-HK` / `zh-MO` imply
+    /// Traditional.
     pub fn parse(raw: &str) -> Option<Self> {
         let normalized = raw.trim().replace('_', "-").to_ascii_lowercase();
         let mut segments = normalized.split('-');
@@ -60,6 +67,8 @@ impl Locale {
 
         match base {
             "en" => Some(Locale::En),
+            "ja" => Some(Locale::Ja),
+            "ko" => Some(Locale::Ko),
             "zh" => {
                 let rest: Vec<&str> = segments.filter(|segment| !segment.is_empty()).collect();
                 if let Some(script) = rest.iter().find(|s| **s == "hans" || **s == "hant") {
@@ -142,6 +151,8 @@ fn catalogs() -> &'static HashMap<&'static str, Value> {
         let mut map = HashMap::new();
         for (tag, raw) in [
             ("en", include_str!("../../src/i18n/locales/en.json")),
+            ("ja", include_str!("../../src/i18n/locales/ja.json")),
+            ("ko", include_str!("../../src/i18n/locales/ko.json")),
             (
                 "zh-Hans",
                 include_str!("../../src/i18n/locales/zh-Hans.json"),
@@ -214,6 +225,9 @@ mod tests {
     #[test]
     fn parses_script_and_region_tags() {
         assert_eq!(Locale::parse("en-US"), Some(Locale::En));
+        assert_eq!(Locale::parse("ja-JP"), Some(Locale::Ja));
+        assert_eq!(Locale::parse("ko-KR"), Some(Locale::Ko));
+        assert_eq!(Locale::parse("ko_KR"), Some(Locale::Ko));
         assert_eq!(Locale::parse("zh-Hans-CN"), Some(Locale::ZhHans));
         assert_eq!(Locale::parse("zh-Hant-TW"), Some(Locale::ZhHant));
         assert_eq!(Locale::parse("zh_TW"), Some(Locale::ZhHant));
@@ -228,6 +242,8 @@ mod tests {
     #[test]
     fn resolves_preferences() {
         assert_eq!(normalize_preference("system"), Some("system".to_string()));
+        assert_eq!(normalize_preference("ja"), Some("ja".to_string()));
+        assert_eq!(normalize_preference("ko-KR"), Some("ko".to_string()));
         assert_eq!(normalize_preference("zh-Hant"), Some("zh-Hant".to_string()));
         assert_eq!(normalize_preference("zh_TW"), Some("zh-Hant".to_string()));
         assert_eq!(normalize_preference("klingon"), None);
@@ -238,6 +254,14 @@ mod tests {
         assert_eq!(
             tr(Locale::En, "native.tray.pairNewDevice"),
             "Pair new device"
+        );
+        assert_eq!(
+            tr(Locale::Ja, "native.tray.pairNewDevice"),
+            "新しいデバイスをペアリング"
+        );
+        assert_eq!(
+            tr(Locale::Ko, "native.tray.pairNewDevice"),
+            "새 기기 페어링"
         );
         assert_eq!(
             tr(Locale::ZhHans, "native.tray.pairNewDevice"),

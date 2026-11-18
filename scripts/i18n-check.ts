@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Guards the three locale catalogs against drift.
+ * Guards the locale catalogs against drift.
  *
  * Checks, for every catalog against `en.json` (the source of truth):
  *   - missing keys (would silently fall back to English)
@@ -20,7 +20,7 @@ const SOURCE_LOCALE = "en";
 type Catalog = Record<string, unknown>;
 type FlatCatalog = Map<string, string>;
 
-const LOCALES = ["en", "zh-Hans", "zh-Hant"] as const;
+const LOCALES = ["en", "ja", "ko", "zh-Hans", "zh-Hant"] as const;
 
 /** Values that are legitimately identical across locales. */
 const INTENTIONALLY_IDENTICAL = new Set(["settings.version"]);

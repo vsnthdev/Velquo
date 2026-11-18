@@ -1,0 +1,196 @@
+{
+    "common": {
+        "add": "추가",
+        "back": "뒤로",
+        "cancel": "취소",
+        "change": "변경",
+        "close": "닫기",
+        "copied": "복사됨",
+        "refresh": "새로고침",
+        "retry": "다시 시도"
+    },
+    "sidebar": {
+        "devices": "기기",
+        "settings": "설정",
+        "pairNewDevice": "새 기기 페어링"
+    },
+    "settings": {
+        "title": "설정",
+        "language": {
+            "label": "언어",
+            "system": "시스템"
+        },
+        "launchOnStartup": "시작 시 실행",
+        "checkForUpdates": "업데이트 확인",
+        "checkNow": "지금 확인",
+        "checking": "확인 중...",
+        "upToDate": "최신 상태",
+        "checkFailed": "확인 실패",
+        "checkFailedHint": "확인 실패 — 클릭하여 다시 시도",
+        "ignoreWhatsapp": "WhatsApp 대화 무시",
+        "about": "Velquo 정보",
+        "tagline": "Apple Silicon Mac을 위해 네이티브로 다시 만든 KDE Connect.",
+        "version": "버전 {{version}}",
+        "managedByHomebrew": "Homebrew로 관리됨",
+        "homebrewUpdateAvailable": "Velquo v{{version}} 사용 가능"
+    },
+    "device": {
+        "settings": "기기 설정",
+        "backToDevice": "기기로 돌아가기",
+        "connected": "Wi-Fi 연결됨, 방금 확인함",
+        "offline": "오프라인",
+        "offlineJustNow": "오프라인, 방금 확인함",
+        "offlineMinutes": "오프라인, 마지막 확인은 {{count}}분 전",
+        "offlineHours": "오프라인, 마지막 확인은 {{count}}시간 전"
+    },
+    "pair": {
+        "availableDevices": "사용 가능한 기기",
+        "confirmOnDevice": "기기에서 확인",
+        "incomingRequest": "페어링 요청 수신됨",
+        "pair": "페어링",
+        "accept": "수락",
+        "reject": "거부",
+        "searching": "Wi-Fi 네트워크에서 기기를 찾는 중...",
+        "searchingHint": "휴대폰에서 KDE Connect 앱을 열어 같은 Wi-Fi에 연결된 상태를 유지하세요.",
+        "connectByIp": "IP로 연결",
+        "connect": "연결"
+    },
+    "media": {
+        "previousTrack": "이전 트랙",
+        "nextTrack": "다음 트랙",
+        "play": "재생",
+        "pause": "일시정지",
+        "playingOnDevice": "기기에서 재생 중"
+    },
+    "drop": {
+        "sending_other": "{{device}}에 {{count}}개 파일 전송 중...",
+        "dropToSend": "{{device}}에 보내려면 드롭",
+        "dropFilesToSend": "{{device}}에 보내려면 파일을 드롭",
+        "orClickToBrowse": "또는 클릭하여 Mac에서 찾아보기"
+    },
+    "transfer": {
+        "sent": "전송됨",
+        "sending": "전송 중",
+        "receiving": "수신 중"
+    },
+    "quickActions": {
+        "title": "빠른 동작",
+        "shareLink": "링크 공유",
+        "sendFilesTitle": "{{device}}에 파일 전송",
+        "pasteLink": "링크를 여기에 붙여넣기",
+        "sendLink": "링크 보내기",
+        "ringPhone": "전화 울리기",
+        "remoteInput": "원격 입력",
+        "browseFiles": "파일 찾아보기",
+        "capturingFor": "{{device}} 키보드 입력 캡처 중",
+        "capturingKeystrokesFor": "{{device}} 키 입력 캡처 중",
+        "remoteKeyboardHint": "휴대폰에서 KDE Connect 원격 키보드로 전환하고 입력을 시작하세요"
+    },
+    "notifications": {
+        "title": "알림",
+        "copyCode": "인증 코드 복사",
+        "dismiss": "알림 닫기",
+        "empty": "{{device}}에 활성 알림 없음",
+        "removeSensitive": "제거 방법 보기"
+    },
+    "commands": {
+        "configure": "명령 설정",
+        "addCommand": "명령 추가",
+        "backToList": "명령 목록으로 돌아가기",
+        "deleteCommand": "명령 삭제",
+        "empty": "설정된 명령이 없음",
+        "emptyHint": "휴대폰의 KDE Connect 앱에서 원격으로 실행할 셸 명령을 추가하세요.",
+        "name": "명령 이름",
+        "namePlaceholder": "잠금 화면",
+        "shell": "셸 명령",
+        "presets": "프리셋",
+        "save": "명령 저장",
+        "presetLockScreen": "잠금 화면",
+        "presetSleepMac": "Mac 절전",
+        "presetMuteVolume": "음량 음소거"
+    },
+    "deviceSettings": {
+        "fileSaveLocation": "파일 저장 위치",
+        "selectSaveLocation": "파일 저장 위치 선택",
+        "syncClipboard": "클립보드 동기화",
+        "presentationRemote": "프레젠테이션 리모트",
+        "syncNotifications": "알림 동기화",
+        "autoCopyOtp": "OTP 자동 복사",
+        "pauseMediaOnCalls": "통화 중 미디어 일시정지",
+        "unpair": "페어링 해제"
+    },
+    "files": {
+        "storageLocations": "저장소 위치",
+        "storage": "저장소",
+        "internalStorage": "내부 저장소",
+        "fallbackDevice": "휴대폰",
+        "deviceFiles": "{{device}} 파일",
+        "refreshFolder": "폴더 새로고침",
+        "connecting": "{{device}} 저장소에 연결 중...",
+        "notConfigured": "저장소 접근이 구성되지 않음",
+        "notConfiguredHint": "{{device}}에서 <b>KDE Connect</b>를 열고 <b>플러그인 설정</b> → <b>파일시스템 노출</b>에서 저장소 위치를 추가하세요.",
+        "loadFailed": "파일을 불러올 수 없음",
+        "empty": "이 폴더가 비어 있음",
+        "deleteFailed": "삭제 실패: {{error}}",
+        "deletingFolder": "폴더 삭제 중...",
+        "deleteFolder": "폴더 삭제",
+        "downloading": "다운로드 중...",
+        "downloadFile": "파일 다운로드",
+        "savedReveal": "저장됨 — 클릭하면 Finder에 표시",
+        "deletingFile": "파일 삭제 중...",
+        "deleteFile": "파일 삭제",
+        "openEntry": "{{name}} 열기",
+        "itemCount_other": "{{count}}개 항목",
+        "remoteSftp": "원격 SFTP",
+        "savesTo": "<b>{{folder}}</b>에 저장"
+    },
+    "update": {
+        "title": "소프트웨어 업데이트",
+        "checking": "업데이트 확인 중...",
+        "checkFailed": "업데이트를 확인할 수 없음",
+        "tryAgain": "다시 시도",
+        "latest": "최신 버전을 사용 중입니다",
+        "latestBody": "Velquo <mono>{{version}}</mono>이(가) 현재 최신 버전입니다.",
+        "availableTitle": "Velquo <mono>v{{version}}</mono> 사용 가능",
+        "readyToInstall": "설치 준비 완료 (현재: <mono>v{{version}}</mono>)",
+        "loadingNotes": "릴리스 노트 불러오는 중...",
+        "noNotes": "이 버전에 대한 릴리스 노트가 없습니다.",
+        "skipVersion": "이 버전 건너뛰기",
+        "retryUpdate": "업데이트 다시 시도",
+        "updateNow": "지금 업데이트",
+        "downloading": "다운로드 및 설치 중...",
+        "restart": "다시 시작",
+        "installFailed": "업데이트를 다운로드하고 설치하지 못했습니다.",
+        "serviceUnreachable": "업데이트 서비스에 연결할 수 없습니다. 연결을 확인하고 다시 시도하세요.",
+        "readyToInstallHomebrew": "Homebrew로 설치됨 (현재: <mono>v{{version}}</mono>)"
+    },
+    "native": {
+        "tray": {
+            "openWindow": "창 열기",
+            "pairNewDevice": "새 기기 페어링"
+        },
+        "menu": {
+            "about": "Velquo 정보",
+            "checkForUpdates": "업데이트 확인",
+            "file": "파일",
+            "edit": "편집",
+            "view": "보기",
+            "window": "창",
+            "help": "도움말"
+        },
+        "windowTitle": {
+            "updater": "Velquo — 소프트웨어 업데이트",
+            "files": "{{device}} — 파일"
+        },
+        "notification": {
+            "dismiss": "닫기"
+        }
+    },
+    "homebrew": {
+        "body": "Velquo는 Homebrew로 설치되었으므로 최신 버전을 받으려면 아래 명령을 실행하세요.",
+        "commandLabel": "Homebrew 업그레이드 명령",
+        "copyCommandTitle": "Homebrew 업그레이드 명령 복사",
+        "copy": "복사",
+        "copied": "복사됨"
+    }
+}
