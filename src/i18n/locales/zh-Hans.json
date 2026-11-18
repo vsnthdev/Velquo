@@ -167,7 +167,8 @@
     "native": {
         "tray": {
             "openWindow": "打开窗口",
-            "pairNewDevice": "配对新设备"
+            "pairNewDevice": "配对新设备",
+            "quit": "退出 Velquo"
         },
         "menu": {
             "about": "关于 Velquo",

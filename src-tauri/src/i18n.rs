@@ -279,6 +279,8 @@ mod tests {
             ),
             "Pixel 8 — 檔案"
         );
+        // The tray's quit action is native-only, so guard that the key exists.
+        assert_eq!(tr(Locale::En, "native.tray.quit"), "Quit Velquo");
         // Unknown keys degrade to the key instead of panicking.
         assert_eq!(tr(Locale::En, "native.nope"), "native.nope");
     }

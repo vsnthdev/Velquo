@@ -11,7 +11,7 @@ use crate::logger::AppLogger;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::menu::{IconMenuItem, Menu, PredefinedMenuItem};
+use tauri::menu::{IconMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -1155,6 +1155,20 @@ pub fn build_tray_menu(
     )?;
     menu.append(&pair_item)?;
 
+    // 6. Separator before the quit action
+    let sep3 = PredefinedMenuItem::separator(app)?;
+    menu.append(&sep3)?;
+
+    // 7. Quit (plain item, no icon) — always the last item
+    let quit_item = MenuItem::with_id(
+        app,
+        "quit",
+        i18n::tr_current("native.tray.quit"),
+        true,
+        None::<&str>,
+    )?;
+    menu.append(&quit_item)?;
+
     Ok(menu)
 }
 
@@ -1442,6 +1456,8 @@ pub fn run() {
                                 "deviceId": device_id,
                             }),
                         );
+                    } else if id == "quit" {
+                        quit_app(app.clone());
                     }
                 })
                 .build(app)?;

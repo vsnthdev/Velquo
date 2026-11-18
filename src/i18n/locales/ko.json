@@ -167,7 +167,8 @@
     "native": {
         "tray": {
             "openWindow": "창 열기",
-            "pairNewDevice": "새 기기 페어링"
+            "pairNewDevice": "새 기기 페어링",
+            "quit": "Velquo 종료"
         },
         "menu": {
             "about": "Velquo 정보",

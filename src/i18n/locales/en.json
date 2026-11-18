@@ -169,7 +169,8 @@
     "native": {
         "tray": {
             "openWindow": "Open window",
-            "pairNewDevice": "Pair new device"
+            "pairNewDevice": "Pair new device",
+            "quit": "Quit Velquo"
         },
         "menu": {
             "about": "About Velquo",
