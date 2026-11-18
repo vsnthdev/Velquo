@@ -93,6 +93,9 @@ impl KdeConnectDaemon {
                                 Some(saved.to_string_lossy().to_string()),
                                 None,
                             );
+                            // Group this file with any others arriving from the
+                            // same share gesture into one notification.
+                            daemon.record_received_file(&dev_id, &dev_name, saved);
                         }
                         Err(e) => {
                             let _ = tokio::fs::remove_file(&staged).await;

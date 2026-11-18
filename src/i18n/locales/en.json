@@ -186,7 +186,15 @@
             "files": "{{device}} — Files"
         },
         "notification": {
-            "dismiss": "Dismiss"
+            "dismiss": "Dismiss",
+            "open": "Open",
+            "fileReceived": {
+                "title": "File received from {{device}}"
+            },
+            "filesReceived": {
+                "title": "Received {{count}} files from {{device}}",
+                "body": "Click open to locate them."
+            }
         }
     },
     "homebrew": {

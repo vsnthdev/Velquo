@@ -15,6 +15,7 @@ use objc2_user_notifications::{
     UNNotificationRequest, UNNotificationResponse, UNNotificationSound, UNUserNotificationCenter,
     UNUserNotificationCenterDelegate,
 };
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager};
@@ -22,6 +23,14 @@ use uuid::Uuid;
 
 const NOTIFICATION_CATEGORY: &str = "velquo-phone-notification";
 const DISMISS_ACTION: &str = "dismiss";
+
+/// Category for the "a file was received" notification. It carries a single
+/// `Open` action instead of `Dismiss`.
+const FILE_RECEIVED_CATEGORY: &str = "velquo-file-received";
+const OPEN_ACTION: &str = "open";
+/// Marks a notification as a file-transfer notification in `userInfo`, so the
+/// click handler can tell it apart from a mirrored phone notification.
+const FILE_RECEIVED_KIND: &str = "file-received";
 
 struct NotificationContext {
     app: AppHandle,
@@ -78,7 +87,15 @@ fn should_suppress_notification(content: &objc2_user_notifications::UNNotificati
     let Some(device_id) = user_info_string(content, "deviceId") else {
         return false;
     };
-    if user_info_string(content, "notificationId").is_none() || !main_window_is_focused() {
+
+    // File-transfer notifications are suppressed whenever the user is already
+    // looking at that device's page; mirrored phone notifications are only
+    // suppressed when they came from a real notification id.
+    let is_file_received = user_info_string(content, "kind").as_deref() == Some(FILE_RECEIVED_KIND);
+    if !is_file_received && user_info_string(content, "notificationId").is_none() {
+        return false;
+    }
+    if !main_window_is_focused() {
         return false;
     }
 
@@ -88,6 +105,77 @@ fn should_suppress_notification(content: &objc2_user_notifications::UNNotificati
         .and_then(|guard| guard.clone())
         .as_deref()
         == Some(device_id.as_str())
+}
+
+/// Builds the title and body for a received-file notification. A single file
+/// is named in the body; several files share one generic body, because listing
+/// them all would not fit in a banner.
+fn file_received_content(device_name: &str, paths: &[String]) -> (String, String) {
+    if paths.len() == 1 {
+        let title = crate::i18n::tr_current_with(
+            "native.notification.fileReceived.title",
+            &[("device", device_name)],
+        );
+        let body = Path::new(&paths[0])
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| paths[0].clone());
+        (title, body)
+    } else {
+        let count = paths.len().to_string();
+        let title = crate::i18n::tr_current_with(
+            "native.notification.filesReceived.title",
+            &[("device", device_name), ("count", &count)],
+        );
+        let body = crate::i18n::tr_current("native.notification.filesReceived.body");
+        (title, body)
+    }
+}
+
+/// Opens a single received file with its default app, or reveals the folder
+/// that holds it when the file is gone. Several files open their shared folder
+/// in Finder.
+fn open_received_files(paths: &[String]) {
+    let Some(first) = paths.first() else {
+        return;
+    };
+    let target = Path::new(first);
+
+    if paths.len() == 1 && target.exists() {
+        if let Err(error) = open::that(target) {
+            log::warn!(
+                "[macos-notify] Failed to open received file '{}': {}",
+                target.display(),
+                error
+            );
+        }
+        return;
+    }
+
+    // Files from one share usually land in the same folder, but a save-location
+    // change or a mixed batch can split them; open each folder once.
+    let mut folders: Vec<PathBuf> = Vec::new();
+    for path in paths {
+        let path = Path::new(path);
+        let folder = path.parent().unwrap_or(path);
+        if !folders.iter().any(|existing| existing == folder) {
+            folders.push(folder.to_path_buf());
+        }
+    }
+    if folders.is_empty() {
+        let folder = target.parent().unwrap_or(target);
+        folders.push(folder.to_path_buf());
+    }
+
+    for folder in folders {
+        if let Err(error) = open::that(&folder) {
+            log::warn!(
+                "[macos-notify] Failed to reveal received files in '{}': {}",
+                folder.display(),
+                error
+            );
+        }
+    }
 }
 
 define_class!(
@@ -129,6 +217,37 @@ define_class!(
             let device_id = user_info_string(&content, "deviceId");
             let notification_id = user_info_string(&content, "notificationId");
             let action_id = response.actionIdentifier().to_string();
+            let is_file_received =
+                user_info_string(&content, "kind").as_deref() == Some(FILE_RECEIVED_KIND);
+
+            if is_file_received {
+                if action_id == OPEN_ACTION {
+                    let paths = user_info_string(&content, "paths")
+                        .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
+                        .unwrap_or_default();
+                    open_received_files(&paths);
+                } else if action_id == unsafe { UNNotificationDefaultActionIdentifier.to_string() }
+                {
+                    if let Some(ctx) = NOTIFY_CTX.get() {
+                        open_main_window(&ctx.app);
+                        if let Some(device_id) = device_id {
+                            let _ = ctx.app.emit(
+                                "velquo://tray-navigate",
+                                serde_json::json!({
+                                    "view": "device",
+                                    "deviceId": device_id,
+                                }),
+                            );
+                        }
+                    }
+                }
+
+                let identifier = request.identifier();
+                let identifiers = NSArray::from_slice(&[&*identifier]);
+                center.removeDeliveredNotificationsWithIdentifiers(&identifiers);
+                completion_handler.call(());
+                return;
+            }
 
             if action_id == DISMISS_ACTION {
                 if let (Some(device_id), Some(notification_id), Some(ctx)) =
@@ -251,24 +370,40 @@ pub fn init_macos_notifications(app: AppHandle, daemon: Arc<KdeConnectDaemon>) {
     });
 }
 
-/// Registers the notification category that carries the "Dismiss" action button.
-/// Called once at startup and again whenever the UI language changes, so the
-/// action title follows the app language rather than staying English.
+/// Registers the notification categories that carry action buttons. Called once
+/// at startup and again whenever the UI language changes, so the action titles
+/// follow the app language rather than staying English.
 unsafe fn register_notification_categories(center: &UNUserNotificationCenter) {
     let dismiss_action = UNNotificationAction::actionWithIdentifier_title_options(
         &NSString::from_str(DISMISS_ACTION),
         &NSString::from_str(&crate::i18n::tr_current("native.notification.dismiss")),
         UNNotificationActionOptions::empty(),
     );
-    let actions = NSArray::from_slice(&[&*dismiss_action]);
+    let phone_actions = NSArray::from_slice(&[&*dismiss_action]);
     let intent_identifiers = NSArray::<NSString>::from_slice(&[]);
-    let category = UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
-        &NSString::from_str(NOTIFICATION_CATEGORY),
-        &actions,
-        &intent_identifiers,
-        UNNotificationCategoryOptions::empty(),
+    let phone_category =
+        UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+            &NSString::from_str(NOTIFICATION_CATEGORY),
+            &phone_actions,
+            &intent_identifiers,
+            UNNotificationCategoryOptions::empty(),
+        );
+
+    let open_action = UNNotificationAction::actionWithIdentifier_title_options(
+        &NSString::from_str(OPEN_ACTION),
+        &NSString::from_str(&crate::i18n::tr_current("native.notification.open")),
+        UNNotificationActionOptions::empty(),
     );
-    let categories = NSSet::from_slice(&[&*category]);
+    let file_actions = NSArray::from_slice(&[&*open_action]);
+    let file_category =
+        UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+            &NSString::from_str(FILE_RECEIVED_CATEGORY),
+            &file_actions,
+            &intent_identifiers,
+            UNNotificationCategoryOptions::empty(),
+        );
+
+    let categories = NSSet::from_slice(&[&*phone_category, &*file_category]);
     center.setNotificationCategories(&categories);
 }
 
@@ -362,6 +497,72 @@ pub fn show_macos_notification(
     center.addNotificationRequest_withCompletionHandler(&request, Some(&completion));
 }
 
+/// Shows a "files received" notification with an `Open` action.
+///
+/// One file names the file in the body; several files share a generic body and
+/// the action reveals their folder in Finder. Clicking the notification body
+/// itself focuses Velquo on the sending device.
+pub fn show_file_received_notification(device_id: &str, device_name: &str, paths: &[String]) {
+    if paths.is_empty()
+        || !NOTIFICATIONS_AVAILABLE.load(Ordering::Acquire)
+        || !NOTIFICATIONS_AUTHORIZED.load(Ordering::Acquire)
+    {
+        return;
+    }
+
+    let (title, body) = file_received_content(device_name, paths);
+    let content = UNMutableNotificationContent::new();
+    content.setTitle(&NSString::from_str(&title));
+    content.setBody(&NSString::from_str(&body));
+    content.setCategoryIdentifier(&NSString::from_str(FILE_RECEIVED_CATEGORY));
+
+    let sound = UNNotificationSound::soundNamed(&NSString::from_str("Glass"));
+    content.setSound(Some(&sound));
+
+    let kind_key = NSString::from_str("kind");
+    let device_key = NSString::from_str("deviceId");
+    let paths_key = NSString::from_str("paths");
+    let kind_value = NSString::from_str(FILE_RECEIVED_KIND);
+    let device_value = NSString::from_str(device_id);
+    let paths_value =
+        NSString::from_str(&serde_json::to_string(paths).unwrap_or_else(|_| "[]".to_string()));
+    let user_info = NSDictionary::from_slices(
+        &[&*kind_key, &*device_key, &*paths_key],
+        &[
+            &kind_value as &AnyObject,
+            &device_value as &AnyObject,
+            &paths_value as &AnyObject,
+        ],
+    );
+    // `setUserInfo` takes the erased `NSDictionary` type, while `from_slices`
+    // returns a concretely-typed dictionary. The runtime object is identical.
+    let user_info_untyped = unsafe {
+        &*(&*user_info as *const NSDictionary<NSString, AnyObject> as *const NSDictionary)
+    };
+    unsafe {
+        content.setUserInfo(user_info_untyped);
+    }
+
+    let identifier = format!("velquo-file-{}", Uuid::new_v4());
+    let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
+        &NSString::from_str(&identifier),
+        &content,
+        None,
+    );
+
+    let completion = RcBlock::new(|error: *mut NSError| {
+        if !error.is_null() {
+            let error = unsafe { &*error };
+            log::warn!(
+                "[macos-notify] Failed to deliver file notification: {}",
+                error.localizedDescription()
+            );
+        }
+    });
+    UNUserNotificationCenter::currentNotificationCenter()
+        .addNotificationRequest_withCompletionHandler(&request, Some(&completion));
+}
+
 pub fn remove_macos_notifications(device_id: &str, notification_ids: &[String]) {
     if !NOTIFICATIONS_AVAILABLE.load(Ordering::Acquire) {
         return;
@@ -386,4 +587,31 @@ pub fn remove_macos_notifications(device_id: &str, notification_ids: &[String]) 
     let center = UNUserNotificationCenter::currentNotificationCenter();
     center.removeDeliveredNotificationsWithIdentifiers(&identifier_array);
     center.removePendingNotificationRequestsWithIdentifiers(&identifier_array);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::file_received_content;
+
+    #[test]
+    fn single_file_names_the_file_in_the_body() {
+        let paths = vec!["/Users/me/Downloads/photo.jpg".to_string()];
+        let (title, body) = file_received_content("Pixel 8", &paths);
+
+        assert_eq!(title, "File received from Pixel 8");
+        assert_eq!(body, "photo.jpg", "only the name, never the full path");
+    }
+
+    #[test]
+    fn multiple_files_use_a_count_and_generic_body() {
+        let paths = vec![
+            "/Users/me/Downloads/a.jpg".to_string(),
+            "/Users/me/Downloads/b.jpg".to_string(),
+            "/Users/me/Downloads/c.jpg".to_string(),
+        ];
+        let (title, body) = file_received_content("Pixel 8", &paths);
+
+        assert_eq!(title, "Received 3 files from Pixel 8");
+        assert_eq!(body, "Click open to locate them.");
+    }
 }

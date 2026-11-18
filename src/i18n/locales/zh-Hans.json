@@ -184,7 +184,15 @@
             "files": "{{device}} — 文件"
         },
         "notification": {
-            "dismiss": "忽略"
+            "dismiss": "忽略",
+            "open": "打开",
+            "fileReceived": {
+                "title": "已收到来自 {{device}} 的文件"
+            },
+            "filesReceived": {
+                "title": "已收到来自 {{device}} 的 {{count}} 个文件",
+                "body": "点击“打开”即可找到它们。"
+            }
         }
     },
     "homebrew": {

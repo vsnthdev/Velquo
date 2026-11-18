@@ -74,6 +74,9 @@ pub struct KdeConnectDaemon {
     pub recently_copied_otps: Mutex<HashMap<(String, String), i64>>,
     pub app_settings: Mutex<AppSettings>,
     pub sftp_manager: SftpManager,
+    /// Per-device buffer of completed incoming files, flushed into one
+    /// notification after the share gesture goes quiet.
+    pub(crate) received_file_batches: Mutex<HashMap<String, share::ReceivedFileBatch>>,
 }
 
 impl KdeConnectDaemon {
@@ -176,6 +179,7 @@ impl KdeConnectDaemon {
             recently_copied_otps: Mutex::new(HashMap::new()),
             app_settings: Mutex::new(app_settings),
             sftp_manager: SftpManager::new(),
+            received_file_batches: Mutex::new(HashMap::new()),
         }))
     }
 
@@ -203,6 +207,19 @@ impl KdeConnectDaemon {
                 notification_id,
                 dismissable,
             );
+        }
+    }
+
+    /// Shows the "files received" notification, or does nothing on platforms
+    /// without native notifications.
+    pub fn notify_files_received(device_id: &str, device_name: &str, paths: &[String]) {
+        #[cfg(target_os = "macos")]
+        {
+            crate::macos_notify::show_file_received_notification(device_id, device_name, paths);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (device_id, device_name, paths);
         }
     }
 

@@ -184,7 +184,15 @@
             "files": "{{device}} — 파일"
         },
         "notification": {
-            "dismiss": "닫기"
+            "dismiss": "닫기",
+            "open": "열기",
+            "fileReceived": {
+                "title": "{{device}}에서 파일을 받았습니다"
+            },
+            "filesReceived": {
+                "title": "{{device}}에서 {{count}}개 파일을 받았습니다",
+                "body": "‘열기’를 클릭하면 저장 위치를 표시합니다."
+            }
         }
     },
     "homebrew": {

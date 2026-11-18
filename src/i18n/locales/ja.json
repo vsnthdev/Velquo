@@ -184,7 +184,15 @@
             "files": "{{device}} — ファイル"
         },
         "notification": {
-            "dismiss": "閉じる"
+            "dismiss": "閉じる",
+            "open": "開く",
+            "fileReceived": {
+                "title": "{{device}}からファイルを受信しました"
+            },
+            "filesReceived": {
+                "title": "{{device}}から{{count}}件のファイルを受信しました",
+                "body": "「開く」をクリックすると保存先を表示します。"
+            }
         }
     },
     "homebrew": {
