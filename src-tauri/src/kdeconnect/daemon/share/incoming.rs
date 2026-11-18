@@ -41,7 +41,7 @@ impl KdeConnectDaemon {
             let total_bytes = packet.payload_size.unwrap_or(0).max(0) as u64;
 
             let transfer_id = Uuid::new_v4().to_string();
-            let dest_path = self.unique_download_path(device_id, &clean_name);
+            let staging_path = self.staging_path(device_id);
 
             log::info!(
                 "[share-in] Starting file download ({} bytes) from '{}' at {}:{}",
@@ -80,21 +80,33 @@ impl KdeConnectDaemon {
                         peer_ip,
                         port,
                         total_bytes,
-                        &dest_path,
+                        &staging_path,
                     )
                     .await
                 {
-                    Ok(saved) => {
-                        log::info!("[share-in] Completed file download from '{}'", dev_name);
-                        daemon.finish_transfer(
-                            &transfer_id,
-                            "Completed",
-                            Some(saved.to_string_lossy().to_string()),
-                            None,
-                        );
-                    }
+                    Ok(staged) => match super::finalize_download(&staged, &clean_name).await {
+                        Ok(saved) => {
+                            log::info!("[share-in] Completed file download from '{}'", dev_name);
+                            daemon.finish_transfer(
+                                &transfer_id,
+                                "Completed",
+                                Some(saved.to_string_lossy().to_string()),
+                                None,
+                            );
+                        }
+                        Err(e) => {
+                            let _ = tokio::fs::remove_file(&staged).await;
+                            log::error!("[share-in] Failed to finalize download: {:?}", e);
+                            daemon.finish_transfer(
+                                &transfer_id,
+                                "Failed",
+                                None,
+                                Some(e.to_string()),
+                            );
+                        }
+                    },
                     Err(e) => {
-                        let _ = tokio::fs::remove_file(&dest_path).await;
+                        let _ = tokio::fs::remove_file(&staging_path).await;
                         log::error!("[share-in] File download failed: {:?}", e);
                         daemon.finish_transfer(&transfer_id, "Failed", None, Some(e.to_string()));
                     }
@@ -311,7 +323,7 @@ impl KdeConnectDaemon {
         peer_ip: IpAddr,
         port: u16,
         expected_bytes: u64,
-        dest_path: &Path,
+        staging_path: &Path,
     ) -> Result<PathBuf> {
         let (expected_ip, expected_cert) = self.payload_peer_identity(device_id)?;
         if peer_ip != expected_ip {
@@ -349,14 +361,14 @@ impl KdeConnectDaemon {
         Self::verify_pinned_payload_cert(device_id, peer_cert, &expected_cert)?;
 
         log::info!(
-            "[share-in] Payload TLS client connected to {}, streaming to {:?}",
+            "[share-in] Payload TLS client connected to {}, streaming to staging file {:?}",
             target,
-            dest_path
+            staging_path
         );
 
-        let mut file = tokio::fs::File::create(dest_path)
+        let mut file = tokio::fs::File::create(staging_path)
             .await
-            .context("Failed to create destination file")?;
+            .context("Failed to create staging file")?;
 
         let mut buf = vec![0u8; 64 * 1024];
         let mut received: u64 = 0;
@@ -390,8 +402,11 @@ impl KdeConnectDaemon {
         }
 
         file.flush().await?;
+        // Drop the handle so every byte is closed out before the caller renames
+        // the file into its final, visible name.
+        drop(file);
         self.update_transfer_progress(transfer_id, received);
-        Ok(dest_path.to_path_buf())
+        Ok(staging_path.to_path_buf())
     }
 }
 

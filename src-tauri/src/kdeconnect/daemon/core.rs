@@ -84,6 +84,9 @@ impl KdeConnectDaemon {
     ) -> Result<Arc<Self>> {
         let _ = fs::create_dir_all(&config_dir);
         let _ = fs::create_dir_all(&downloads_dir);
+        // No transfer can be in flight yet, so any leftover staging file is from
+        // a crash or a hard quit.
+        share::sweep_stale_staging_files(&downloads_dir);
 
         let host = HostIdentity::load_or_create(&config_dir)?;
         let tls_acceptor = build_tls_acceptor(&host)?;

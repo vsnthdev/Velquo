@@ -3,8 +3,22 @@ mod outgoing;
 mod payload;
 use crate::kdeconnect::daemon::*;
 use crate::kdeconnect::packet::current_millis;
+use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use uuid::Uuid;
+
+/// Prefix for in-progress downloads. The leading dot keeps Finder, Dock stacks
+/// and Spotlight from surfacing the file while it is still being written, and
+/// the `.part` suffix keeps QuickLook from trying to thumbnail a half-written
+/// image.
+const STAGING_PREFIX: &str = ".velquo-staging-";
+const STAGING_SUFFIX: &str = ".part";
+
+/// Serializes "pick a unique name, then rename into place" so two simultaneous
+/// transfers of `photo.jpg` cannot pick the same destination.
+static DOWNLOAD_PATH_LOCK: Mutex<()> = Mutex::new(());
 
 impl KdeConnectDaemon {
     pub(super) fn resolve_device_save_dir(&self, device_id: &str) -> PathBuf {
@@ -34,29 +48,14 @@ impl KdeConnectDaemon {
         self.downloads_dir.clone()
     }
 
-    pub(super) fn unique_download_path(&self, device_id: &str, filename: &str) -> PathBuf {
-        let base_dir = self.resolve_device_save_dir(device_id);
-        let candidate = base_dir.join(filename);
-        if !candidate.exists() {
-            return candidate;
-        }
-        let stem = Path::new(filename)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("file");
-        let ext = Path::new(filename)
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| format!(".{}", e))
-            .unwrap_or_default();
-
-        for i in 1..10000 {
-            let next = base_dir.join(format!("{} ({}){}", stem, i, ext));
-            if !next.exists() {
-                return next;
-            }
-        }
-        base_dir.join(format!("{}-{}", current_millis(), filename))
+    /// Path to a hidden staging file in the device's save folder. Downloads are
+    /// streamed here and only renamed to their final name once complete, so
+    /// Finder/QuickLook never observe a partially written file.
+    pub(super) fn staging_path(&self, device_id: &str) -> PathBuf {
+        self.resolve_device_save_dir(device_id).join(format!(
+            "{STAGING_PREFIX}{}{STAGING_SUFFIX}",
+            Uuid::new_v4()
+        ))
     }
 
     pub(super) fn prune_finished_transfers(list: &mut Vec<TransferItem>) {
@@ -114,5 +113,159 @@ impl KdeConnectDaemon {
         Self::prune_finished_transfers(&mut guard);
         drop(guard);
         self.notify_ui();
+    }
+}
+
+/// Picks a non-colliding path for `filename` inside `base_dir`, appending
+/// ` (1)`, ` (2)`, … when the name is taken.
+fn unique_path_in_dir(base_dir: &Path, filename: &str) -> PathBuf {
+    let candidate = base_dir.join(filename);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let stem = Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file");
+    let ext = Path::new(filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!(".{}", e))
+        .unwrap_or_default();
+
+    for i in 1..10000 {
+        let next = base_dir.join(format!("{} ({}){}", stem, i, ext));
+        if !next.exists() {
+            return next;
+        }
+    }
+    base_dir.join(format!("{}-{}", current_millis(), filename))
+}
+
+/// Moves a fully written staging file into its final name inside the same
+/// directory.
+///
+/// The staging file lives in the destination folder, so this is a single
+/// atomic `rename(2)` on the same filesystem: no byte is copied and the final
+/// name only appears once the content is complete. That keeps Finder, Dock and
+/// QuickLook from generating thumbnails of a half-written file.
+pub(super) async fn finalize_download(staged: &Path, filename: &str) -> Result<PathBuf> {
+    let staged = staged.to_path_buf();
+    let filename = filename.to_string();
+
+    tokio::task::spawn_blocking(move || {
+        let base_dir = staged
+            .parent()
+            .ok_or_else(|| anyhow!("Staged download '{}' has no parent", staged.display()))?
+            .to_path_buf();
+
+        // Held only inside the blocking task so the future stays `Send`.
+        let _guard = DOWNLOAD_PATH_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let final_path = unique_path_in_dir(&base_dir, &filename);
+
+        fs::rename(&staged, &final_path).with_context(|| {
+            format!(
+                "Failed to move staged download into place at '{}'",
+                final_path.display()
+            )
+        })?;
+        Ok(final_path)
+    })
+    .await
+    .context("Download finalization task panicked")?
+}
+
+/// Removes staging files left behind by a crash or a hard quit.
+///
+/// Only called at startup, when no transfer can be in flight, so it is safe to
+/// sweep every staged file in the folder.
+pub(crate) fn sweep_stale_staging_files(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with(STAGING_PREFIX) || !name.ends_with(STAGING_SUFFIX) {
+            continue;
+        }
+        if fs::remove_file(entry.path()).is_ok() {
+            log::info!(
+                "[share] Removed stale staging file '{}'",
+                entry.path().display()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("velquo-share-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn unique_path_in_dir_appends_a_counter() {
+        let dir = temp_dir();
+        assert_eq!(unique_path_in_dir(&dir, "photo.jpg"), dir.join("photo.jpg"));
+
+        fs::write(dir.join("photo.jpg"), b"first").unwrap();
+        assert_eq!(
+            unique_path_in_dir(&dir, "photo.jpg"),
+            dir.join("photo (1).jpg")
+        );
+
+        fs::write(dir.join("photo (1).jpg"), b"second").unwrap();
+        assert_eq!(
+            unique_path_in_dir(&dir, "photo.jpg"),
+            dir.join("photo (2).jpg")
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn finalize_download_renames_in_place() {
+        let dir = temp_dir();
+        let staged = dir.join(format!(
+            "{STAGING_PREFIX}{}{STAGING_SUFFIX}",
+            Uuid::new_v4()
+        ));
+        fs::write(&staged, b"complete image bytes").unwrap();
+
+        let saved = finalize_download(&staged, "photo.jpg").await.unwrap();
+
+        assert_eq!(saved, dir.join("photo.jpg"));
+        assert_eq!(fs::read(&saved).unwrap(), b"complete image bytes");
+        assert!(!staged.exists(), "staging file should be gone");
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn sweep_removes_only_staging_files() {
+        let dir = temp_dir();
+        let staged = dir.join(format!(
+            "{STAGING_PREFIX}{}{STAGING_SUFFIX}",
+            Uuid::new_v4()
+        ));
+        fs::write(&staged, b"orphan").unwrap();
+        let real = dir.join("keep-me.jpg");
+        fs::write(&real, b"real").unwrap();
+
+        sweep_stale_staging_files(&dir);
+
+        assert!(!staged.exists(), "orphaned staging file should be removed");
+        assert!(real.exists(), "completed downloads must be left alone");
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -120,19 +120,37 @@ impl KdeConnectDaemon {
             .filter(|s| !s.trim().is_empty())
             .unwrap_or("downloaded_file")
             .to_string();
-        let dest_path = self.unique_download_path(device_id, &clean_name);
+        // Stream into a hidden staging file next to the final destination, then
+        // rename once the download is complete. Finder/QuickLook therefore only
+        // ever see a fully written file and never cache a broken thumbnail.
+        let staging_path = self.staging_path(device_id);
 
-        let saved = self
+        let staged = match self
             .sftp_manager
             .download_file(
                 device_id,
                 remote_path,
-                &dest_path,
+                &staging_path,
                 &self.config_dir,
                 self.ssh_host_key_verifier(device_id),
                 || self.send_packet_to_device(device_id, &NetworkPacket::sftp_start_browsing()),
             )
-            .await?;
+            .await
+        {
+            Ok(staged) => staged,
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&staging_path).await;
+                return Err(e);
+            }
+        };
+
+        let saved = match super::share::finalize_download(&staged, &clean_name).await {
+            Ok(saved) => saved,
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&staged).await;
+                return Err(e);
+            }
+        };
 
         Ok(saved.to_string_lossy().to_string())
     }
