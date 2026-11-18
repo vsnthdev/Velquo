@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import * as Dialog from "@radix-ui/react-dialog";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { RunCommandItem } from "../../types";
@@ -34,13 +35,13 @@ interface DeviceSettingsViewProps {
 }
 
 const SAMPLE_MAC_COMMANDS = [
-    { name: "Lock Screen", command: "pmset displaysleepnow" },
-    { name: "Sleep Mac", command: "pmset sleepnow" },
+    { command: "pmset displaysleepnow", nameKey: "commands.presetLockScreen" },
+    { command: "pmset sleepnow", nameKey: "commands.presetSleepMac" },
     {
-        name: "Mute Volume",
+        nameKey: "commands.presetMuteVolume",
         command: 'osascript -e "set volume output muted true"',
     },
-];
+] as const;
 
 export function DeviceSettingsView({
     onUnpair,
@@ -63,6 +64,7 @@ export function DeviceSettingsView({
     onConsumeAddCommandSignal,
     onTogglePauseMediaOnCalls,
 }: DeviceSettingsViewProps) {
+    const { t } = useTranslation();
     const [isCommandsModalOpen, setIsCommandsModalOpen] =
         useState<boolean>(false);
     const [modalView, setModalView] = useState<"list" | "add">("list");
@@ -83,8 +85,8 @@ export function DeviceSettingsView({
         const selected = await open({
             directory: true,
             multiple: false,
-            title: "Select File Save Location",
             defaultPath: fileSaveLocation || undefined,
+            title: t("deviceSettings.selectSaveLocation"),
         });
         if (typeof selected == "string" && selected.trim()) {
             onChangeFileSaveLocation(selected);
@@ -126,7 +128,7 @@ export function DeviceSettingsView({
             {/* File save location setting */}
             <div className="mb-1 flex flex-col gap-2">
                 <label className="text-[12.5px] font-medium text-zinc-500 dark:text-zinc-400">
-                    File save location
+                    {t("deviceSettings.fileSaveLocation")}
                 </label>
 
                 <div className="flex items-center overflow-hidden rounded-xl border border-black/12 bg-black/[0.02] focus-within:border-black/25 dark:border-white/12 dark:bg-white/[0.02] dark:focus-within:border-white/25">
@@ -145,7 +147,7 @@ export function DeviceSettingsView({
                         whileTap={{ scale: 0.98 }}
                         className="shrink-0 cursor-pointer border-l border-black/12 bg-black/[0.04] px-4 py-2.5 text-[13px] font-medium text-zinc-800 transition-colors hover:bg-black/[0.08] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:bg-white/[0.10]"
                     >
-                        Change
+                        {t("common.change")}
                     </motion.button>
                 </div>
             </div>
@@ -156,7 +158,7 @@ export function DeviceSettingsView({
                 className="flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
             >
                 <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
-                    Sync clipboard
+                    {t("deviceSettings.syncClipboard")}
                 </span>
 
                 <button
@@ -194,7 +196,7 @@ export function DeviceSettingsView({
                 className="flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
             >
                 <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
-                    Presentation remote
+                    {t("deviceSettings.presentationRemote")}
                 </span>
 
                 <button
@@ -232,7 +234,7 @@ export function DeviceSettingsView({
                 className="flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
             >
                 <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
-                    Sync notifications
+                    {t("deviceSettings.syncNotifications")}
                 </span>
 
                 <button
@@ -270,7 +272,7 @@ export function DeviceSettingsView({
                 className="flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
             >
                 <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
-                    Auto-copy OTPs
+                    {t("deviceSettings.autoCopyOtp")}
                 </span>
 
                 <button
@@ -308,7 +310,7 @@ export function DeviceSettingsView({
                 className="flex cursor-pointer items-center justify-between rounded-xl border border-black/12 bg-black/[0.02] px-3.5 py-2.5 transition-colors hover:border-black/20 dark:border-white/12 dark:bg-white/[0.02] dark:hover:border-white/20"
             >
                 <span className="text-[13.5px] font-medium text-zinc-800 dark:text-zinc-100">
-                    Pause media on calls
+                    {t("deviceSettings.pauseMediaOnCalls")}
                 </span>
 
                 <button
@@ -364,7 +366,7 @@ export function DeviceSettingsView({
                         className="mt-1 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/12 bg-black/[0.02] px-4 py-2.5 text-[13.5px] font-medium text-zinc-800 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/12 dark:bg-white/[0.02] dark:text-zinc-100 dark:hover:border-white/20 dark:hover:bg-white/[0.05]"
                     >
                         <TerminalWindowIcon size={16} weight="regular" />
-                        <span>Configure commands</span>
+                        <span>{t("commands.configure")}</span>
                         {runCommands.length > 0 && (
                             <span className="ml-0.5 rounded-md bg-black/[0.07] px-1.5 py-0.2 text-[11px] font-medium text-zinc-600 dark:bg-white/[0.10] dark:text-zinc-300">
                                 {runCommands.length}
@@ -411,7 +413,7 @@ export function DeviceSettingsView({
                                                         setModalView("list");
                                                     }}
                                                     className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-black/10 bg-black/[0.02] text-zinc-600 transition-colors hover:bg-black/[0.06] dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.08]"
-                                                    title="Back to commands list"
+                                                    title={t("commands.backToList")}
                                                 >
                                                     <ArrowLeftIcon size={14} weight="bold" />
                                                 </motion.button>
@@ -419,8 +421,8 @@ export function DeviceSettingsView({
 
                                             <Dialog.Title className="text-[15.5px] font-semibold text-zinc-900 dark:text-zinc-100">
                                                 {modalView == "list"
-                                                    ? "Configure commands"
-                                                    : "Add command"}
+                                                    ? t("commands.configure")
+                                                    : t("commands.addCommand")}
                                             </Dialog.Title>
                                         </div>
 
@@ -437,7 +439,7 @@ export function DeviceSettingsView({
                                                     className="flex cursor-pointer items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[12px] font-medium text-white shadow-xs transition-colors hover:bg-blue-500"
                                                 >
                                                     <PlusIcon size={13} weight="bold" />
-                                                    <span>Add</span>
+                                                    <span>{t("common.add")}</span>
                                                 </motion.button>
                                             )}
 
@@ -447,7 +449,7 @@ export function DeviceSettingsView({
                                                     whileHover={{ scale: 1.06 }}
                                                     whileTap={{ scale: 0.94 }}
                                                     className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-black/[0.06] hover:text-zinc-700 dark:hover:bg-white/[0.08] dark:hover:text-zinc-200"
-                                                    aria-label="Close"
+                                                    aria-label={t("common.close")}
                                                 >
                                                     <XIcon size={15} weight="bold" />
                                                 </motion.button>
@@ -492,7 +494,7 @@ export function DeviceSettingsView({
                                                                     whileTap={{ scale: 0.92 }}
                                                                     onClick={() => onRemoveRunCommand(item.key)}
                                                                     className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-red-500/12 hover:text-red-500 dark:hover:bg-red-500/20 dark:hover:text-red-400"
-                                                                    title="Delete command"
+                                                                    title={t("commands.deleteCommand")}
                                                                 >
                                                                     <TrashIcon size={14} weight="regular" />
                                                                 </motion.button>
@@ -506,11 +508,10 @@ export function DeviceSettingsView({
                                                                 className="text-zinc-400 dark:text-zinc-500"
                                                             />
                                                             <span className="mt-2 text-[13.5px] font-medium text-zinc-700 dark:text-zinc-300">
-                                                                No commands configured yet
+                                                                {t("commands.empty")}
                                                             </span>
                                                             <span className="mt-0.5 max-w-xs text-[12px] text-zinc-500 dark:text-zinc-400">
-                                                                Add shell commands to trigger them remotely from
-                                                                the KDE Connect app on your phone.
+                                                                {t("commands.emptyHint")}
                                                             </span>
                                                         </div>
                                                     )}
@@ -530,7 +531,7 @@ export function DeviceSettingsView({
                                                 >
                                                     <div className="flex flex-col gap-1.5">
                                                         <label className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400">
-                                                            Command name
+                                                            {t("commands.name")}
                                                         </label>
                                                         <input
                                                             type="text"
@@ -539,7 +540,7 @@ export function DeviceSettingsView({
                                                                 setNewCmdName(e.target.value);
                                                                 if (formError) setFormError(false);
                                                             }}
-                                                            placeholder="Lock Screen"
+                                                            placeholder={t("commands.namePlaceholder")}
                                                             autoFocus
                                                             className={`select-text rounded-xl border bg-black/[0.02] px-3 py-2 text-[13px] text-zinc-900 placeholder:text-zinc-400 focus:outline-none dark:bg-white/[0.03] dark:text-zinc-100 dark:placeholder:text-zinc-500 ${
                                                                 formError && !newCmdName.trim()
@@ -551,7 +552,7 @@ export function DeviceSettingsView({
 
                                                     <div className="flex flex-col gap-1.5">
                                                         <label className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400">
-                                                            Shell command
+                                                            {t("commands.shell")}
                                                         </label>
                                                         <input
                                                             type="text"
@@ -578,21 +579,21 @@ export function DeviceSettingsView({
                                                     {/* Sample quick presets */}
                                                     <div className="flex flex-col gap-1.5">
                                                         <span className="text-[11.5px] font-medium text-zinc-400 dark:text-zinc-500">
-                                                            Presets
+                                                            {t("commands.presets")}
                                                         </span>
                                                         <div className="flex flex-wrap gap-1.5">
                                                             {SAMPLE_MAC_COMMANDS.map((preset) => (
                                                                 <button
-                                                                    key={preset.name}
+                                                                    key={preset.nameKey}
                                                                     type="button"
                                                                     onClick={() => {
-                                                                        setNewCmdName(preset.name);
+                                                                        setNewCmdName(t(preset.nameKey));
                                                                         setNewCmdString(preset.command);
                                                                         setFormError(false);
                                                                     }}
                                                                     className="cursor-pointer rounded-lg border border-black/10 bg-black/[0.02] px-2.5 py-1 text-[11.5px] font-medium text-zinc-600 transition-colors hover:border-black/20 hover:bg-black/[0.05] dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-white/[0.06]"
                                                                 >
-                                                                    {preset.name}
+                                                                    {t(preset.nameKey)}
                                                                 </button>
                                                             ))}
                                                         </div>
@@ -605,7 +606,7 @@ export function DeviceSettingsView({
                                                         onClick={handleCreateCommand}
                                                         className="mt-1 flex w-full cursor-pointer items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-medium text-white shadow-xs transition-colors hover:bg-blue-500"
                                                     >
-                                                        Save command
+                                                        {t("commands.save")}
                                                     </motion.button>
                                                 </motion.div>
                                             )}
@@ -631,7 +632,7 @@ export function DeviceSettingsView({
                 className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-red-500/25 bg-red-500/[0.08] px-4 py-2.5 text-[13.5px] font-medium text-red-600 transition-colors hover:border-red-500/40 hover:bg-red-500/[0.14] dark:border-red-500/25 dark:bg-red-500/[0.10] dark:text-red-400 dark:hover:border-red-400/40 dark:hover:bg-red-500/[0.16]"
             >
                 <TrashIcon size={16} weight="regular" />
-                <span>Unpair</span>
+                <span>{t("deviceSettings.unpair")}</span>
             </motion.button>
         </motion.div>
     );

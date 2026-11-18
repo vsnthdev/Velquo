@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { Trans, useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { formatFileSize, formatShortDate } from "../utils/format";
@@ -40,6 +41,7 @@ import {
 } from "@phosphor-icons/react";
 
 export function FileBrowserWindow() {
+    const { t } = useTranslation();
     const deviceId = useMemo(
         () => new URLSearchParams(window.location.search).get("deviceId") ?? "",
         [],
@@ -144,7 +146,7 @@ export function FileBrowserWindow() {
         const roots = sftpData.roots || [];
 
         if (current == "/" && roots.length > 1) {
-            return [{ path: "/", label: "Storage locations" }];
+            return [{ path: "/", label: t("files.storageLocations") }];
         }
 
         const matchedRoot = [...roots]
@@ -157,7 +159,7 @@ export function FileBrowserWindow() {
 
         const crumbs: Array<{ label: string; path: string }> = [];
         if (roots.length > 1) {
-            crumbs.push({ path: "/", label: "Storage" });
+            crumbs.push({ path: "/", label: t("files.storage") });
         }
 
         if (matchedRoot) {
@@ -177,7 +179,7 @@ export function FileBrowserWindow() {
 
         crumbs.push({
             path: "/",
-            label: roots[0]?.name || "Internal storage",
+            label: roots[0]?.name || t("files.internalStorage"),
         });
         const parts = current.split("/").filter(Boolean);
         let accum = "";
@@ -186,7 +188,7 @@ export function FileBrowserWindow() {
             crumbs.push({ label: seg, path: accum });
         }
         return crumbs;
-    }, [sftpData]);
+    }, [sftpData, t]);
 
     const canSftpGoBack = sftpBreadcrumbs.length > 1;
 
@@ -406,7 +408,7 @@ export function FileBrowserWindow() {
         );
     };
 
-    const deviceDisplayName = device?.deviceName || "Phone";
+    const deviceDisplayName = device?.deviceName || t("files.fallbackDevice");
     const saveFolderName =
         device?.saveLocation?.split("/").filter(Boolean).pop() || "Downloads";
 
@@ -442,7 +444,7 @@ export function FileBrowserWindow() {
                                 ? "cursor-pointer text-zinc-700 hover:bg-black/[0.06] dark:text-zinc-200 dark:hover:bg-white/[0.08]"
                                 : "cursor-default text-zinc-300 dark:text-zinc-600"
                         }`}
-                        title="Back"
+                        title={t("common.back")}
                     >
                         <ArrowLeftIcon size={15} weight="bold" />
                     </motion.button>
@@ -489,7 +491,7 @@ export function FileBrowserWindow() {
                             })
                         ) : (
                             <span className="px-1.5 text-[13.5px] font-semibold text-zinc-900 dark:text-zinc-100">
-                                {deviceDisplayName} files
+                                {t("files.deviceFiles", { device: deviceDisplayName })}
                             </span>
                         )}
                     </div>
@@ -505,7 +507,7 @@ export function FileBrowserWindow() {
                         className={`flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-black/[0.06] hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-white/[0.08] dark:hover:text-zinc-200 ${
                             isSftpLoading ? "cursor-default opacity-60" : "cursor-pointer"
                         }`}
-                        title="Refresh folder"
+                        title={t("files.refreshFolder")}
                     >
                         <ArrowsClockwiseIcon
                             size={15}
@@ -526,7 +528,7 @@ export function FileBrowserWindow() {
                             className="animate-spin text-blue-600 dark:text-blue-400"
                         />
                         <p className="text-[13px] font-medium text-zinc-700 dark:text-zinc-200">
-                            Connecting to {deviceDisplayName} storage...
+                            {t("files.connecting", { device: deviceDisplayName })}
                         </p>
                     </div>
                 ) : sftpData?.unconfiguredMessage ? (
@@ -535,22 +537,18 @@ export function FileBrowserWindow() {
                             <FolderLockIcon size={24} weight="duotone" />
                         </div>
                         <p className="mt-3 text-[13.5px] font-semibold text-zinc-800 dark:text-zinc-100">
-                            Storage access not configured
+                            {t("files.notConfigured")}
                         </p>
                         <p className="mt-1.5 max-w-xs text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                            Open{" "}
-                            <span className="font-medium text-zinc-700 dark:text-zinc-200">
-                                KDE Connect
-                            </span>{" "}
-                            on {deviceDisplayName} →{" "}
-                            <span className="font-medium text-zinc-700 dark:text-zinc-200">
-                                Plugin settings
-                            </span>{" "}
-                            →{" "}
-                            <span className="font-medium text-zinc-700 dark:text-zinc-200">
-                                Filesystem expose
-                            </span>{" "}
-                            and add a storage location.
+                            <Trans
+                                i18nKey="files.notConfiguredHint"
+                                values={{ device: deviceDisplayName }}
+                                components={{
+                                    b: (
+                                        <span className="font-medium text-zinc-700 dark:text-zinc-200" />
+                                    ),
+                                }}
+                            />
                         </p>
                         <motion.button
                             type="button"
@@ -559,7 +557,7 @@ export function FileBrowserWindow() {
                             onClick={() => loadSftpDirectory()}
                             className="mt-4 cursor-pointer rounded-xl border border-black/12 bg-black/[0.03] px-4 py-1.5 text-xs font-medium text-zinc-800 transition-colors hover:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:bg-white/[0.09]"
                         >
-                            Retry
+                            {t("common.retry")}
                         </motion.button>
                     </div>
                 ) : sftpError ? (
@@ -568,7 +566,7 @@ export function FileBrowserWindow() {
                             <WarningCircleIcon size={24} weight="duotone" />
                         </div>
                         <p className="mt-3 text-[13.5px] font-semibold text-zinc-800 dark:text-zinc-100">
-                            Couldn&apos;t load files
+                            {t("files.loadFailed")}
                         </p>
                         <p className="mt-1 max-w-xs text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                             {sftpError}
@@ -580,7 +578,7 @@ export function FileBrowserWindow() {
                             onClick={() => loadSftpDirectory(sftpData?.currentPath)}
                             className="mt-4 cursor-pointer rounded-xl border border-black/12 bg-black/[0.03] px-4 py-1.5 text-xs font-medium text-zinc-800 transition-colors hover:bg-black/[0.06] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:bg-white/[0.09]"
                         >
-                            Retry
+                            {t("common.retry")}
                         </motion.button>
                     </div>
                 ) : sftpData && sftpData.entries.length == 0 ? (
@@ -589,7 +587,7 @@ export function FileBrowserWindow() {
                             <FolderOpenIcon size={22} weight="regular" />
                         </div>
                         <p className="mt-2.5 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">
-                            This folder is empty
+                            {t("files.empty")}
                         </p>
                     </div>
                 ) : (
@@ -634,7 +632,9 @@ export function FileBrowserWindow() {
                                                         }`}
                                                     >
                                                         {dlError
-                                                            ? `Delete failed: ${dlError}`
+                                                            ? t("files.deleteFailed", {
+                                                                error: dlError,
+                                                            })
                                                             : formattedDate}
                                                     </span>
                                                 )}
@@ -646,7 +646,7 @@ export function FileBrowserWindow() {
                         (isDeleting ? (
                             <div
                                 className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-500/10 text-red-600 dark:bg-red-500/15 dark:text-red-400"
-                                title="Deleting folder..."
+                                title={t("files.deletingFolder")}
                             >
                                 <CircleNotchIcon
                                     size={15}
@@ -661,7 +661,7 @@ export function FileBrowserWindow() {
                                 whileTap={{ scale: 0.94 }}
                                 onClick={() => handleSftpDelete(entry)}
                                 className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-black/10 bg-black/[0.02] text-zinc-500 transition-colors hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400 dark:hover:border-red-400/30 dark:hover:bg-red-500/15 dark:hover:text-red-400"
-                                title="Delete folder"
+                                title={t("files.deleteFolder")}
                             >
                                 <TrashIcon size={14} weight="regular" />
                             </motion.button>
@@ -672,7 +672,9 @@ export function FileBrowserWindow() {
                                                 disabled={isDeleting}
                                                 onClick={() => loadSftpDirectory(entry.path)}
                                                 className="flex h-7 w-5 cursor-pointer items-center justify-center"
-                                                aria-label={`Open ${entry.name}`}
+                                                aria-label={t("files.openEntry", {
+                                                    name: entry.name,
+                                                })}
                                             >
                                                 <CaretRightIcon
                                                     size={14}
@@ -716,7 +718,7 @@ export function FileBrowserWindow() {
                                         {isDownloading ? (
                                             <div
                                                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400"
-                                                title="Downloading..."
+                                                title={t("files.downloading")}
                                             >
                                                 <CircleNotchIcon
                                                     size={15}
@@ -733,7 +735,7 @@ export function FileBrowserWindow() {
                                                     revealItemInDir(savedLocalPath).catch(() => {});
                                                 }}
                                                 className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-600 transition-colors hover:bg-emerald-500/20 dark:bg-emerald-500/15 dark:text-emerald-400 dark:hover:bg-emerald-500/25"
-                                                title="Saved — click to reveal in Finder"
+                                                title={t("files.savedReveal")}
                                             >
                                                 <CheckIcon size={15} weight="bold" />
                                             </motion.button>
@@ -745,7 +747,7 @@ export function FileBrowserWindow() {
                                                 whileTap={!isDeleting ? { scale: 0.94 } : undefined}
                                                 onClick={() => handleSftpDownload(entry)}
                                                 className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-black/10 bg-black/[0.02] text-zinc-600 transition-colors hover:border-black/20 hover:bg-black/[0.06] hover:text-zinc-900 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-white/[0.08] dark:hover:text-zinc-100"
-                                                title="Download file"
+                                                title={t("files.downloadFile")}
                                             >
                                                 <DownloadSimpleIcon size={15} weight="regular" />
                                             </motion.button>
@@ -754,7 +756,7 @@ export function FileBrowserWindow() {
                                         {isDeleting ? (
                                             <div
                                                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-red-500/10 text-red-600 dark:bg-red-500/15 dark:text-red-400"
-                                                title="Deleting file..."
+                                                title={t("files.deletingFile")}
                                             >
                                                 <CircleNotchIcon
                                                     size={15}
@@ -772,7 +774,7 @@ export function FileBrowserWindow() {
                                                 whileTap={!isDownloading ? { scale: 0.94 } : undefined}
                                                 onClick={() => handleSftpDelete(entry)}
                                                 className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-black/10 bg-black/[0.02] text-zinc-500 transition-colors hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400 dark:hover:border-red-400/30 dark:hover:bg-red-500/15 dark:hover:text-red-400"
-                                                title="Delete file"
+                                                title={t("files.deleteFile")}
                                             >
                                                 <TrashIcon size={14} weight="regular" />
                                             </motion.button>
@@ -789,16 +791,21 @@ export function FileBrowserWindow() {
             <div className="relative z-10 flex shrink-0 items-center justify-between gap-2 border-t border-black/8 bg-black/[0.015] px-4 py-2 text-[11.5px] text-zinc-400 dark:border-white/10 dark:bg-white/[0.015] dark:text-zinc-500">
                 <span>
                     {sftpData && !sftpData.unconfiguredMessage
-                        ? `${sftpData.entries.length} ${
-                            sftpData.entries.length == 1 ? "item" : "items"
-                        }`
-                        : "Remote SFTP"}
+                        ? t("files.itemCount", {
+                            count: sftpData.entries.length,
+                        })
+                        : t("files.remoteSftp")}
                 </span>
                 <span className="truncate">
-                    Saves to{" "}
-                    <span className="font-medium text-zinc-600 dark:text-zinc-300">
-                        {saveFolderName}
-                    </span>
+                    <Trans
+                        i18nKey="files.savesTo"
+                        values={{ folder: saveFolderName }}
+                        components={{
+                            b: (
+                                <span className="font-medium text-zinc-600 dark:text-zinc-300" />
+                            ),
+                        }}
+                    />
                 </span>
             </div>
         </div>

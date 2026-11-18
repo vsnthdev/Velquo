@@ -79,6 +79,7 @@ objc2-foundation = { version = "0.3", features = [
   "NSArray",
   "NSData",
   "NSDictionary",
+  "NSLocale",
   "NSObject",
   "NSSet",
   "NSString",

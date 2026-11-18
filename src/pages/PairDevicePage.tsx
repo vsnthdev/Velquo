@@ -1,6 +1,7 @@
 import type { DeviceView } from "../types";
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import { DeviceIcon } from "../components/DeviceIcon";
 import { motion, AnimatePresence } from "motion/react";
 import { XIcon, CheckIcon, WifiHighIcon, ArrowsClockwiseIcon } from "@phosphor-icons/react";
@@ -10,6 +11,7 @@ interface PairDevicePageProps {
 }
 
 export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
+    const { t } = useTranslation();
     const [isScanning, setIsScanning] = useState<boolean>(false);
     const [manualIp, setManualIp] = useState<string>("");
     const [ipError, setIpError] = useState<boolean>(false);
@@ -60,7 +62,7 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
             {/* Available Devices section header + Refresh button */}
             <div className="flex items-center justify-between">
                 <h2 className="text-[12.5px] font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-                    Available Devices
+                    {t("pair.availableDevices")}
                 </h2>
 
                 <motion.button
@@ -81,7 +83,7 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
                     >
                         <ArrowsClockwiseIcon size={13.5} weight="bold" />
                     </motion.span>
-                    <span>Refresh</span>
+                    <span>{t("common.refresh")}</span>
                 </motion.button>
             </div>
 
@@ -114,8 +116,8 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
                                                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] text-amber-600 dark:text-amber-300">
                                                     <span>
                                                         {device.pairState == "Requested"
-                                                            ? "Confirm on device"
-                                                            : "Incoming pairing request"}
+                                                            ? t("pair.confirmOnDevice")
+                                                            : t("pair.incomingRequest")}
                                                     </span>
                                                     {device.verificationKey && (
                                                         <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[11px] font-medium text-amber-700 dark:text-amber-200">
@@ -145,7 +147,7 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
                                             }
                                             className="cursor-pointer rounded-xl bg-blue-600 px-4 py-1.5 text-[13px] font-medium text-white shadow-xs transition-colors hover:bg-blue-500"
                                         >
-                                            Pair
+                                            {t("pair.pair")}
                                         </motion.button>
                                     )}
 
@@ -161,7 +163,7 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
                                             }
                                             className="cursor-pointer rounded-xl border border-red-500/25 bg-red-500/[0.08] px-3.5 py-1.5 text-[12.5px] font-medium text-red-600 transition-colors hover:bg-red-500/[0.15] dark:text-red-400"
                                         >
-                                            Cancel
+                                            {t("common.cancel")}
                                         </motion.button>
                                     )}
 
@@ -179,7 +181,7 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
                                                 className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-1.5 text-[12.5px] font-medium text-white shadow-xs transition-colors hover:bg-emerald-500"
                                             >
                                                 <CheckIcon size={14} weight="bold" />
-                                                <span>Accept</span>
+                                                <span>{t("pair.accept")}</span>
                                             </motion.button>
 
                                             <motion.button
@@ -194,7 +196,7 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
                                                 className="flex cursor-pointer items-center gap-1 rounded-xl border border-red-500/25 bg-red-500/[0.08] px-3 py-1.5 text-[12.5px] font-medium text-red-600 transition-colors hover:bg-red-500/[0.15] dark:text-red-400"
                                             >
                                                 <XIcon size={14} weight="bold" />
-                                                <span>Reject</span>
+                                                <span>{t("pair.reject")}</span>
                                             </motion.button>
                                         </>
                                     )}
@@ -214,11 +216,10 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
                             </div>
 
                             <span className="mt-3 text-[14px] font-semibold text-zinc-900 dark:text-zinc-100">
-                                Searching for devices on your Wi-Fi...
+                                {t("pair.searching")}
                             </span>
                             <span className="mt-1 max-w-sm text-[12.5px] text-zinc-500 dark:text-zinc-400">
-                                Keep the KDE Connect app open on your phone and connected to the
-                                same Wi-Fi network.
+                                {t("pair.searchingHint")}
                             </span>
                         </motion.div>
                     )}
@@ -227,7 +228,7 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
 
             {/* Connect by IP fallback section */}
             <h2 className="mt-8 text-[12.5px] font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-                Connect by IP
+                {t("pair.connectByIp")}
             </h2>
 
             <div
@@ -261,7 +262,7 @@ export function PairDevicePage({ unpairedDevices }: PairDevicePageProps) {
                     whileTap={{ scale: 0.98 }}
                     className="shrink-0 cursor-pointer border-l border-black/12 bg-black/[0.04] px-4 py-2.5 text-[13px] font-medium text-zinc-800 transition-colors hover:bg-black/[0.08] dark:border-white/12 dark:bg-white/[0.05] dark:text-zinc-100 dark:hover:bg-white/[0.10]"
                 >
-                    Connect
+                    {t("pair.connect")}
                 </motion.button>
             </div>
         </motion.div>
