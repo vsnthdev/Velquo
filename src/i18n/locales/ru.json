@@ -1,0 +1,214 @@
+{
+    "common": {
+        "add": "Добавить",
+        "back": "Назад",
+        "cancel": "Отмена",
+        "change": "Изменить",
+        "close": "Закрыть",
+        "copied": "Скопировано",
+        "refresh": "Обновить",
+        "retry": "Повторить"
+    },
+    "sidebar": {
+        "devices": "Устройства",
+        "settings": "Настройки",
+        "pairNewDevice": "Связать устройство"
+    },
+    "settings": {
+        "title": "Настройки",
+        "language": {
+            "label": "Язык",
+            "system": "Системный"
+        },
+        "launchOnStartup": "Запускать при входе",
+        "checkForUpdates": "Проверка обновлений",
+        "checkNow": "Проверить",
+        "checking": "Проверка...",
+        "upToDate": "Обновлений нет",
+        "checkFailed": "Ошибка проверки",
+        "checkFailedHint": "Ошибка проверки — нажмите, чтобы повторить",
+        "ignoreWhatsapp": "Игнорировать чаты WhatsApp",
+        "about": "О программе",
+        "tagline": "KDE Connect, нативно переосмысленный для Mac с Apple Silicon.",
+        "version": "Версия {{version}}",
+        "managedByHomebrew": "Управляется через Homebrew",
+        "homebrewUpdateAvailable": "Доступна версия Velquo v{{version}}"
+    },
+    "device": {
+        "settings": "Настройки устройства",
+        "backToDevice": "Назад к устройству",
+        "connected": "Подключено по Wi-Fi, в сети сейчас",
+        "offline": "Не в сети",
+        "offlineJustNow": "Не в сети, было на связи только что",
+        "offlineMinutes": "Не в сети, было на связи {{count}} мин назад",
+        "offlineHours": "Не в сети, было на связи {{count}} ч назад"
+    },
+    "pair": {
+        "availableDevices": "Доступные устройства",
+        "confirmOnDevice": "Подтвердите на устройстве",
+        "incomingRequest": "Входящий запрос на связывание",
+        "pair": "Связать",
+        "accept": "Принять",
+        "reject": "Отклонить",
+        "searching": "Поиск устройств в сети Wi-Fi...",
+        "searchingHint": "Держите приложение KDE Connect открытым на телефоне и убедитесь, что он подключён к той же сети Wi-Fi.",
+        "connectByIp": "Подключение по IP",
+        "connect": "Подключить"
+    },
+    "media": {
+        "previousTrack": "Предыдущий трек",
+        "nextTrack": "Следующий трек",
+        "play": "Воспроизвести",
+        "pause": "Пауза",
+        "playingOnDevice": "Воспроизводится на устройстве"
+    },
+    "drop": {
+        "sending_one": "Отправка {{count}} файла на {{device}}...",
+        "sending_few": "Отправка {{count}} файлов на {{device}}...",
+        "sending_many": "Отправка {{count}} файлов на {{device}}...",
+        "sending_other": "Отправка {{count}} файла на {{device}}...",
+        "dropToSend": "Отпустите, чтобы отправить на {{device}}",
+        "dropFilesToSend": "Перетащите файлы для отправки на {{device}}",
+        "orClickToBrowse": "или нажмите, чтобы выбрать на Mac"
+    },
+    "transfer": {
+        "sent": "Отправлено",
+        "sending": "Отправка",
+        "receiving": "Получение"
+    },
+    "quickActions": {
+        "title": "Быстрые действия",
+        "shareLink": "Отправить URL",
+        "sendFilesTitle": "Отправить файлы на {{device}}",
+        "pasteLink": "Вставьте ссылку сюда",
+        "sendLink": "Отправить ссылку",
+        "ringPhone": "Найти телефон",
+        "remoteInput": "Удалённый ввод",
+        "browseFiles": "Обзор файлов",
+        "capturingFor": "Захват ввода с клавиатуры для {{device}}",
+        "capturingKeystrokesFor": "Захват нажатий клавиш для {{device}}",
+        "remoteKeyboardHint": "Переключитесь на удалённую клавиатуру KDE Connect на телефоне и начните печатать"
+    },
+    "notifications": {
+        "title": "Уведомления",
+        "copyCode": "Скопировать код подтверждения",
+        "dismiss": "Закрыть уведомление",
+        "empty": "Нет активных уведомлений на {{device}}",
+        "removeSensitive": "Как это отключить"
+    },
+    "commands": {
+        "configure": "Настроить команды",
+        "addCommand": "Добавить команду",
+        "backToList": "Назад к списку команд",
+        "deleteCommand": "Удалить команду",
+        "empty": "Команды ещё не настроены",
+        "emptyHint": "Добавьте команды оболочки, чтобы запускать их удалённо из приложения KDE Connect на телефоне.",
+        "name": "Название команды",
+        "namePlaceholder": "Заблокировать экран",
+        "shell": "Команда оболочки",
+        "presets": "Шаблоны",
+        "save": "Сохранить команду",
+        "presetLockScreen": "Заблокировать экран",
+        "presetSleepMac": "Режим сна Mac",
+        "presetMuteVolume": "Выключить звук"
+    },
+    "deviceSettings": {
+        "fileSaveLocation": "Папка для сохранения файлов",
+        "selectSaveLocation": "Выберите папку для сохранения файлов",
+        "syncClipboard": "Синхронизация буфера обмена",
+        "presentationRemote": "Пульт для презентаций",
+        "syncNotifications": "Синхронизация уведомлений",
+        "autoCopyOtp": "Автокопирование кодов OTP",
+        "pauseMediaOnCalls": "Пауза медиа при звонках",
+        "unpair": "Отвязать"
+    },
+    "files": {
+        "storageLocations": "Хранилища",
+        "storage": "Хранилище",
+        "internalStorage": "Внутреннее хранилище",
+        "fallbackDevice": "Телефон",
+        "deviceFiles": "Файлы {{device}}",
+        "refreshFolder": "Обновить папку",
+        "connecting": "Подключение к хранилищу {{device}}...",
+        "notConfigured": "Доступ к хранилищу не настроен",
+        "notConfiguredHint": "Откройте <b>KDE Connect</b> на {{device}} → <b>Настройки модулей</b> → <b>Доступ к файловой системе</b> и добавьте папку хранилища.",
+        "loadFailed": "Не удалось загрузить файлы",
+        "empty": "Эта папка пуста",
+        "deleteFailed": "Ошибка удаления: {{error}}",
+        "deletingFolder": "Удаление папки...",
+        "deleteFolder": "Удалить папку",
+        "downloading": "Загрузка...",
+        "downloadFile": "Скачать файл",
+        "savedReveal": "Сохранено — нажмите, чтобы показать в Finder",
+        "deletingFile": "Удаление файла...",
+        "deleteFile": "Удалить файл",
+        "openEntry": "Открыть {{name}}",
+        "itemCount_one": "{{count}} объект",
+        "itemCount_few": "{{count}} объекта",
+        "itemCount_many": "{{count}} объектов",
+        "itemCount_other": "{{count}} объекта",
+        "remoteSftp": "Удалённый SFTP",
+        "savesTo": "Сохраняется в <b>{{folder}}</b>"
+    },
+    "update": {
+        "title": "Обновление ПО",
+        "checking": "Проверка обновлений...",
+        "checkFailed": "Не удалось проверить обновления",
+        "tryAgain": "Попробовать снова",
+        "latest": "Установлена последняя версия",
+        "latestBody": "Velquo <mono>{{version}}</mono> — это последняя доступная версия.",
+        "availableTitle": "Доступна версия Velquo <mono>v{{version}}</mono>",
+        "readyToInstall": "Готово к установке (текущая: <mono>v{{version}}</mono>)",
+        "loadingNotes": "Загрузка списка изменений...",
+        "noNotes": "Для этой версии нет описания изменений.",
+        "skipVersion": "Пропустить версию",
+        "retryUpdate": "Повторить обновление",
+        "updateNow": "Обновить сейчас",
+        "downloading": "Загрузка и установка...",
+        "restart": "Перезапустить",
+        "installFailed": "Не удалось загрузить и установить обновление.",
+        "serviceUnreachable": "Не удалось подключиться к серверу обновлений. Проверьте подключение к сети и попробуйте снова.",
+        "readyToInstallHomebrew": "Установлено через Homebrew (текущая: <mono>v{{version}}</mono>)"
+    },
+    "native": {
+        "tray": {
+            "openWindow": "Открыть окно",
+            "pairNewDevice": "Связать устройство",
+            "quit": "Завершить Velquo"
+        },
+        "menu": {
+            "about": "О программе Velquo",
+            "checkForUpdates": "Проверить обновления",
+            "file": "Файл",
+            "edit": "Правка",
+            "view": "Вид",
+            "window": "Окно",
+            "help": "Справка"
+        },
+        "windowTitle": {
+            "updater": "Velquo — Обновление ПО",
+            "files": "{{device}} — Файлы"
+        },
+        "notification": {
+            "dismiss": "Закрыть",
+            "open": "Открыть",
+            "fileReceived": {
+                "title": "Получен файл от {{device}}"
+            },
+            "filesReceived": {
+                "title_one": "Получен {{count}} файл от {{device}}",
+                "title_few": "Получено {{count}} файла от {{device}}",
+                "title_many": "Получено {{count}} файлов от {{device}}",
+                "title_other": "Получено {{count}} файла от {{device}}",
+                "body": "Нажмите «Открыть», чтобы показать их."
+            }
+        }
+    },
+    "homebrew": {
+        "body": "Приложение Velquo установлено через Homebrew — выполните команду ниже, чтобы обновиться до последней версии.",
+        "commandLabel": "Команда обновления Homebrew",
+        "copyCommandTitle": "Скопировать команду обновления Homebrew",
+        "copy": "Копировать",
+        "copied": "Скопировано"
+    }
+}

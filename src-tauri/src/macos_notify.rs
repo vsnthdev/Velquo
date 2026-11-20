@@ -123,8 +123,9 @@ fn file_received_content(device_name: &str, paths: &[String]) -> (String, String
         (title, body)
     } else {
         let count = paths.len().to_string();
-        let title = crate::i18n::tr_current_with(
+        let title = crate::i18n::tr_current_plural_with(
             "native.notification.filesReceived.title",
+            paths.len(),
             &[("device", device_name), ("count", &count)],
         );
         let body = crate::i18n::tr_current("native.notification.filesReceived.body");

@@ -2,6 +2,7 @@ import i18n from "i18next";
 import en from "./locales/en.json";
 import ja from "./locales/ja.json";
 import ko from "./locales/ko.json";
+import ru from "./locales/ru.json";
 import zhHans from "./locales/zh-Hans.json";
 import zhHant from "./locales/zh-Hant.json";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,10 +13,10 @@ import { initReactI18next } from "react-i18next";
  * Supported UI locales, expressed as BCP-47 tags. We use script subtags
  * (`zh-Hans` / `zh-Hant`) instead of region subtags (`zh-CN` / `zh-TW`)
  * because the difference that matters here is the script, not the country.
- * Japanese and Korean are keyed by their primary language subtags (`ja`,
- * `ko`), which cover every region variant.
+ * Japanese, Korean, and Russian are keyed by their primary language subtags
+ * (`ja`, `ko`, `ru`), which cover every region variant.
  */
-export const SUPPORTED_LOCALES = ["en", "ja", "ko", "zh-Hans", "zh-Hant"] as const;
+export const SUPPORTED_LOCALES = ["en", "ja", "ko", "ru", "zh-Hans", "zh-Hant"] as const;
 
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
@@ -33,9 +34,10 @@ const LANGUAGE_PREFERENCE_STORAGE_KEY = "velquo.language";
  * own script so that a user who cannot read the current UI language can still
  * find their language. */
 export const LOCALE_LABELS: Record<Locale, string> = {
-    en: "English",
     ja: "日本語",
     ko: "한국어",
+    en: "English",
+    ru: "Русский",
     "zh-Hans": "简体中文",
     "zh-Hant": "繁體中文",
 };
@@ -44,6 +46,7 @@ const resources = {
     en: { translation: en },
     ja: { translation: ja },
     ko: { translation: ko },
+    ru: { translation: ru },
     "zh-Hans": { translation: zhHans },
     "zh-Hant": { translation: zhHant },
 } as const;
@@ -58,9 +61,9 @@ export function isLanguagePreference(value: unknown): value is LanguagePreferenc
 
 /**
  * Maps a system locale tag (as reported by macOS, e.g. `ja-JP`, `ko-KR`,
- * `zh-Hans-CN`, `zh-Hant-TW`, `en-US`, `zh_HK`) onto one of our supported
- * locales. For Chinese an explicit script subtag always wins over the region
- * subtag.
+ * `ru-RU`, `zh-Hans-CN`, `zh-Hant-TW`, `en-US`, `zh_HK`) onto one of our
+ * supported locales. For Chinese an explicit script subtag always wins over
+ * the region subtag.
  */
 export function matchLocale(rawTag: string | null | undefined): Locale | null {
     if (!rawTag) return null;
@@ -71,6 +74,7 @@ export function matchLocale(rawTag: string | null | undefined): Locale | null {
     if (base == "en") return "en";
     if (base == "ja") return "ja";
     if (base == "ko") return "ko";
+    if (base == "ru") return "ru";
     if (base != "zh") return null;
 
     const rest = subtags.slice(1);

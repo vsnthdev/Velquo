@@ -32,6 +32,14 @@ html[lang="ko"] {
     -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
+/* Cyrillic should fall back to SF Pro (-apple-system) rather than PingFang SC's
+   CJK-proportioned Cyrillic glyphs if Google Sans is unavailable. */
+html[lang="ru"] {
+  --font-sans:
+    "Google Sans", -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "PingFang TC", "Hiragino Sans", "Apple SD Gothic Neo", sans-serif;
+}
+
 /* Wide tracking is a Latin-script device: on CJK text it just looks loose and
    breaks the even rhythm of the characters. */
 html[lang="ja"] .tracking-wide,

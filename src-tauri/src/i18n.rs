@@ -19,6 +19,7 @@ pub enum Locale {
     En,
     Ja,
     Ko,
+    Ru,
     ZhHans,
     ZhHant,
 }
@@ -31,6 +32,7 @@ impl Locale {
             Locale::En => "en",
             Locale::Ja => "ja",
             Locale::Ko => "ko",
+            Locale::Ru => "ru",
             Locale::ZhHans => "zh-Hans",
             Locale::ZhHant => "zh-Hant",
         }
@@ -41,8 +43,9 @@ impl Locale {
             Locale::En => 0,
             Locale::Ja => 1,
             Locale::Ko => 2,
-            Locale::ZhHans => 3,
-            Locale::ZhHant => 4,
+            Locale::Ru => 3,
+            Locale::ZhHans => 4,
+            Locale::ZhHant => 5,
         }
     }
 
@@ -50,8 +53,9 @@ impl Locale {
         match index {
             1 => Locale::Ja,
             2 => Locale::Ko,
-            3 => Locale::ZhHans,
-            4 => Locale::ZhHant,
+            3 => Locale::Ru,
+            4 => Locale::ZhHans,
+            5 => Locale::ZhHant,
             _ => Locale::En,
         }
     }
@@ -69,6 +73,7 @@ impl Locale {
             "en" => Some(Locale::En),
             "ja" => Some(Locale::Ja),
             "ko" => Some(Locale::Ko),
+            "ru" => Some(Locale::Ru),
             "zh" => {
                 let rest: Vec<&str> = segments.filter(|segment| !segment.is_empty()).collect();
                 if let Some(script) = rest.iter().find(|s| **s == "hans" || **s == "hant") {
@@ -85,6 +90,32 @@ impl Locale {
                 })
             }
             _ => None,
+        }
+    }
+
+    /// CLDR cardinal plural suffix (`one`, `few`, `many`, `other`) matching
+    /// i18next v4 key conventions.
+    fn plural_suffix(self, count: usize) -> &'static str {
+        match self {
+            Locale::En => {
+                if count == 1 {
+                    "one"
+                } else {
+                    "other"
+                }
+            }
+            Locale::Ru => {
+                let mod10 = count % 10;
+                let mod100 = count % 100;
+                if mod10 == 1 && mod100 != 11 {
+                    "one"
+                } else if (2..=4).contains(&mod10) && !(12..=14).contains(&mod100) {
+                    "few"
+                } else {
+                    "many"
+                }
+            }
+            Locale::Ja | Locale::Ko | Locale::ZhHans | Locale::ZhHant => "other",
         }
     }
 
@@ -153,6 +184,7 @@ fn catalogs() -> &'static HashMap<&'static str, Value> {
             ("en", include_str!("../../src/i18n/locales/en.json")),
             ("ja", include_str!("../../src/i18n/locales/ja.json")),
             ("ko", include_str!("../../src/i18n/locales/ko.json")),
+            ("ru", include_str!("../../src/i18n/locales/ru.json")),
             (
                 "zh-Hans",
                 include_str!("../../src/i18n/locales/zh-Hans.json"),
@@ -181,6 +213,18 @@ fn lookup(locale: Locale, key: &str) -> Option<&'static str> {
     node.as_str()
 }
 
+fn lookup_plural(locale: Locale, key: &str, count: usize) -> Option<&'static str> {
+    let suffixed = format!("{key}_{}", locale.plural_suffix(count));
+    lookup(locale, &suffixed).or_else(|| lookup(locale, key))
+}
+
+fn replace_vars(mut out: String, vars: &[(&str, &str)]) -> String {
+    for (name, value) in vars {
+        out = out.replace(&format!("{{{{{name}}}}}"), value);
+    }
+    out
+}
+
 /// Looks up `key` (dot-separated) for `locale`, falling back to English and then
 /// to the key itself. Native strings are few, so a linear walk is plenty.
 pub fn tr(locale: Locale, key: &str) -> String {
@@ -203,11 +247,31 @@ pub fn tr(locale: Locale, key: &str) -> String {
 
 /// Same as [`tr`], but replaces `{{name}}` placeholders.
 pub fn tr_with(locale: Locale, key: &str, vars: &[(&str, &str)]) -> String {
-    let mut out = tr(locale, key);
-    for (name, value) in vars {
-        out = out.replace(&format!("{{{{{name}}}}}"), value);
-    }
-    out
+    replace_vars(tr(locale, key), vars)
+}
+
+/// Looks up a pluralized message (`<key>_<suffix>`, falling back to `<key>` and
+/// then English) and replaces `{{name}}` placeholders.
+pub fn tr_plural_with(locale: Locale, key: &str, count: usize, vars: &[(&str, &str)]) -> String {
+    let template = if let Some(value) = lookup_plural(locale, key, count) {
+        value.to_string()
+    } else if locale != Locale::En {
+        if let Some(value) = lookup_plural(Locale::En, key, count) {
+            log::warn!(
+                "[i18n] Missing '{}' in {} — falling back to English",
+                key,
+                locale.tag()
+            );
+            value.to_string()
+        } else {
+            log::warn!("[i18n] Missing key '{}'", key);
+            key.to_string()
+        }
+    } else {
+        log::warn!("[i18n] Missing key '{}'", key);
+        key.to_string()
+    };
+    replace_vars(template, vars)
 }
 
 pub fn tr_current(key: &str) -> String {
@@ -216,6 +280,10 @@ pub fn tr_current(key: &str) -> String {
 
 pub fn tr_current_with(key: &str, vars: &[(&str, &str)]) -> String {
     tr_with(current(), key, vars)
+}
+
+pub fn tr_current_plural_with(key: &str, count: usize, vars: &[(&str, &str)]) -> String {
+    tr_plural_with(current(), key, count, vars)
 }
 
 #[cfg(test)]
@@ -228,6 +296,9 @@ mod tests {
         assert_eq!(Locale::parse("ja-JP"), Some(Locale::Ja));
         assert_eq!(Locale::parse("ko-KR"), Some(Locale::Ko));
         assert_eq!(Locale::parse("ko_KR"), Some(Locale::Ko));
+        assert_eq!(Locale::parse("ru"), Some(Locale::Ru));
+        assert_eq!(Locale::parse("ru-RU"), Some(Locale::Ru));
+        assert_eq!(Locale::parse("ru_RU"), Some(Locale::Ru));
         assert_eq!(Locale::parse("zh-Hans-CN"), Some(Locale::ZhHans));
         assert_eq!(Locale::parse("zh-Hant-TW"), Some(Locale::ZhHant));
         assert_eq!(Locale::parse("zh_TW"), Some(Locale::ZhHant));
@@ -244,6 +315,8 @@ mod tests {
         assert_eq!(normalize_preference("system"), Some("system".to_string()));
         assert_eq!(normalize_preference("ja"), Some("ja".to_string()));
         assert_eq!(normalize_preference("ko-KR"), Some("ko".to_string()));
+        assert_eq!(normalize_preference("ru"), Some("ru".to_string()));
+        assert_eq!(normalize_preference("ru-RU"), Some("ru".to_string()));
         assert_eq!(normalize_preference("zh-Hant"), Some("zh-Hant".to_string()));
         assert_eq!(normalize_preference("zh_TW"), Some("zh-Hant".to_string()));
         assert_eq!(normalize_preference("klingon"), None);
@@ -264,12 +337,24 @@ mod tests {
             "새 기기 페어링"
         );
         assert_eq!(
+            tr(Locale::Ru, "native.tray.pairNewDevice"),
+            "Связать устройство"
+        );
+        assert_eq!(
             tr(Locale::ZhHans, "native.tray.pairNewDevice"),
             "配对新设备"
         );
         assert_eq!(
             tr(Locale::ZhHant, "native.tray.pairNewDevice"),
             "配對新裝置"
+        );
+        assert_eq!(
+            tr_with(
+                Locale::Ru,
+                "native.windowTitle.files",
+                &[("device", "Pixel 8")]
+            ),
+            "Pixel 8 — Файлы"
         );
         assert_eq!(
             tr_with(
@@ -281,7 +366,52 @@ mod tests {
         );
         // The tray's quit action is native-only, so guard that the key exists.
         assert_eq!(tr(Locale::En, "native.tray.quit"), "Quit Velquo");
+        assert_eq!(tr(Locale::Ru, "native.tray.quit"), "Завершить Velquo");
         // Unknown keys degrade to the key instead of panicking.
         assert_eq!(tr(Locale::En, "native.nope"), "native.nope");
+    }
+
+    #[test]
+    fn resolves_plural_forms() {
+        let key = "native.notification.filesReceived.title";
+        assert_eq!(
+            tr_plural_with(Locale::En, key, 3, &[("device", "Pixel 8"), ("count", "3")]),
+            "Received 3 files from Pixel 8"
+        );
+        assert_eq!(
+            tr_plural_with(Locale::Ru, key, 2, &[("device", "Pixel 8"), ("count", "2")]),
+            "Получено 2 файла от Pixel 8"
+        );
+        assert_eq!(
+            tr_plural_with(Locale::Ru, key, 5, &[("device", "Pixel 8"), ("count", "5")]),
+            "Получено 5 файлов от Pixel 8"
+        );
+        assert_eq!(
+            tr_plural_with(
+                Locale::Ru,
+                key,
+                11,
+                &[("device", "Pixel 8"), ("count", "11")]
+            ),
+            "Получено 11 файлов от Pixel 8"
+        );
+        assert_eq!(
+            tr_plural_with(
+                Locale::Ru,
+                key,
+                21,
+                &[("device", "Pixel 8"), ("count", "21")]
+            ),
+            "Получен 21 файл от Pixel 8"
+        );
+        assert_eq!(
+            tr_plural_with(
+                Locale::Ru,
+                key,
+                22,
+                &[("device", "Pixel 8"), ("count", "22")]
+            ),
+            "Получено 22 файла от Pixel 8"
+        );
     }
 }
